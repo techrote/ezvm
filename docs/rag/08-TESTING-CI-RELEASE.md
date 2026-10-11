@@ -6,6 +6,34 @@ The control plane should be highly testable without booting a VM. QEMU integrati
 
 Every implementation issue owns tests for the behavior it adds.
 
+## Foundation test entry points (EZVM-001)
+
+Run `scripts/Test-Repository.ps1` for repository-contract validation, and
+`tests/Run-Tests.ps1` for the control-plane suite. Both are first-party PowerShell
+source and require no VM or downloaded test module. The test harness is explicitly
+versioned as `1.0.0` in source and `tests/tooling.json`; a harness change must keep
+that identity coherent. Detailed commands and test ownership are in
+[tests/README.md](../../tests/README.md).
+
+The suite discovers `*.Tests.ps1` files and rejects empty or all-skipped success.
+Each test reports PASS, FAIL or an explicit capability SKIP, followed by totals.
+Failures terminate non-zero. Native-process fixtures, copied checkouts, malformed
+state and isolated git repositories are generated only in temporary directories.
+
+CI has separate Windows PowerShell 5.1 and PowerShell 7 test lanes, with assertions
+that the intended engine is actually executing. The PowerShell 7 test runtime is
+pinned in `tests/tooling.json`, downloaded from its official release, hash-checked
+and extracted into the runner's temporary directory. This makes the tested engine
+independent of a runner image's bundled version, without installing it globally.
+The repository contract remains an independent check. Checkout is pinned to a
+reviewed full commit SHA, workflow permissions are read-only and jobs have bounded
+timeouts.
+
+Local PowerShell 7 on a non-Windows host can provide additional control-plane
+evidence, but does not substitute for either Windows lane. Windows file-lock and
+native argument parsing tests must execute on Windows before this issue is
+accepted. No QEMU, guest boot or WHPX execution is part of EZVM-001 acceptance.
+
 ## Required CI layers
 
 ### Repository contract

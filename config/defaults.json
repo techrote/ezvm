@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "defaultProfile": "normal",
+  "profiles": {
+    "light": { "cpus": 2, "memoryMiB": 4096 },
+    "normal": { "cpus": 4, "memoryMiB": 8192 },
+    "heavy": { "cpus": 8, "memoryMiB": 16384 }
+  },
+  "ssh": {
+    "portRangeStart": 22000,
+    "portRangeEnd": 22999
+  },
+  "timeouts": {
+    "processSeconds": 60
+  }
+}

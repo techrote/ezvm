@@ -11,70 +11,49 @@ permissions:
 
 jobs:
   repository-contract:
-    runs-on: windows-latest
+    name: Repository contract (Windows PowerShell 5.1)
+    runs-on: windows-2022
+    timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+          persist-credentials: false
+      - name: Validate tracked sources, programme and RAG contract
+        shell: powershell
+        run: .\scripts\Invoke-CiCheck.ps1 -Check Repository -ExpectedMajor 5
 
-      - name: Validate programme and RAG contract
+  control-plane-tests:
+    name: Control plane (${{ matrix.label }})
+    runs-on: windows-2022
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Windows PowerShell 5.1
+            major: 5
+          - label: PowerShell 7.6.6
+            major: 7
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare pinned current PowerShell test runtime
+        if: matrix.major == 7
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-
-          $required = @(
-            'README.md',
-            'AGENTS.md',
-            'docs/programme/IMPLEMENTATION-PROGRAMME.md',
-            'docs/rag/README.md',
-            'docs/rag/00-PROJECT-CHARTER.md',
-            'docs/rag/01-ARCHITECTURE.md',
-            'docs/rag/02-HOST-QEMU-CONTRACT.md',
-            'docs/rag/03-QCOW2-STATE-CONTRACT.md',
-            'docs/rag/04-GUEST-BOOTSTRAP-CONTRACT.md',
-            'docs/rag/05-NETWORK-SSH-CONTRACT.md',
-            'docs/rag/06-SECURITY-PORTABILITY-CONTRACT.md',
-            'docs/rag/07-CLI-STATE-CONTRACT.md',
-            'docs/rag/08-TESTING-CI-RELEASE.md'
-          )
-
-          foreach ($path in $required) {
-            if (-not (Test-Path -LiteralPath $path)) {
-              throw "Missing required repository authority file: $path"
-            }
-          }
-
-          $programme = Get-Content -LiteralPath 'docs/programme/IMPLEMENTATION-PROGRAMME.md' -Raw
-          1..12 | ForEach-Object {
-            $code = 'EZVM-{0:d3}' -f $_
-            if ($programme -notmatch [regex]::Escape($code)) {
-              throw "Programme is missing $code"
-            }
-          }
-
-          $forbidden = @(
-            '\.qcow2$',
-            '\.img$',
-            '\.iso$',
-            '\.vhdx?$',
-            '\.ova$',
-            '\.exe$',
-            '\.msi$',
-            '\.key$',
-            '\.pem$'
-          )
-
-          $tracked = @(git ls-files)
-          foreach ($file in $tracked) {
-            foreach ($pattern in $forbidden) {
-              if ($file -match $pattern) {
-                throw "Forbidden generated/binary/secret-like artifact is tracked: $file"
-              }
-            }
-          }
-
-          git diff --check HEAD^ HEAD
-          if ($LASTEXITCODE -ne 0) {
-            throw 'git diff --check failed'
-          }
+          $executable = .\scripts\Install-TestPowerShell.ps1 -DestinationRoot $env:RUNNER_TEMP
+          ('EZVM_TEST_POWERSHELL=' + $executable) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Run versioned first-party test harness
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $executable = Join-Path $PSHOME 'powershell.exe'
+          if (${{ matrix.major }} -eq 7) { $executable = $env:EZVM_TEST_POWERSHELL }
+          & $executable -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\scripts\Invoke-CiCheck.ps1 -Check ControlPlane -ExpectedMajor ${{ matrix.major }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
