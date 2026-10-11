@@ -263,3 +263,33 @@ Add-EzVmTest -Name 'Base builder: guest serial facts require READY, tool validat
         & $module { param($text, $id) Get-EzVmBaseGuestFacts -SerialText $text -BuildId $id } $lines 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
     } -MessagePattern 'different build identity' | Out-Null
 }
+
+Add-EzVmTest -Name 'Base builder: candidate validation fails before authoritative publication' -ScriptBlock {
+    $fixture = New-EzVmBaseBuildFixture
+    try {
+        $normalRunner = $fixture.QemuImgRunner
+        $candidateRejectRunner = {
+            param($argumentList)
+            $arguments = @($argumentList)
+            if ($arguments[0] -ceq 'info' -and [IO.Path]::GetFileName($arguments[$arguments.Count - 1]) -ceq 'base.qcow2') {
+                $value = [pscustomobject][ordered]@{
+                    format = 'qcow2'
+                    'virtual-size' = [long]17179869184
+                    'backing-filename' = '..\unexpected-backing.qcow2'
+                }
+                return [pscustomobject]@{ ExitCode = 0; StdOut = ($value | ConvertTo-Json -Compress); StdErr = '' }
+            }
+            & $normalRunner $arguments
+        }.GetNewClosure()
+
+        Assert-EzVmThrows -ScriptBlock {
+            Invoke-EzVmBaseBuild -Root $fixture.Root -Accelerator tcg -BuildTimeoutSeconds 60 -QemuStatusProvider $fixture.QemuStatusProvider -SourceProvider $fixture.SourceProvider -QemuImgRunner $candidateRejectRunner -GuestRunner $fixture.GuestRunner
+        } -MessagePattern 'No authoritative base was promoted.*standalone with no backing file' | Out-Null
+
+        Assert-EzVmEqual -Actual @(Get-ChildItem -LiteralPath $fixture.Paths.Bases -Directory -Filter 'base-*' -Force).Count -Expected 0
+        Assert-EzVmEqual -Actual @(Get-ChildItem -LiteralPath $fixture.Paths.Bases -Directory -Filter '.publish-*' -Force).Count -Expected 0
+        Assert-EzVmEqual -Actual @(Get-ChildItem -LiteralPath $fixture.Paths.Bases -Directory -Filter '.build-*' -Force).Count -Expected 1
+    }
+    finally { Remove-EzVmBaseBuildFixture $fixture }
+}
+
