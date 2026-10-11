@@ -133,3 +133,24 @@ While QEMU owns an image, do not:
 - copy the file as a consistent backup.
 
 The lifecycle subsystem is the authority for whether an instance is safely stopped.
+
+## Prepared-base publication (EZVM-004)
+
+Base construction never writes the verified Ubuntu source image. It creates a
+temporary qcow2 overlay with the source as its backing file and expands only that
+overlay's virtual size for provisioning.
+
+After the staging guest powers off cleanly, managed `qemu-img convert` flattens
+the guest-visible staging chain into a new qcow2. Acceptance requires:
+
+- `qemu-img info --output=json` reports `qcow2`;
+- no backing filename is present;
+- the virtual size is positive;
+- `qemu-img check` succeeds while the new image is stopped;
+- the resulting SHA-256 is recorded and becomes the content-addressed base ID.
+
+Only after those checks and manifest validation does a prepared base move into its
+authoritative `base-<sha256>` directory. A build or flatten failure leaves no
+authoritative base. Non-authoritative `.build-*` staging is retained with
+`failure.json` where possible so diagnosis does not require destructive repair.
+
