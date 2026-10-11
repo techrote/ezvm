@@ -30,13 +30,13 @@ terminates non-zero. Failures are never automatically converted to skips.
 
 | File | Behavior covered |
 | --- | --- |
-| `Cli.Tests.ps1` | Human/JSON help and version, empty input, malformed/unknown commands, actual child-process exit codes, JSON pipelines, incomplete checkouts and copied roots with spaces and brackets. |
+| `Cli.Tests.ps1` | Human/JSON help and version, empty input, malformed/unknown commands, actual child-process exit codes, JSON pipelines, raw `-File` output without a test prelude, incomplete checkouts and copied roots with spaces and brackets. |
 | `Configuration.Tests.ps1` | Published defaults, nested runtime overrides, source preservation, fresh return values, schema/type/range/unknown-field refusal and dictionary-member shadowing. |
 | `Paths.Tests.ps1` | Source-derived roots, unrelated working directories, complete derived layout, no discovery side effects, relative roots and cold relocation without Git metadata. |
 | `Json.Tests.ps1` | UTF-8 data and timestamp round-trips, schema refusal, serialization limits, byte-preserving failed writes, failed replacement cleanup and Windows file locks. |
-| `Process.Tests.ps1` | Native argument tokens, UTF-8 stdout/stderr, exact non-zero exit propagation, concurrent pipe draining, closed stdin, working directories, launch failures and bounded timeouts. |
-| `Repository.Tests.ps1` | Positive and negative isolated Git fixtures for the repository guard, plus proof that an empty/failed harness exits non-zero. |
-| `fixtures/NativeArguments.cs` | Source-only Windows argv reporter, compiled into a temporary directory by the Windows .NET Framework compiler. |
+| `Process.Tests.ps1` | Native argument tokens, UTF-8 stdout/stderr, exact non-zero exit propagation, concurrent pipe draining, zero-byte stdin, console encoding/reader preservation, redirected callers, working directories, launch failures and bounded timeouts. |
+| `Repository.Tests.ps1` | Positive and negative isolated Git fixtures for the repository guard, CRLF normalization with real whitespace-error detection, plus proof that an empty/failed harness exits non-zero. |
+| `fixtures/NativeArguments.cs` | Source-only Windows argv reporter and raw stdin byte counter, compiled into a temporary directory by the Windows .NET Framework compiler. |
 | `fixtures/ProcessFixture.ps1` | Deterministic lightweight child behavior for process-boundary tests. |
 
 Fixtures are created beneath unique `ezvm tests ...` directories in the operating
@@ -44,9 +44,21 @@ system's temporary area and removed in `finally` blocks. Negative repository tes
 force-add synthetic artifacts only to their own temporary Git repositories. No
 test changes the working checkout's Git index or writes a real disk image/key.
 
-On a non-Windows host, file-lock replacement and native Windows argument parsing
-are explicit capability skips. Such a local run is additional evidence; both
-checks must execute on Windows before acceptance. The foundation declares no
+The checked-in `.gitattributes` keeps source text normalized to LF. Fixture Git
+configuration permits intended CRLF-to-LF conversion; it does not disable
+whitespace checks. A regression materializes actual CRLF source bytes, confirms
+the index holds LF, and proves a real space before a CRLF newline still fails.
+The encoded-command test wrapper suppresses its own module-autoload progress;
+an independent raw `-File` child verifies the application's JSON output without
+inheriting that test prelude. Stderr is always checked without filtering.
+
+On a non-Windows host, file-lock replacement, native Windows argument parsing and
+the native raw-byte stdin check are three explicit capability skips. The stdin
+check uses a BOM-bearing parent console encoding, verifies zero bytes reach the
+child, preserves the caller's encoding and buffered input reader after successful
+and failed launches, and exercises a redirected caller without a console window.
+Such a local run is additional evidence; all three checks must execute on Windows
+before acceptance. The foundation declares no
 QEMU/guest/WHPX execution success, because those implementations belong to later
 issues.
 

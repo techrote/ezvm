@@ -1,5 +1,8 @@
 #requires -Version 5.1
 # Deliberately parse $args ourselves so invalid switches also get stable exit/JSON output.
+# Legacy module autoload emits progress records even for help/version. Suppress
+# those at the source before any cmdlet import can contaminate captured output.
+$ProgressPreference = 'SilentlyContinue'
 $ErrorActionPreference = 'Stop'
 $jsonRequested = @($args | Where-Object { $_ -ieq '-Json' }).Count -gt 0
 

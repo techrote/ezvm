@@ -13,6 +13,18 @@ function Get-EzVmProcessTestArguments {
     return @('-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $fixture, '-Mode', $Mode)
 }
 
+function New-EzVmNativeProcessTestFixture {
+    param([string] $Directory)
+
+    $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
+    Assert-EzVmTrue -Condition ([System.IO.File]::Exists($compiler)) -Message 'Windows .NET Framework C# compiler is required to build the source-only native process fixture.'
+    $fixture = Join-Path $Directory 'argument fixture.exe'
+    $source = Join-Path $script:EzVmRepositoryRoot 'tests/fixtures/NativeArguments.cs'
+    $compile = Invoke-EzVmProcess -FilePath $compiler -ArgumentList @('/nologo', '/target:exe', ('/out:' + $fixture), $source) -ThrowOnError
+    Assert-EzVmEqual -Actual $compile.ExitCode -Expected 0
+    return $fixture
+}
+
 Add-EzVmTest -Name 'Process returns exact nonzero exit and UTF-8 stdout/stderr' -ScriptBlock {
     $result = Invoke-EzVmProcess -FilePath (Get-EzVmProcessTestExecutable) -ArgumentList (Get-EzVmProcessTestArguments -Mode 'nonzero')
     Assert-EzVmEqual -Actual $result.ExitCode -Expected 23
@@ -95,17 +107,12 @@ Add-EzVmTest -Name 'Process timeout is bounded and terminates the direct child' 
 
 $nativeArgumentSkip = $null
 if (-not $script:EzVmIsWindowsHost) {
-    $nativeArgumentSkip = 'The native Windows CLR/CRT argv fixture requires Windows; both Windows PowerShell 5.1 and PowerShell 7 CI jobs run it.'
+    $nativeArgumentSkip = 'The native Windows process fixtures require Windows; both Windows PowerShell 5.1 and PowerShell 7 CI jobs run them.'
 }
 Add-EzVmTest -Name 'Process preserves native Windows argument tokens including empty quotes slashes and Unicode' -SkipReason $nativeArgumentSkip -ScriptBlock {
     $directory = New-EzVmTestDirectory -Prefix 'native argument fixture'
     try {
-        $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
-        Assert-EzVmTrue -Condition ([System.IO.File]::Exists($compiler)) -Message 'Windows .NET Framework C# compiler is required to build the source-only native argv fixture.'
-        $fixture = Join-Path $directory 'argument fixture.exe'
-        $source = Join-Path $script:EzVmRepositoryRoot 'tests/fixtures/NativeArguments.cs'
-        $compile = Invoke-EzVmProcess -FilePath $compiler -ArgumentList @('/nologo', '/target:exe', ('/out:' + $fixture), $source) -ThrowOnError
-        Assert-EzVmEqual -Actual $compile.ExitCode -Expected 0
+        $fixture = New-EzVmNativeProcessTestFixture -Directory $directory
         $tokens = @(
             '', 'plain', 'two words', '"', 'embedded"quote', '\', '\\',
             'C:\directory with spaces\', 'slashes\\"quoted', 'tail\\',
@@ -125,4 +132,59 @@ Add-EzVmTest -Name 'Process preserves native Windows argument tokens including e
         Assert-EzVmEqual -Actual $empty.StdOut.Trim() -Expected '0'
     }
     finally { Remove-EzVmTestDirectory -Path $directory }
+}
+
+Add-EzVmTest -Name 'Process sends zero stdin bytes with a BOM-bearing console encoding and restores it after success and failure' -SkipReason $nativeArgumentSkip -ScriptBlock {
+    $directory = New-EzVmTestDirectory -Prefix 'native stdin fixture'
+    $originalEncoding = [Console]::InputEncoding
+    $originalReader = [Console]::In
+    $testReader = $null
+    try {
+        $fixture = New-EzVmNativeProcessTestFixture -Directory $directory
+        $bomEncoding = New-Object System.Text.UTF8Encoding($true)
+        [Console]::InputEncoding = $bomEncoding
+        $testReader = New-Object System.IO.StringReader("buffered caller input`n")
+        [Console]::SetIn($testReader)
+        $expectedReader = [Console]::In
+        Assert-EzVmEqual -Actual ([BitConverter]::ToString([Console]::InputEncoding.GetPreamble())) -Expected 'EF-BB-BF'
+
+        $result = Invoke-EzVmProcess -FilePath $fixture -ArgumentList @('--stdin-byte-count') -TimeoutSeconds 10 -ThrowOnError
+        Assert-EzVmEqual -Actual $result.StdOut.Trim() -Expected '0'
+        Assert-EzVmEqual -Actual $result.StdErr -Expected ''
+        Assert-EzVmTrue -Condition ($bomEncoding.Equals([Console]::InputEncoding)) -Message 'A successful launch must restore the original console encoding.'
+        Assert-EzVmTrue -Condition ([object]::ReferenceEquals($expectedReader, [Console]::In)) -Message 'A successful launch must preserve the caller console reader.'
+
+        Assert-EzVmThrows -ScriptBlock { Invoke-EzVmProcess -FilePath (Join-Path $directory 'missing.exe') } -MessagePattern 'Could not start'
+        Assert-EzVmTrue -Condition ($bomEncoding.Equals([Console]::InputEncoding)) -Message 'A failed launch must restore the original console encoding.'
+        Assert-EzVmTrue -Condition ([object]::ReferenceEquals($expectedReader, [Console]::In)) -Message 'A failed launch must preserve the caller console reader.'
+
+        # The nested caller has redirected stdin and CreateNoWindow, so its
+        # process helper cannot assume an attached, configurable console exists.
+        $modulePath = (Join-Path $script:EzVmRepositoryRoot 'src/EzVm/EzVm.psd1').Replace("'", "''")
+        $quotedFixture = $fixture.Replace("'", "''")
+        $command = @'
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+if (-not [Console]::IsInputRedirected) { throw 'The test caller must have redirected input.' }
+Import-Module '__MODULE__' -Force
+$result = Invoke-EzVmProcess -FilePath '__FIXTURE__' -ArgumentList @('--stdin-byte-count') -ThrowOnError
+[Console]::Out.Write($result.StdOut)
+'@
+        $command = $command.Replace('__MODULE__', $modulePath).Replace('__FIXTURE__', $quotedFixture)
+        $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($command))
+        $headless = Invoke-EzVmProcess -FilePath (Get-EzVmProcessTestExecutable) -ArgumentList @('-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded) -TimeoutSeconds 15 -ThrowOnError
+        Assert-EzVmEqual -Actual $headless.StdOut.Trim() -Expected '0'
+        Assert-EzVmEqual -Actual $headless.StdErr -Expected ''
+        Assert-EzVmTrue -Condition ($bomEncoding.Equals([Console]::InputEncoding)) -Message 'The redirected caller test must also restore the parent console encoding.'
+        Assert-EzVmTrue -Condition ([object]::ReferenceEquals($expectedReader, [Console]::In)) -Message 'The redirected caller test must preserve the parent console reader.'
+        Assert-EzVmEqual -Actual ([Console]::In.ReadLine()) -Expected 'buffered caller input'
+    }
+    finally {
+        try { [Console]::InputEncoding = $originalEncoding }
+        finally {
+            [Console]::SetIn($originalReader)
+            if ($null -ne $testReader) { $testReader.Dispose() }
+            Remove-EzVmTestDirectory -Path $directory
+        }
+    }
 }

@@ -82,6 +82,43 @@ Add-EzVmTest -Name 'CLI: JSON is available to a same-host PowerShell pipeline' -
     Assert-EzVmEqual -Actual $result.StandardError -Expected ''
 }
 
+Add-EzVmTest -Name 'CLI: direct File invocation produces clean JSON without a wrapper prelude' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'direct File [copy]'
+    $process = New-Object Diagnostics.Process
+    try {
+        $executableName = 'pwsh'
+        if ($script:EzVmIsWindowsHost) {
+            $executableName = 'pwsh.exe'
+            if ($PSVersionTable.PSVersion.Major -eq 5) { $executableName = 'powershell.exe' }
+        }
+        $process.StartInfo.FileName = Join-Path $PSHOME $executableName
+        # This source-derived absolute .ps1 path contains no quotes or trailing
+        # backslash. No EncodedCommand or preference-setting test wrapper runs.
+        $process.StartInfo.Arguments = '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + (Join-Path $root 'ezvm.ps1') + '" version -Json'
+        $process.StartInfo.WorkingDirectory = $script:EzVmRepositoryRoot
+        $process.StartInfo.UseShellExecute = $false
+        $process.StartInfo.CreateNoWindow = $true
+        $process.StartInfo.RedirectStandardOutput = $true
+        $process.StartInfo.RedirectStandardError = $true
+        Assert-EzVmTrue -Condition ($process.Start())
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit(30000)) {
+            $process.Kill()
+            [void]$process.WaitForExit(5000)
+            throw 'Direct File CLI invocation timed out.'
+        }
+        Assert-EzVmTrue -Condition ($stdout.Wait(5000) -and $stderr.Wait(5000))
+        $result = [pscustomobject]@{ ExitCode = $process.ExitCode; StandardOutput = $stdout.Result; StandardError = $stderr.Result }
+        $value = Assert-EzVmJsonEnvelope -Result $result -Command 'version' -ExitCode 0
+        Assert-EzVmEqual -Actual $value.data.version -Expected '0.0.0-dev'
+    }
+    finally {
+        $process.Dispose()
+        Remove-EzVmTestDirectory -Path $root
+    }
+}
+
 $invalidCliCases = @(
     @{ Name = 'unknown command'; Arguments = @('not-a-command') },
     @{ Name = 'future command'; Arguments = @('bootstrap') },

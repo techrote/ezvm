@@ -110,6 +110,9 @@ function Invoke-EzVmTestPowerShell {
 
     # EncodedCommand has one fixed base64 token. Test data belongs in explicitly
     # quoted PowerShell literals in CommandText, never in a native shell string.
+    # Suppress only this test wrapper's module-autoload progress on Windows 5.1.
+    # A separate raw -File CLI regression checks the application's own output.
+    $CommandText = '$ProgressPreference = ''SilentlyContinue''; ' + $CommandText
     $executableName = 'pwsh'
     if ($script:EzVmIsWindowsHost) {
         $executableName = 'pwsh.exe'

@@ -40,6 +40,7 @@ function Test-EzVmRepositoryContract {
     $required = @(
         'README.md',
         'AGENTS.md',
+        '.gitattributes',
         '.gitignore',
         '.github/workflows/ci.yml',
         'docs/programme/IMPLEMENTATION-PROGRAMME.md',

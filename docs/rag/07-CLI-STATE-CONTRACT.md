@@ -197,8 +197,25 @@ failure. Callers still own locks for concurrent read-modify-write operations.
 executable directly with shell execution disabled. Pass one unescaped string per
 argument. It returns `ExitCode`, `StdOut` and `StdErr`; non-zero exits remain
 observable, and `-ThrowOnError` additionally raises a contextual exception.
-Launch failures and timeouts always throw. Standard input is closed, output is
-decoded as UTF-8 and both output streams are drained concurrently.
+Launch failures and timeouts always throw. Standard input receives immediate EOF
+with zero bytes, including no encoding preamble; output is decoded as UTF-8 and
+both output streams are drained concurrently.
+
+Current .NET uses an explicit BOM-free `StandardInputEncoding`. .NET Framework
+can flush a console-encoding preamble during `Process.Start`, before the caller
+can close stdin. For a preamble-bearing console encoding, the helper briefly
+uses the same code page without a preamble around `Start`, restoring both the
+original encoding and `Console.In` reader in `finally`, including on launch
+failure. Preserving the reader also preserves caller-supplied or buffered input.
+An encoding that already has no preamble requires no console update.
+
+A bounded per-process named mutex coordinates this Framework adjustment among
+ezvm calls in different runspaces. Its wait consumes the command's timeout
+budget. Unrelated code must not change `Console.InputEncoding` or `Console.In`
+concurrently. If a host without a usable console cannot apply a required encoding
+adjustment, the launch fails clearly with guidance to use current PowerShell 7;
+it must not send a preamble as a fallback. Redirected callers with no window are
+covered by a native raw-byte stdin regression.
 
 PowerShell 7 uses the runtime's token-based `ProcessStartInfo.ArgumentList` when
 available. Windows PowerShell 5.1 uses explicit Windows CRT argument quoting,

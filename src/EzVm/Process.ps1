@@ -67,6 +67,81 @@ function Stop-EzVmTimedOutProcess {
     }
 }
 
+function Start-EzVmProcessWithoutInputPreamble {
+    param(
+        [System.Diagnostics.Process] $Process,
+        [int] $TimeoutMilliseconds,
+        [ref] $Started
+    )
+
+    if ($null -ne $Process.StartInfo.PSObject.Properties['StandardInputEncoding']) {
+        $Process.StartInfo.StandardInputEncoding = New-Object System.Text.UTF8Encoding($false)
+        $Started.Value = $Process.Start()
+        return
+    }
+
+    # .NET Framework creates its stdin StreamWriter from Console.InputEncoding
+    # and enables AutoFlush inside Start(), which can send a BOM before we can
+    # close stdin. Use the same code page without its preamble during Start only.
+    # Serialize cooperating Framework calls across runspaces in this process so
+    # they cannot observe or restore each other's temporary encoding.
+    $mutex = New-Object System.Threading.Mutex($false, ('Local\ezvm-stdin-encoding-' + $PID))
+    $lockTaken = $false
+    $restoreEncoding = $false
+    $restoreReader = $false
+    $originalEncoding = $null
+    $originalReader = $null
+    try {
+        try { $lockTaken = $mutex.WaitOne($TimeoutMilliseconds) }
+        catch [System.Threading.AbandonedMutexException] { $lockTaken = $true }
+        if (-not $lockTaken) {
+            throw 'Timed out waiting for another ezvm process launch to finish configuring standard input. Retry the command.'
+        }
+        $originalEncoding = [Console]::InputEncoding
+        if ($originalEncoding.GetPreamble().Length -gt 0) {
+            $encoding = switch ($originalEncoding.CodePage) {
+                65001 { New-Object System.Text.UTF8Encoding($false) }
+                1200 { New-Object System.Text.UnicodeEncoding($false, $false) }
+                1201 { New-Object System.Text.UnicodeEncoding($true, $false) }
+                12000 { New-Object System.Text.UTF32Encoding($false, $false) }
+                12001 { New-Object System.Text.UTF32Encoding($true, $false) }
+                default { throw 'The console input encoding has an unsupported preamble. Use current PowerShell 7 or configure a standard encoding before retrying.' }
+            }
+            $encoding = $encoding.Clone()
+            $encoding.EncoderFallback = $originalEncoding.EncoderFallback
+            $encoding.DecoderFallback = $originalEncoding.DecoderFallback
+            # Setting InputEncoding clears Console.In's cached reader. Preserve
+            # it, including a caller-supplied reader and any buffered input.
+            $originalReader = [Console]::In
+            $restoreReader = $true
+            try { [Console]::InputEncoding = $encoding }
+            catch {
+                throw [System.InvalidOperationException]::new(
+                    'This Windows PowerShell host cannot configure standard input without a preamble. Use current PowerShell 7, or a console that permits input-encoding updates.',
+                    $_.Exception)
+            }
+            $restoreEncoding = $true
+        }
+        # Keep the caller informed even if restoring the encoding later fails,
+        # so its finally block can still terminate a successfully started child.
+        $Started.Value = $Process.Start()
+    }
+    finally {
+        try {
+            try {
+                if ($restoreEncoding) { [Console]::InputEncoding = $originalEncoding }
+            }
+            finally {
+                if ($restoreReader) { [Console]::SetIn($originalReader) }
+            }
+        }
+        finally {
+            if ($lockTaken) { $mutex.ReleaseMutex() }
+            $mutex.Dispose()
+        }
+    }
+}
+
 function Invoke-EzVmProcess {
     <#
     .SYNOPSIS
@@ -80,6 +155,11 @@ function Invoke-EzVmProcess {
     ThrowOnError is set; a launch failure or timeout always throws. Timeouts have
     a bounded two-second termination grace. On .NET Framework only the direct
     child can be killed. Exception Data includes captured output on non-zero exit.
+    Framework launches briefly use the same console input code page without a
+    preamble and restore its encoding before returning. ezvm launches serialize
+    this adjustment across runspaces; unrelated code must not change the console
+    encoding or input reader concurrently. Hosts that cannot update a required
+    encoding fail clearly and can use current PowerShell 7 without this adjustment.
     #>
     [CmdletBinding()]
     param(
@@ -144,7 +224,8 @@ function Invoke-EzVmProcess {
     $timeoutMilliseconds = $TimeoutSeconds * 1000
     try {
         try {
-            $started = $process.Start()
+            $remaining = [int] [Math]::Max(0, $timeoutMilliseconds - $clock.ElapsedMilliseconds)
+            Start-EzVmProcessWithoutInputPreamble -Process $process -TimeoutMilliseconds $remaining -Started ([ref] $started)
             if (-not $started) { throw 'The operating system did not create a child process.' }
         }
         catch {
@@ -155,7 +236,8 @@ function Invoke-EzVmProcess {
 
         $stdoutTask = $process.StandardOutput.ReadToEndAsync()
         $stderrTask = $process.StandardError.ReadToEndAsync()
-        $process.StandardInput.Close()
+        # Close the pipe itself: no characters or encoding preamble are input.
+        $process.StandardInput.BaseStream.Close()
         $remaining = [int] [Math]::Max(0, $timeoutMilliseconds - $clock.ElapsedMilliseconds)
         $exited = $process.WaitForExit($remaining)
         $drained = $false

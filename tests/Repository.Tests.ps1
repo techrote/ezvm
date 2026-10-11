@@ -7,13 +7,24 @@ function Invoke-EzVmFixtureGit {
 }
 
 function New-EzVmRepositoryFixture {
+    param([switch]$UseCrlf)
+
     $root = New-EzVmTestDirectory -Prefix 'tracked repository fixture'
     try {
-        foreach ($relative in @('.github', '.gitignore', 'README.md', 'AGENTS.md', 'docs', 'ezvm.ps1', 'src', 'config', 'tests', 'scripts')) {
+        foreach ($relative in @('.github', '.gitattributes', '.gitignore', 'README.md', 'AGENTS.md', 'docs', 'ezvm.ps1', 'src', 'config', 'tests', 'scripts')) {
             Copy-Item -LiteralPath (Join-Path $script:EzVmRepositoryRoot $relative) -Destination $root -Recurse -Force
+        }
+        if ($UseCrlf) {
+            foreach ($file in (Get-ChildItem -LiteralPath $root -File -Recurse -Force)) {
+                $content = [IO.File]::ReadAllText($file.FullName).Replace("`r`n", "`n").Replace("`n", "`r`n")
+                [IO.File]::WriteAllText($file.FullName, $content, (New-Object Text.UTF8Encoding($false)))
+            }
         }
         Invoke-EzVmFixtureGit -Root $root -Arguments @('init', '--quiet')
         Invoke-EzVmFixtureGit -Root $root -Arguments @('config', 'core.autocrlf', 'false')
+        # .gitattributes normalizes source text into the index. Allow that intended
+        # CRLF conversion without warnings; real whitespace checks remain enabled.
+        Invoke-EzVmFixtureGit -Root $root -Arguments @('config', 'core.safecrlf', 'false')
         Invoke-EzVmFixtureGit -Root $root -Arguments @('add', '--all', '--force')
         return $root
     }
@@ -50,6 +61,21 @@ Add-EzVmTest -Name 'Repository: ignored untracked runtime state does not contami
         [void][IO.Directory]::CreateDirectory($runtime)
         [IO.File]::WriteAllText((Join-Path $runtime 'fixture.qcow2'), 'synthetic ignored fixture, not a disk')
         $null = Test-EzVmRepositoryContract -Root $root
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'Repository: CRLF materialization normalizes to LF while genuine trailing whitespace still fails' -ScriptBlock {
+    $root = New-EzVmRepositoryFixture -UseCrlf
+    try {
+        $readme = [IO.File]::ReadAllText((Join-Path $root 'README.md'))
+        Assert-EzVmTrue -Condition ($readme.Contains("`r`n")) -Message 'The regression fixture must actually contain Windows CRLF bytes.'
+        $eol = @(& git -C $root ls-files --eol -- README.md) -join ''
+        Assert-EzVmEqual -Actual $LASTEXITCODE -Expected 0
+        Assert-EzVmTrue -Condition ($eol -match 'i/lf\s+w/crlf') -Message 'Git must store LF while the fixture working tree retains CRLF.'
+        $null = Test-EzVmRepositoryContract -Root $root
+        $null = Add-EzVmTrackedFixtureFile -Root $root -RelativePath 'notes/crlf-trailing.txt' -Content "genuine trailing space `r`n"
+        Assert-EzVmThrows -ScriptBlock { Test-EzVmRepositoryContract -Root $root } -MessagePattern 'git diff.*check' | Out-Null
     }
     finally { Remove-EzVmTestDirectory -Path $root }
 }
