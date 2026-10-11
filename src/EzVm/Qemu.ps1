@@ -340,6 +340,10 @@ function Install-EzVmQemuRuntime {
         if ($null -eq $probe -or -not $probe.QemuSystemVersion -or -not $probe.QemuImgVersion) {
             throw 'QEMU payload probe did not return validated version evidence.'
         }
+        if ([string]$probe.QemuSystemVersion -notmatch [regex]::Escape($manifest.qemu.expectedVersionPrefix) -or
+            [string]$probe.QemuImgVersion -notmatch [regex]::Escape($manifest.qemu.expectedVersionPrefix)) {
+            throw "QEMU payload probe did not confirm reviewed version prefix '$($manifest.qemu.expectedVersionPrefix)'."
+        }
 
         $provenance = [pscustomobject][ordered]@{
             schemaVersion = 1
