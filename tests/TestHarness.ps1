@@ -95,7 +95,7 @@ function Remove-EzVmTestDirectory {
 function New-EzVmCheckoutFixture {
     param([string]$Prefix = 'portable checkout')
     $root = New-EzVmTestDirectory -Prefix $Prefix
-    foreach ($relativePath in @('ezvm.ps1', 'src', 'config', 'manifests')) {
+    foreach ($relativePath in @('ezvm.ps1', 'src', 'config', 'manifests', 'guest')) {
         $source = Join-Path $script:EzVmRepositoryRoot $relativePath
         if (Test-Path -LiteralPath $source) {
             Copy-Item -LiteralPath $source -Destination $root -Recurse -Force
