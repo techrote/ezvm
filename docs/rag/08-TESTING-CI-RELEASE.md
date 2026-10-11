@@ -187,4 +187,3 @@ reviewed artifacts. The initial EZVM-002 verification proved the verified
 7zr -> full 7-Zip -> QEMU NSIS extraction chain and real QEMU/qemu-img version
 probes. WHPX execution is not part of this issue's PASS evidence and remains
 explicitly unclaimed.
-
