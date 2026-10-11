@@ -345,6 +345,11 @@ function Install-EzVmQemuRuntime {
             throw "QEMU payload probe did not confirm reviewed version prefix '$($manifest.qemu.expectedVersionPrefix)'."
         }
 
+        if ([string]$probe.QemuSystemVersion -notmatch [regex]::Escape($manifest.qemu.expectedVersionPrefix) -or
+            [string]$probe.QemuImgVersion -notmatch [regex]::Escape($manifest.qemu.expectedVersionPrefix)) {
+            throw "QEMU payload probe did not confirm reviewed version prefix '$($manifest.qemu.expectedVersionPrefix)'."
+        }
+
         $provenance = [pscustomobject][ordered]@{
             schemaVersion = 1
             manifestSha256 = $manifestDigest
