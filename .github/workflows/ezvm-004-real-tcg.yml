@@ -15,6 +15,10 @@ on:
       - manifests/qemu-windows.json
       - manifests/ubuntu-noble-amd64.json
 
+concurrency:
+  group: ezvm-004-real-tcg-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
