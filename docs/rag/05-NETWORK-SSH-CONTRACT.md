@@ -131,3 +131,26 @@ v0.1 does not automatically configure:
 - inbound port forwarding other than explicitly managed localhost forwards.
 
 These may be future opt-in features.
+
+## Implemented base-build seed transport (EZVM-004)
+
+Prepared-base construction uses a minimal TCP HTTP implementation rather than
+Windows HTTP.sys, so normal use does not require URL reservations or elevation.
+The listener binds explicitly to `127.0.0.1` on an ephemeral host port.
+
+QEMU user networking maps the fixed guest-only endpoint
+`10.0.2.100:8000` to that loopback listener with `guestfwd`. SMBIOS carries
+`ds=nocloud;s=http://10.0.2.100:8000/`; the trailing slash is mandatory.
+
+The seed server:
+
+- serves only `GET`/`HEAD` for exactly `/user-data` and `/meta-data`;
+- returns 404 for every other path and 405 for unsupported methods;
+- uses no directory traversal or generic file serving;
+- has a bounded lifetime controlled by the build timeout;
+- does not log user-data or meta-data bodies.
+
+The base-build path deliberately has no SSH host forwarding and no build SSH key.
+Outbound user-mode networking remains available so Ubuntu package acquisition can
+complete.
+
