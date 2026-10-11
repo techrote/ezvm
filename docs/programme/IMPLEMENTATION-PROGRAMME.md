@@ -116,20 +116,20 @@ EZVM-006..010
 
 ## Issue catalogue
 
-| Code | Title | Depends on | Primary outcome |
-| --- | --- | --- | --- |
-| EZVM-001 | Repository foundation, CLI skeleton and CI contract | none | Testable PowerShell project skeleton and baseline CI |
-| EZVM-002 | Portable QEMU acquisition and Windows host preflight | 001 | Verified repository-local QEMU plus doctor |
-| EZVM-003 | Pinned Ubuntu cloud-image acquisition and verification | 001 | Immutable verified source-image cache |
-| EZVM-004 | Reproducible prepared-base builder with cloud-init | 002, 003 | Rebuildable coding-agent base image |
-| EZVM-005 | QCOW2 overlay lifecycle and integrity tooling | 004 | Create/inspect/reset-safe thin disks |
-| EZVM-006 | Headless QEMU runtime, state machine and graceful shutdown | 002, 005 | Reliable VM start/status/stop |
-| EZVM-007 | User-mode networking, SSH readiness, exec and file transfer | 006 | Usable headless guest control |
-| EZVM-008 | Instance registry, resource profiles and concurrent port allocation | 005, 007 | Multiple safe concurrent named agents |
-| EZVM-009 | Guest coding-agent provisioning profile and readiness contract | 004, 007 | Useful repeatable coding environment |
-| EZVM-010 | Clone, reset, export, import and relocation-safe portability | 005, 008 | Practical disposable/copyable VM workflow |
-| EZVM-011 | Security hardening, secret boundaries and failure recovery | 006-010 | Fail-closed destructive operations and recovery |
-| EZVM-012 | End-to-end qualification, packaging and v0.1 release | 011 | Release evidence and portable package workflow |
+| Code | GitHub | Title | Depends on | Primary outcome |
+| --- | --- | --- | --- | --- |
+| EZVM-001 | [#2](https://github.com/techrote/ezvm/issues/2) | Repository foundation, CLI skeleton and CI contract | none | Testable PowerShell project skeleton and baseline CI |
+| EZVM-002 | [#3](https://github.com/techrote/ezvm/issues/3) | Portable QEMU acquisition and Windows host preflight | 001 | Verified repository-local QEMU plus doctor |
+| EZVM-003 | [#4](https://github.com/techrote/ezvm/issues/4) | Pinned Ubuntu cloud-image acquisition and verification | 001 | Immutable verified source-image cache |
+| EZVM-004 | [#5](https://github.com/techrote/ezvm/issues/5) | Reproducible prepared-base builder with cloud-init | 002, 003 | Rebuildable coding-agent base image |
+| EZVM-005 | [#6](https://github.com/techrote/ezvm/issues/6) | QCOW2 overlay lifecycle and integrity tooling | 004 | Create/inspect/reset-safe thin disks |
+| EZVM-006 | [#7](https://github.com/techrote/ezvm/issues/7) | Headless QEMU runtime, state machine and graceful shutdown | 002, 005 | Reliable VM start/status/stop |
+| EZVM-007 | [#8](https://github.com/techrote/ezvm/issues/8) | User-mode networking, SSH readiness, exec and file transfer | 006 | Usable headless guest control |
+| EZVM-008 | [#9](https://github.com/techrote/ezvm/issues/9) | Instance registry, resource profiles and concurrent port allocation | 005, 007 | Multiple safe concurrent named agents |
+| EZVM-009 | [#10](https://github.com/techrote/ezvm/issues/10) | Guest coding-agent provisioning profile and readiness contract | 004, 007 | Useful repeatable coding environment |
+| EZVM-010 | [#11](https://github.com/techrote/ezvm/issues/11) | Clone, reset, export, import and relocation-safe portability | 005, 008 | Practical disposable/copyable VM workflow |
+| EZVM-011 | [#12](https://github.com/techrote/ezvm/issues/12) | Security hardening, secret boundaries and failure recovery | 006-010 | Fail-closed destructive operations and recovery |
+| EZVM-012 | [#13](https://github.com/techrote/ezvm/issues/13) | End-to-end qualification, packaging and v0.1 release | 011 | Release evidence and portable package workflow |
 
 ## Parallelism
 
