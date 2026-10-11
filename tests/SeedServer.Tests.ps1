@@ -17,7 +17,54 @@ function Read-EzVmSeedHttpFixtureResponse {
             if ($null -eq $line) { throw 'Seed fixture response ended before its header terminator.' }
             if ($line.Length -eq 0) { break }
             $headers.Add($line)
-            if ($line -match '^Content-Length:\s*(?<length>[0-9]+)
+            if ($line -match '^Content-Length:\s*(?<length>[0-9]+)$') {
+                $contentLength = [int]$Matches['length']
+            }
+        }
+
+        $bodyBuilder = New-Object Text.StringBuilder
+        if ($ExpectBody) {
+            for ($index = 0; $index -lt $contentLength; $index++) {
+                $value = $reader.Read()
+                if ($value -lt 0) { throw 'Seed fixture response ended before Content-Length characters were available.' }
+                [void]$bodyBuilder.Append([char]$value)
+            }
+        }
+
+        $crlf = [char]13 + [char]10
+        return $status + $crlf + ([string]::Join($crlf, $headers.ToArray())) + $crlf + $crlf + $bodyBuilder.ToString()
+    }
+    finally { $reader.Dispose() }
+}
+
+function Invoke-EzVmSeedHttpFixture {
+    param([object]$Server, [string]$RequestLine)
+
+    $client = New-Object Net.Sockets.TcpClient
+    $stream = $null
+    try {
+        $client.Connect('127.0.0.1', $Server.Port)
+        $stream = $client.GetStream()
+        $crlf = [char]13 + [char]10
+        $request = $RequestLine + $crlf + 'Host: seed.local' + $crlf + 'Connection: keep-alive' + $crlf + $crlf
+        $bytes = [Text.Encoding]::ASCII.GetBytes($request)
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Flush()
+        $deadline = [DateTime]::UtcNow.AddSeconds(2)
+        $handled = 0
+        while ($handled -eq 0 -and [DateTime]::UtcNow -lt $deadline) {
+            $handled = Invoke-EzVmSeedServerPending -Server $Server -MaxRequests 1
+            if ($handled -eq 0) { Start-Sleep -Milliseconds 10 }
+        }
+        Assert-EzVmEqual -Actual $handled -Expected 1 -Message 'Seed fixture request was not handled within two seconds.'
+        return Read-EzVmSeedHttpFixtureResponse -Stream $stream -ExpectBody:(-not $RequestLine.StartsWith('HEAD ', [StringComparison]::Ordinal))
+    }
+    finally {
+        if ($null -ne $stream) { $stream.Dispose() }
+        $client.Dispose()
+    }
+}
+
 Add-EzVmTest -Name 'Seed server: binds exclusively to loopback and serves only active seed files' -ScriptBlock {
     $server = Start-EzVmSeedServer -UserData 'user fixture' -MetaData 'meta fixture' -TimeoutSeconds 30
     try {
