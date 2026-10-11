@@ -15,9 +15,15 @@ write_files:
       #!/bin/sh
       set -eu
 
-      while systemctl is-active --quiet cloud-final.service; do
-        sleep 1
-      done
+      if ! cloud-init status --wait >/tmp/ezvm-cloud-init-status.txt 2>&1; then
+        failure="$(printf '%s' 'cloud-init did not reach successful completion' | base64 -w0)"
+        printf 'EZVM_BASE_FAILURE_B64=%s\n' "$failure" > /dev/ttyS0 || true
+        cat /tmp/ezvm-cloud-init-status.txt > /dev/ttyS0 2>/dev/null || true
+        sync
+        systemctl poweroff || poweroff -f
+        exit 1
+      fi
+      rm -f /tmp/ezvm-cloud-init-status.txt
 
       missing=""
       for command_name in __REQUIRED_COMMANDS__; do
