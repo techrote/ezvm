@@ -223,4 +223,3 @@ accepted. Hosted execution may use TCG to prove real Ubuntu cloud-init,
 guestfwd/SMBIOS seed discovery, package provisioning, cleanup and qemu-img
 flattening. Such evidence is an orchestration PASS only. WHPX remains an explicit
 capability SKIP until it runs on a suitable Windows host.
-
