@@ -286,4 +286,3 @@ Add-EzVmTest -Name 'QEMU: atomic runtime promotion retries transient Windows-sty
     }
     finally { Remove-EzVmTestDirectory -Path $root }
 }
-
