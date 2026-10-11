@@ -39,33 +39,49 @@ A TCG fallback must be visible in status/output. Never silently degrade from WHP
 
 Do not commit QEMU binaries to git.
 
-The bootstrap implementation downloads a specific Windows build recorded in manifests/qemu-windows.json and verifies the recorded cryptographic digest before executing or extracting it.
-
-QEMU upstream currently directs Windows users to Stefan Weil's Windows binaries:
+QEMU upstream directs Windows users to Stefan Weil's Windows builds:
 
 - https://www.qemu.org/download/#windows
 - https://qemu.weilnetz.de/w64/
 
-The provider publishes installer digest files alongside installers. The manifest must pin an exact artifact and expected digest rather than scraping "latest" at normal runtime.
+Those builds are distributed as Windows installer artifacts with published digest files. The installer packaging is NSIS and its normal install path requests administrative execution and writes system installation/uninstall metadata. That behavior is inappropriate for ezvm's repository-local portable runtime.
 
-The Windows installer supports unattended local-directory installation in existing ecosystem usage. Implementation must verify the exact command behavior against the pinned installer before relying on it.
+Therefore **normal ezvm bootstrap must not execute the QEMU installer**.
 
-The runtime destination is inside runtime/qemu. ezvm must invoke QEMU by absolute path and must not depend on PATH mutation.
+Instead, bootstrap must:
+
+1. read a reviewed manifest that pins an exact QEMU Windows installer URL, filename and cryptographic digest;
+2. download into a temporary/cache path;
+3. verify the expected digest before treating the artifact as trusted;
+4. obtain a reviewed, pinned standalone 7-Zip extractor artifact such as 7zr from an official 7-Zip source and verify its expected digest before execution;
+5. use that extractor to unpack the verified NSIS QEMU package into staging without running the installer;
+6. identify and preserve the actual QEMU payload, required DLL/data/firmware files and licensing material;
+7. execute only the extracted QEMU tools for bounded version/functional validation;
+8. atomically promote the validated staged runtime into runtime/qemu.
+
+7-Zip documents support for unpacking NSIS archives. The implementation must verify the extraction layout of the exact pinned QEMU artifact rather than depending on an assumed directory tree.
+
+Neither the QEMU package nor the extractor is committed to git.
+
+Normal bootstrap must not require elevation, write the registry, mutate PATH or create system-wide uninstall state. Enabling Windows Hypervisor Platform remains a separate host prerequisite that may require administrator action.
+
+The runtime destination is inside runtime/qemu. ezvm invokes QEMU tools by an absolute path derived from the current ezvm root.
 
 ## Version/provenance recording
 
 After bootstrap, record at least:
 
 - manifest schema version;
-- provider URL;
-- downloaded filename;
-- expected digest;
-- observed digest;
+- QEMU provider URL and downloaded filename;
+- expected and observed QEMU artifact digest;
+- extractor provider URL and downloaded filename;
+- expected and observed extractor digest;
+- extractor version where discoverable;
 - qemu-system-x86_64 version output;
 - qemu-img version output;
 - bootstrap timestamp.
 
-Mismatch between installed runtime and manifest is a doctor warning or error according to whether compatibility is known.
+Mismatch between installed runtime and reviewed manifests is a doctor warning or error according to whether compatibility is known.
 
 ## Host preflight
 
@@ -120,3 +136,5 @@ Do not embed the original absolute ezvm root into portable instance configuratio
 - QEMU download: https://www.qemu.org/download/
 - QEMU Windows builds: https://qemu.weilnetz.de/w64/
 - QEMU invocation: https://www.qemu.org/docs/master/system/qemu-manpage.html
+- 7-Zip: https://www.7-zip.org/
+- 7-Zip download: https://www.7-zip.org/download.html
