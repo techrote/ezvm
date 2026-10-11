@@ -20,6 +20,7 @@ function Start-EzVmSeedServer {
         StartedAt = $startedAt
         DeadlineUtc = $startedAt.AddSeconds($TimeoutSeconds)
         RequestCount = 0
+        RequestPaths = New-Object 'System.Collections.Generic.List[string]'
         Clients = New-Object 'System.Collections.Generic.List[object]'
         Closed = $false
     }
@@ -137,11 +138,17 @@ function Complete-EzVmSeedPendingRequest {
         return $true
     }
 
+    $Server.RequestPaths.Add($target)
     if ($target -ceq '/user-data') {
         Write-EzVmSeedHttpResponse -Stream $State.Stream -StatusCode 200 -Reason 'OK' -Method $method -Body $Server.UserData
     }
     elseif ($target -ceq '/meta-data') {
         Write-EzVmSeedHttpResponse -Stream $State.Stream -StatusCode 200 -Reason 'OK' -Method $method -Body $Server.MetaData
+    }
+    elseif ($target -ceq '/vendor-data' -or $target -ceq '/network-config') {
+        # Current NoCloud probes both standard optional files. Empty 200 responses
+        # avoid long datasource retry delays while preserving DHCP networking.
+        Write-EzVmSeedHttpResponse -Stream $State.Stream -StatusCode 200 -Reason 'OK' -Method $method -Body ''
     }
     else {
         Write-EzVmSeedHttpResponse -Stream $State.Stream -StatusCode 404 -Reason 'Not Found' -Method $method
