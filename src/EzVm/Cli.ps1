@@ -45,7 +45,7 @@ function Invoke-EzVmCommand {
     if ($tokens.Count -gt 0) {
         $command = (($tokens.ToArray() | ForEach-Object { $_.ToLowerInvariant() }) -join ' ')
     }
-    $valid = @('help', 'version', 'bootstrap', 'doctor')
+    $valid = @('help', 'version', 'bootstrap', 'doctor', 'base acquire')
     if ($jsonCount -gt 1 -or [string]::IsNullOrWhiteSpace($command) -or $valid -cnotcontains $command) {
         $errorCode = if ($tokens.Count -gt 0 -and $valid -cnotcontains $command) { 'unknown_command' } else { 'invalid_arguments' }
         $errorCommand = 'help'
@@ -65,6 +65,9 @@ function Invoke-EzVmCommand {
         'doctor' {
             $data = Get-EzVmDoctorReport -Root $Root
         }
+        'base acquire' {
+            $data = Invoke-EzVmSourceImageAcquire -Root $Root
+        }
         'help' {
             $data = [pscustomobject][ordered]@{
                 name = 'ezvm'
@@ -75,8 +78,9 @@ function Invoke-EzVmCommand {
                     [pscustomobject]@{ name = 'version'; description = 'Show the control-plane version.' }
                     [pscustomobject]@{ name = 'doctor'; description = 'Report Windows, WHPX, storage and managed-QEMU prerequisites.' }
                     [pscustomobject]@{ name = 'bootstrap'; description = 'Install the reviewed QEMU runtime into this ezvm root without system installation.' }
+                    [pscustomobject]@{ name = 'base acquire'; description = 'Acquire and verify the pinned Ubuntu Noble amd64 source image.' }
                 )
-                stage = 'Portable QEMU bootstrap and host preflight are implemented; guest-image and VM lifecycle work is delivered by later issues.'
+                stage = 'Portable QEMU bootstrap, host preflight and verified Ubuntu source acquisition are implemented; prepared-base and VM lifecycle work is delivered by later issues.'
             }
         }
     }
@@ -113,6 +117,13 @@ function Write-EzVmResult {
                 }
             }
             Write-Output ('  WHPX execution tested: false (doctor reports prerequisites only).')
+        }
+        'base acquire' {
+            $verb = if ($Result.data.downloaded) { 'Acquired' } else { 'Verified cached' }
+            Write-Output ("$verb Ubuntu source image:")
+            Write-Output ("  $($Result.data.path)")
+            Write-Output ("  SHA-256 $($Result.data.sha256)")
+            Write-Output ("  publication $($Result.data.publication)")
         }
         'help' {
             Write-Output ("ezvm $($Result.data.version)")

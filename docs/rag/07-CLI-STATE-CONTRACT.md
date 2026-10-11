@@ -265,3 +265,17 @@ absolute managed QEMU paths. Structured output uses the standard result envelope
 Known missing configuration takes precedence over unknown optional evidence, and
 unsupported host requirements take highest precedence. WHPX remediation is printed
 as guidance only; no command path performs elevation or feature enablement.
+
+## Source-image CLI (EZVM-003)
+
+`base acquire` is a two-token public command. It accepts the global `-Json`
+switch in the same manner as `help` and `version`.
+
+Human output identifies whether the image was newly acquired or an already valid
+cache entry was reused, followed by its managed path, SHA-256 and publication.
+Structured output uses the normal command-result envelope and returns the same
+source identity in `data`.
+
+Acquisition creates only generated state beneath `runtime/cache/source-images`.
+It does not load mutable guest state, boot QEMU or modify the verified source
+image.

@@ -4,8 +4,9 @@ Portable, disposable QEMU + QCOW2 coding-agent environments for Windows hosts.
 
 ## Current state
 
-**EZVM-001 provides the control-plane foundation and EZVM-002 adds portable QEMU
-bootstrap plus Windows host preflight; the project remains version `0.0.0-dev`.**
+**EZVM-001 provides the control-plane foundation, EZVM-002 adds portable QEMU
+bootstrap plus Windows host preflight, and EZVM-003 adds verified Ubuntu source
+acquisition; the project remains version `0.0.0-dev`.**
 The checkout has reviewed QEMU/7-Zip manifests, repository-local verified runtime
 bootstrap, `doctor`, and automated tests under Windows PowerShell 5.1 and
 PowerShell 7.
@@ -17,6 +18,7 @@ The commands available on this branch are:
 .\ezvm.ps1 version
 .\ezvm.ps1 doctor
 .\ezvm.ps1 bootstrap
+.\ezvm.ps1 base acquire
 ~~~
 
 Running with no command also shows help. Unknown commands and malformed arguments
@@ -45,7 +47,13 @@ indicators, WHPX feature state, managed QEMU, runtime writeability, path/disk
 conditions and visible stale runtime state. It never enables WHPX and never claims
 that WHPX execution succeeded merely from feature detection.
 
-Ubuntu image acquisition and VM lifecycle commands are delivered by subsequent
+`base acquire` downloads the exact reviewed Ubuntu 24.04 LTS Noble amd64 release
+image into `runtime/cache/source-images`, verifies its repository-reviewed SHA-256
+before atomic promotion, and records provenance beside it. Matching cached content
+is rehashed and reused; corrupt or partial content is never accepted as authoritative.
+The source image is not booted or modified by acquisition.
+
+Prepared-base construction and VM lifecycle commands are delivered by subsequent
 programme issues. Version `0.0.0-dev` is not the v0.1 release.
 
 ## Planned target experience
