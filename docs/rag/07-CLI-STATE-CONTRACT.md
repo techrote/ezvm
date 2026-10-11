@@ -279,3 +279,19 @@ source identity in `data`.
 Acquisition creates only generated state beneath `runtime/cache/source-images`.
 It does not load mutable guest state, boot QEMU or modify the verified source
 image.
+
+## Prepared-base CLI (EZVM-004)
+
+`base build` is now a public two-token command. Production CLI execution uses
+WHPX and refuses prerequisite failure; it does not silently substitute TCG.
+Hosted qualification may call the module build function with explicit
+`Accelerator tcg`, and that accelerator is recorded in base provenance.
+
+On success, human output reports the content-addressed base ID, image/manifest
+paths, SHA-256 and actual accelerator. Structured output uses the normal JSON
+envelope.
+
+Prepared-base durable state is `runtime/bases/<base-id>/base.qcow2` plus
+`manifest.json`. The manifest contains no relocatable absolute paths. Temporary
+`.build-*` and `.publish-*` directories are not authoritative bases.
+
