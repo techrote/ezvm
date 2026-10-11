@@ -1,0 +1,147 @@
+# 08 — Testing, CI and release contract
+
+## Test philosophy
+
+The control plane should be highly testable without booting a VM. QEMU integration then verifies the boundaries that mocks cannot.
+
+Every implementation issue owns tests for the behavior it adds.
+
+## Required CI layers
+
+### Repository contract
+
+Fast checks on every PR:
+
+- expected authority/RAG files exist;
+- issue-code programme remains coherent;
+- forbidden generated/binary runtime artifacts are not tracked;
+- JSON manifests/configs parse;
+- PowerShell source has no obvious syntax errors.
+
+### PowerShell unit tests
+
+Run the supported control-plane tests under Windows PowerShell 5.1.
+
+Also run under current PowerShell 7 where practical to prevent accidental incompatibility in either direction.
+
+Use a pinned Pester release or another explicitly versioned test harness rather than an unbounded latest dependency.
+
+### Pure lifecycle tests
+
+Without QEMU, test:
+
+- instance-name validation;
+- path normalization and relocation;
+- config precedence;
+- state-machine transitions;
+- PID/process identity decisions using fixtures/mocks;
+- port allocation collisions;
+- QEMU/qemu-img argument arrays;
+- destructive-path guards;
+- schema migration/refusal.
+
+### Tool-boundary tests
+
+With a managed or fixture QEMU toolchain where reasonable, test:
+
+- qemu-img create/info output handling;
+- one-level backing validation;
+- flatten/export behavior on synthetic small images;
+- malformed chain rejection.
+
+### VM integration
+
+Bounded integration may use TCG on CI if WHPX is unavailable.
+
+Integration should prove the orchestration path, not performance.
+
+When the runner does not expose nested virtualization/WHPX:
+
+- record a clear SKIP for WHPX execution;
+- still test WHPX capability detection and argument construction;
+- never report WHPX runtime PASS.
+
+## Network tests
+
+Tests cover:
+
+- SSH hostfwd binds 127.0.0.1;
+- unique port allocation;
+- seed guestfwd construction;
+- seed server rejects unexpected paths;
+- timeouts terminate cleanly.
+
+Do not require public inbound network access in CI.
+
+## Portability tests
+
+Use temporary roots with:
+
+- spaces;
+- long-ish directory names;
+- changed root prefix;
+- simulated drive-style paths where possible.
+
+Verify no persistent configuration unnecessarily captures the old absolute root.
+
+## Safety tests
+
+Explicit regression tests are required for:
+
+- refusing reset/export/clone when running;
+- stale PID detection;
+- deletion path escaping runtime root;
+- broken backing path;
+- base digest mismatch;
+- unexpected chain depth;
+- download digest mismatch;
+- SSH identity mismatch.
+
+## PR gate
+
+A PR is mergeable only when all required automated checks are green.
+
+Capability-based skips must be visible in logs and justified by runner capability, not by test failure.
+
+Agents wait at approximately 120-second intervals when monitoring CI rather than tight-loop polling.
+
+## Release contents
+
+A normal GitHub release should contain the small ezvm control-plane package/source, manifests and documentation.
+
+Do not casually redistribute third-party QEMU or Ubuntu binaries inside the release artifact. Normal bootstrap obtains pinned external artifacts from their documented providers.
+
+A user's already-bootstrapped ezvm working directory can itself be copied between their machines as cold portable state.
+
+## Release evidence
+
+v0.1 release notes must state:
+
+- commit/tag;
+- supported host/guest baseline;
+- pinned QEMU provider/version;
+- pinned Ubuntu source release/digest identity;
+- CI results;
+- which accelerator integration was actually executed;
+- known limitations;
+- migration compatibility for state schema.
+
+## Release acceptance scenario
+
+A documented clean-host scenario must cover:
+
+1. clone/unpack ezvm;
+2. doctor;
+3. bootstrap QEMU;
+4. acquire Ubuntu source;
+5. build prepared base;
+6. create/start instance;
+7. authenticated SSH/exec;
+8. create/start second concurrent instance;
+9. stop/restart;
+10. reset one;
+11. stateful clone/export;
+12. cold relocation to another root;
+13. re-run doctor and start after relocation.
+
+Where CI cannot execute a platform capability, retain automation for every surrounding contract and document the unexercised capability precisely.

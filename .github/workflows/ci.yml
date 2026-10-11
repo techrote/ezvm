@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  repository-contract:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate programme and RAG contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $required = @(
+            'README.md',
+            'AGENTS.md',
+            'docs/programme/IMPLEMENTATION-PROGRAMME.md',
+            'docs/rag/README.md',
+            'docs/rag/00-PROJECT-CHARTER.md',
+            'docs/rag/01-ARCHITECTURE.md',
+            'docs/rag/02-HOST-QEMU-CONTRACT.md',
+            'docs/rag/03-QCOW2-STATE-CONTRACT.md',
+            'docs/rag/04-GUEST-BOOTSTRAP-CONTRACT.md',
+            'docs/rag/05-NETWORK-SSH-CONTRACT.md',
+            'docs/rag/06-SECURITY-PORTABILITY-CONTRACT.md',
+            'docs/rag/07-CLI-STATE-CONTRACT.md',
+            'docs/rag/08-TESTING-CI-RELEASE.md'
+          )
+
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Missing required repository authority file: $path"
+            }
+          }
+
+          $programme = Get-Content -LiteralPath 'docs/programme/IMPLEMENTATION-PROGRAMME.md' -Raw
+          1..12 | ForEach-Object {
+            $code = 'EZVM-{0:d3}' -f $_
+            if ($programme -notmatch [regex]::Escape($code)) {
+              throw "Programme is missing $code"
+            }
+          }
+
+          $forbidden = @(
+            '\.qcow2$',
+            '\.img$',
+            '\.iso$',
+            '\.vhdx?$',
+            '\.ova$',
+            '\.exe$',
+            '\.msi$',
+            '\.key$',
+            '\.pem$'
+          )
+
+          $tracked = @(git ls-files)
+          foreach ($file in $tracked) {
+            foreach ($pattern in $forbidden) {
+              if ($file -match $pattern) {
+                throw "Forbidden generated/binary/secret-like artifact is tracked: $file"
+              }
+            }
+          }
+
+          git diff --check HEAD^ HEAD
+          if ($LASTEXITCODE -ne 0) {
+            throw 'git diff --check failed'
+          }

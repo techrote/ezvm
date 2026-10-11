@@ -1,0 +1,38 @@
+# ezvm generated/runtime state
+runtime/
+.ezvm/
+cache/
+artifacts/
+
+# VM and installer payloads
+*.qcow2
+*.img
+*.iso
+*.vhd
+*.vhdx
+*.ova
+*.exe
+*.msi
+*.zip
+*.7z
+
+# Runtime identity and secrets
+*.pem
+*.key
+*.pid
+*.sock
+*.token
+.env
+.env.*
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.swp
+Thumbs.db
+.DS_Store
+
+# Test output
+TestResults/
+coverage/
