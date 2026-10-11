@@ -165,4 +165,3 @@ and reused idempotently.
 `doctor` is diagnostic only. In particular, feature detection never establishes
 that WHPX execution itself has succeeded; physical/local accelerator qualification
 remains a later release gate.
-
