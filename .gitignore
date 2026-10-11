@@ -6,19 +6,47 @@ artifacts/
 
 # VM and installer payloads
 *.qcow2
+*.qcow
 *.img
 *.iso
 *.vhd
 *.vhdx
+*.vmdk
+*.vdi
+*.raw
 *.ova
+*.ovf
+*.dmg
 *.exe
 *.msi
+*.msix
+*.msp
+*.dll
+*.so
+*.so.*
+*.dylib
+*.bin
 *.zip
 *.7z
+*.rar
+*.tar
+*.tgz
+*.gz
+*.bz2
+*.xz
+*.zst
 
 # Runtime identity and secrets
 *.pem
 *.key
+*.p12
+*.pfx
+*.ppk
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+ssh_host_*_key
 *.pid
 *.sock
 *.token
