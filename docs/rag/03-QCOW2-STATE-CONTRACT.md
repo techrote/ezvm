@@ -153,4 +153,3 @@ Only after those checks and manifest validation does a prepared base move into i
 authoritative `base-<sha256>` directory. A build or flatten failure leaves no
 authoritative base. Non-authoritative `.build-*` staging is retained with
 `failure.json` where possible so diagnosis does not require destructive repair.
-
