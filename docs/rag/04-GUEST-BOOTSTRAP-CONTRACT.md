@@ -201,4 +201,3 @@ The host accepts no base unless the serial evidence proves:
 - guest OS and cloud-init version facts were returned.
 
 This avoids treating a mere QEMU exit as provisioning success.
-
