@@ -44,9 +44,19 @@ Add-EzVmTest -Name 'Seed server: binds exclusively to loopback and serves only a
         Assert-EzVmTrue -Condition ($meta -match '^HTTP/1\.1 200 OK')
         Assert-EzVmTrue -Condition ($meta.EndsWith('meta fixture', [StringComparison]::Ordinal))
 
-        $unknown = Invoke-EzVmSeedHttpFixture -Server $server -RequestLine 'GET /vendor-data HTTP/1.1'
+        $vendor = Invoke-EzVmSeedHttpFixture -Server $server -RequestLine 'GET /vendor-data HTTP/1.1'
+        Assert-EzVmTrue -Condition ($vendor -match '^HTTP/1\.1 200 OK')
+        Assert-EzVmTrue -Condition ($vendor -match 'Content-Length: 0')
+        Assert-EzVmTrue -Condition ($vendor -notmatch 'user fixture|meta fixture')
+
+        $network = Invoke-EzVmSeedHttpFixture -Server $server -RequestLine 'GET /network-config HTTP/1.1'
+        Assert-EzVmTrue -Condition ($network -match '^HTTP/1\.1 200 OK')
+        Assert-EzVmTrue -Condition ($network -match 'Content-Length: 0')
+
+        $unknown = Invoke-EzVmSeedHttpFixture -Server $server -RequestLine 'GET /unexpected HTTP/1.1'
         Assert-EzVmTrue -Condition ($unknown -match '^HTTP/1\.1 404 Not Found')
         Assert-EzVmTrue -Condition ($unknown -notmatch 'user fixture|meta fixture')
+        Assert-EzVmEqual -Actual @($server.RequestPaths.ToArray()) -Expected @('/user-data', '/meta-data', '/vendor-data', '/network-config', '/unexpected')
     }
     finally { Stop-EzVmSeedServer -Server $server }
 }
