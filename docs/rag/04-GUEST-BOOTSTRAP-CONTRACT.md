@@ -181,11 +181,14 @@ room for the baseline packages.
 
 Base provisioning does not create or inject an ezvm SSH controller key. Instead,
 the guest reports build qualification through its emulated serial console. The
-cloud-init `runcmd` starts a transient systemd unit; that unit waits until
-`cloud-final.service` has finished, validates the baseline commands, records
-guest OS/cloud-init identity, removes SSH host keys and any authorized-key files,
-cleans cloud-init state and machine identity, emits explicit build/TOOLS/CLEAN/READY
-markers, then powers off.
+cloud-init `runcmd` queues a transient `Type=oneshot` systemd unit with
+`systemd-run --no-block`; the non-blocking launch is mandatory because the
+finalizer itself waits on `cloud-init status --wait`. A blocking oneshot launch
+would deadlock cloud-final against that completion wait. Once cloud-init is done,
+the finalizer validates the baseline commands, records guest OS/cloud-init
+identity, removes SSH host keys and any authorized-key files, cleans cloud-init
+state and machine identity, emits explicit build/TOOLS/CLEAN/READY markers, then
+powers off.
 
 The cleanup path uses `cloud-init clean --logs --machine-id`, which cloud-init
 documents as golden-image practice. Where the guest cloud-init version exposes
