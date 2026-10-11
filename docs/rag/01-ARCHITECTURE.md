@@ -182,4 +182,3 @@ guest and image checks pass. Publication uses a separate
 The base ID is content-addressed by the complete resulting QCOW2 SHA-256, so an ID
 is never intentionally reused for different content. A byte-identical rebuild may
 reuse an already validated authoritative base without replacing it.
-
