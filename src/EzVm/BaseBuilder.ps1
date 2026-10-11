@@ -406,7 +406,7 @@ function Write-EzVmBaseFailureEvidence {
     catch { }
 }
 
-function Build-EzVmPreparedBase {
+function Invoke-EzVmBaseBuild {
     [CmdletBinding()]
     param(
         [string]$Root = $script:EzVmDefaultRoot,
