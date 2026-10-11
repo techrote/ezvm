@@ -1,0 +1,135 @@
+# 03 — QCOW2 state contract
+
+## Purpose
+
+QCOW2 is the persistence mechanism that makes ezvm instances cheap, disposable and portable. Disk operations are therefore safety-critical.
+
+Primary references:
+
+- https://www.qemu.org/docs/master/system/images.html
+- https://www.qemu.org/docs/master/tools/qemu-img.html
+- https://www.qemu.org/docs/master/interop/qcow2.html
+
+## v0.1 chain invariant
+
+Exactly one backing level is supported:
+
+~~~text
+immutable prepared base <- mutable instance overlay
+~~~
+
+An instance overlay must never be used as the backing file for another managed instance overlay.
+
+## Base immutability
+
+Once an overlay has been created against a prepared base, that base is immutable.
+
+Never:
+
+- boot the base writable;
+- modify it in place;
+- replace its contents while preserving its base ID;
+- run qemu-img commit from an instance into the base.
+
+A changed base is a new base with a new base ID and provenance manifest.
+
+## Overlay creation
+
+QEMU documents that a relative backing filename is resolved relative to the directory containing the new image.
+
+The implementation should use the functional equivalent of:
+
+~~~text
+qemu-img create -f qcow2 -F qcow2 -b <relative-base-path> <instance-overlay>
+~~~
+
+The exact stored backing path must be inspected after creation and must remain valid after moving the complete ezvm root.
+
+Do not use unsafe backing creation merely to suppress path errors.
+
+## Chain validation before start
+
+Before QEMU starts an instance, validate at least:
+
+- overlay exists;
+- overlay format is qcow2;
+- backing format is qcow2;
+- backing file resolves inside the managed ezvm runtime root;
+- resolved backing file is the base recorded by instance.json;
+- base manifest exists;
+- base fingerprint/provenance matches recorded instance metadata;
+- qemu-img can enumerate the complete backing chain;
+- chain depth is exactly the v0.1 expected depth.
+
+Use machine-readable qemu-img output where available instead of parsing human output.
+
+## Integrity checks
+
+qemu-img info --backing-chain is the normal structural inspection tool.
+
+qemu-img check is allowed only on stopped images and should be used for explicit diagnostic/repair workflows, not blindly on every start.
+
+Repair operations must not be automatic unless the operation is proven non-destructive and the user requested repair.
+
+## Reset
+
+Reset means discard the mutable overlay and create a fresh overlay against the same immutable base.
+
+Safe reset sequence:
+
+1. prove the instance is stopped;
+2. validate the intended base;
+3. create the replacement overlay at a temporary path;
+4. validate the replacement chain;
+5. atomically replace or rename according to Windows filesystem semantics;
+6. remove old mutable state only after replacement succeeds;
+7. clear stale runtime state.
+
+A failed reset must leave either the original usable overlay or a clearly recoverable backup. It must not silently leave a half-created active disk.
+
+## Clone semantics
+
+Two clone meanings must remain distinct.
+
+### Thin clone from clean base
+
+Create a new empty overlay against the same prepared base. This creates a fresh environment, not a copy of the source instance state.
+
+### Stateful clone
+
+Create an independent disk containing the source instance's current guest-visible content. The source must be stopped. Use qemu-img conversion/flattening semantics so the new result does not depend on the source instance overlay.
+
+Do not implement a child overlay of the source instance as a shortcut.
+
+## Export semantics
+
+Export is for backing-independent portability.
+
+A stopped instance may be exported to a standalone qcow2 image using qemu-img convert. The export must be validated as having no backing file.
+
+An export manifest records source instance, base ID, creation time, qemu-img version and digest.
+
+## Import semantics
+
+Import never trusts a filename alone.
+
+Validate format, backing status, size and manifest. A standalone imported image may need normalization into ezvm's managed layout. It must not introduce an unexpected external backing path.
+
+## Relocation
+
+Moving the complete stopped ezvm root must preserve relative backing relationships without rebase.
+
+If validation discovers a broken backing path after an unsupported partial move, ezvm must fail closed and explain the expected base location. v0.1 should prefer reconstructing a known relative relationship over unsafe qemu-img rebase.
+
+## Running-image prohibition
+
+While QEMU owns an image, do not:
+
+- reset;
+- clone through offline qemu-img;
+- export through offline qemu-img;
+- rebase;
+- check/repair;
+- copy the file as a consistent backup.
+
+The lifecycle subsystem is the authority for whether an instance is safely stopped.
