@@ -61,7 +61,7 @@ function Write-EzVmSeedHttpResponse {
     $header = "HTTP/1.1 $StatusCode $Reason" + $crlf +
         'Content-Type: text/plain; charset=utf-8' + $crlf +
         "Content-Length: $($bodyBytes.Length)" + $crlf +
-        'Connection: close' + $crlf +
+        'Connection: keep-alive' + $crlf +
         'Cache-Control: no-store' + $crlf + $crlf
     $headerBytes = [Text.Encoding]::ASCII.GetBytes($header)
     $Stream.Write($headerBytes, 0, $headerBytes.Length)
@@ -82,6 +82,7 @@ function Add-EzVmSeedPendingClients {
             Client = $client
             Stream = $client.GetStream()
             Buffer = New-Object System.IO.MemoryStream
+            CloseAfterResponse = $false
             Closed = $false
         })
         $accepted++
@@ -108,12 +109,21 @@ function Complete-EzVmSeedPendingRequest {
 
     if ($State.Buffer.Length -gt 16384) {
         Write-EzVmSeedHttpResponse -Stream $State.Stream -StatusCode 431 -Reason 'Request Header Fields Too Large' -Method GET
+        $State.CloseAfterResponse = $true
         return $true
     }
 
     $text = [Text.Encoding]::ASCII.GetString($State.Buffer.ToArray())
     $boundary = [regex]::Match($text, '(?s)^(?<headers>.*?)\r?\n\r?\n')
     if (-not $boundary.Success) { return $false }
+
+    $allBytes = $State.Buffer.ToArray()
+    $remainingCount = $allBytes.Length - $boundary.Length
+    $State.Buffer.Position = 0
+    $State.Buffer.SetLength(0)
+    if ($remainingCount -gt 0) {
+        $State.Buffer.Write($allBytes, $boundary.Length, $remainingCount)
+    }
 
     $lines = @($boundary.Groups['headers'].Value -split '\r?\n')
     if ($lines.Count -eq 0 -or [string]::IsNullOrWhiteSpace($lines[0])) {
@@ -177,23 +187,36 @@ function Invoke-EzVmSeedServerPending {
         if ($state.Closed) { continue }
 
         try {
-            while ($state.Stream.DataAvailable) {
-                $read = $state.Stream.Read($buffer, 0, $buffer.Length)
-                if ($read -le 0) { break }
-                $state.Buffer.Write($buffer, 0, $read)
-                if ($state.Buffer.Length -gt 16384) { break }
+            while ($handled -lt $MaxRequests -and -not $state.Closed) {
+                while ($state.Stream.DataAvailable) {
+                    $read = $state.Stream.Read($buffer, 0, $buffer.Length)
+                    if ($read -le 0) { break }
+                    $state.Buffer.Position = $state.Buffer.Length
+                    $state.Buffer.Write($buffer, 0, $read)
+                    if ($state.Buffer.Length -gt 16384) { break }
+                }
+
+                if (Complete-EzVmSeedPendingRequest -Server $Server -State $state) {
+                    $handled++
+                    $Server.RequestCount++
+                    if ($state.CloseAfterResponse) {
+                        Close-EzVmSeedPendingClient -State $state
+                        break
+                    }
+                    # Direct QEMU guestfwd uses one host-side chardev for the VM
+                    # lifetime. Keep it open and parse subsequent HTTP requests
+                    # from the same stream instead of killing forwarding after
+                    # cloud-init's first seed fetch.
+                    continue
+                }
+                break
             }
 
-            if (Complete-EzVmSeedPendingRequest -Server $Server -State $state) {
-                $handled++
-                $Server.RequestCount++
-                Close-EzVmSeedPendingClient -State $state
-                continue
-            }
-
-            $socket = $state.Client.Client
-            if ($socket.Poll(0, [System.Net.Sockets.SelectMode]::SelectRead) -and $socket.Available -eq 0) {
-                Close-EzVmSeedPendingClient -State $state
+            if (-not $state.Closed) {
+                $socket = $state.Client.Client
+                if ($socket.Poll(0, [System.Net.Sockets.SelectMode]::SelectRead) -and $socket.Available -eq 0) {
+                    Close-EzVmSeedPendingClient -State $state
+                }
             }
         }
         catch [System.IO.IOException] {
