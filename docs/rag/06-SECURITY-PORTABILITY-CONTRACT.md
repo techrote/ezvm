@@ -152,4 +152,3 @@ for secret-bearing instance seeds without explicit redaction/cleanup rules.
 Prepared-base manifests store artifact/provisioning hashes and version identities,
 not host absolute paths or credentials. Normal cold relocation therefore derives
 all executable and disk paths again from the moved ezvm root.
-
