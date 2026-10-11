@@ -250,6 +250,53 @@ function Get-EzVmManagedQemuStatus {
     }
 }
 
+function Move-EzVmDirectoryAtomically {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination,
+        [ValidateRange(1, 100)][int]$Attempts = 20,
+        [ValidateRange(0, 5000)][int]$DelayMilliseconds = 250,
+        [scriptblock]$Mover
+    )
+
+    $sourcePath = [IO.Path]::GetFullPath($Source)
+    $destinationPath = [IO.Path]::GetFullPath($Destination)
+    $comparison = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+        [StringComparison]::OrdinalIgnoreCase
+    } else {
+        [StringComparison]::Ordinal
+    }
+    if (-not [string]::Equals([IO.Path]::GetPathRoot($sourcePath), [IO.Path]::GetPathRoot($destinationPath), $comparison)) {
+        throw "Atomic directory promotion requires source and destination on the same filesystem root: '$sourcePath' -> '$destinationPath'."
+    }
+
+    for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+        if (-not [IO.Directory]::Exists($sourcePath)) {
+            throw "Atomic directory promotion source disappeared before completion: '$sourcePath'."
+        }
+        if ([IO.Directory]::Exists($destinationPath) -or [IO.File]::Exists($destinationPath)) {
+            throw "Atomic directory promotion destination already exists: '$destinationPath'."
+        }
+        try {
+            if ($null -ne $Mover) { & $Mover $sourcePath $destinationPath }
+            else { [IO.Directory]::Move($sourcePath, $destinationPath) }
+            return
+        }
+        catch {
+            $leaf = $_.Exception
+            while ($null -ne $leaf.InnerException) { $leaf = $leaf.InnerException }
+            $transient = $leaf -is [IO.IOException] -or $leaf -is [UnauthorizedAccessException]
+            if (-not $transient -or $attempt -eq $Attempts) { throw }
+            if (-not [IO.Directory]::Exists($sourcePath) -or
+                [IO.Directory]::Exists($destinationPath) -or [IO.File]::Exists($destinationPath)) {
+                throw
+            }
+            if ($DelayMilliseconds -gt 0) { Start-Sleep -Milliseconds $DelayMilliseconds }
+        }
+    }
+}
+
 function Install-EzVmQemuRuntime {
     [CmdletBinding()]
     param(
@@ -375,14 +422,14 @@ function Install-EzVmQemuRuntime {
 
         if (Test-Path -LiteralPath $paths.Qemu) {
             $backup = Join-Path $paths.Runtime ('.qemu-backup-' + [Guid]::NewGuid().ToString('N'))
-            [IO.Directory]::Move($paths.Qemu, $backup)
+            Move-EzVmDirectoryAtomically -Source $paths.Qemu -Destination $backup
         }
         try {
-            [IO.Directory]::Move($qemuStage, $paths.Qemu)
+            Move-EzVmDirectoryAtomically -Source $qemuStage -Destination $paths.Qemu
         }
         catch {
             if ($null -ne $backup -and (Test-Path -LiteralPath $backup) -and -not (Test-Path -LiteralPath $paths.Qemu)) {
-                [IO.Directory]::Move($backup, $paths.Qemu)
+                Move-EzVmDirectoryAtomically -Source $backup -Destination $paths.Qemu
                 $backup = $null
             }
             throw
