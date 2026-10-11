@@ -121,7 +121,7 @@ Add-EzVmTest -Name 'CLI: direct File invocation produces clean JSON without a wr
 
 $invalidCliCases = @(
     @{ Name = 'unknown command'; Arguments = @('not-a-command') },
-    @{ Name = 'future command'; Arguments = @('bootstrap') },
+    @{ Name = 'future command'; Arguments = @('create') },
     @{ Name = 'extra positional argument'; Arguments = @('help', 'extra') },
     @{ Name = 'unsupported switch'; Arguments = @('version', '-Unexpected') },
     @{ Name = 'missing command value'; Arguments = @('') }
