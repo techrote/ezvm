@@ -1,34 +1,23 @@
-function Invoke-EzVmSeedHttpFixture {
-    param([object]$Server, [string]$RequestLine)
+function Read-EzVmSeedHttpFixtureResponse {
+    param(
+        [Parameter(Mandatory = $true)][Net.Sockets.NetworkStream]$Stream,
+        [bool]$ExpectBody = $true
+    )
 
-    $client = New-Object Net.Sockets.TcpClient
-    $stream = $null
-    $reader = $null
+    $Stream.ReadTimeout = 2000
+    $reader = New-Object IO.StreamReader($Stream, [Text.Encoding]::UTF8, $false, 1024, $true)
     try {
-        $client.Connect('127.0.0.1', $Server.Port)
-        $stream = $client.GetStream()
-        $crlf = [char]13 + [char]10
-        $request = $RequestLine + $crlf + 'Host: seed.local' + $crlf + 'Connection: close' + $crlf + $crlf
-        $bytes = [Text.Encoding]::ASCII.GetBytes($request)
-        $stream.Write($bytes, 0, $bytes.Length)
-        $stream.Flush()
-        $deadline = [DateTime]::UtcNow.AddSeconds(2)
-        $handled = 0
-        while ($handled -eq 0 -and [DateTime]::UtcNow -lt $deadline) {
-            $handled = Invoke-EzVmSeedServerPending -Server $Server -MaxRequests 1
-            if ($handled -eq 0) { Start-Sleep -Milliseconds 10 }
-        }
-        Assert-EzVmEqual -Actual $handled -Expected 1 -Message 'Seed fixture request was not handled within two seconds.'
-        $reader = New-Object IO.StreamReader($stream, [Text.Encoding]::UTF8, $false, 1024, $true)
-        return $reader.ReadToEnd()
-    }
-    finally {
-        if ($null -ne $reader) { $reader.Dispose() }
-        if ($null -ne $stream) { $stream.Dispose() }
-        $client.Dispose()
-    }
-}
+        $status = $reader.ReadLine()
+        if ([string]::IsNullOrWhiteSpace($status)) { throw 'Seed fixture response omitted an HTTP status line.' }
 
+        $headers = New-Object 'System.Collections.Generic.List[string]'
+        $contentLength = 0
+        while ($true) {
+            $line = $reader.ReadLine()
+            if ($null -eq $line) { throw 'Seed fixture response ended before its header terminator.' }
+            if ($line.Length -eq 0) { break }
+            $headers.Add($line)
+            if ($line -match '^Content-Length:\s*(?<length>[0-9]+)
 Add-EzVmTest -Name 'Seed server: binds exclusively to loopback and serves only active seed files' -ScriptBlock {
     $server = Start-EzVmSeedServer -UserData 'user fixture' -MetaData 'meta fixture' -TimeoutSeconds 30
     try {
@@ -94,11 +83,10 @@ Add-EzVmTest -Name 'Seed server: bounded lifetime expires and closed servers ref
 }
 
 
-Add-EzVmTest -Name 'Seed server: idle guestfwd connection remains non-blocking until request bytes arrive' -ScriptBlock {
+Add-EzVmTest -Name 'Seed server: direct guestfwd connection stays persistent across the complete NoCloud fetch sequence' -ScriptBlock {
     $server = Start-EzVmSeedServer -UserData 'delayed user fixture' -MetaData 'meta fixture' -TimeoutSeconds 30
     $client = New-Object Net.Sockets.TcpClient
     $stream = $null
-    $reader = $null
     try {
         $client.Connect('127.0.0.1', $server.Port)
         $stream = $client.GetStream()
@@ -111,25 +99,35 @@ Add-EzVmTest -Name 'Seed server: idle guestfwd connection remains non-blocking u
         Assert-EzVmEqual -Actual $server.Clients.Count -Expected 1 -Message 'Idle forwarding socket should remain available for later guest bytes.'
 
         $crlf = [char]13 + [char]10
-        $request = 'GET /user-data HTTP/1.1' + $crlf + 'Host: seed.local' + $crlf + $crlf
-        $bytes = [Text.Encoding]::ASCII.GetBytes($request)
-        $stream.Write($bytes, 0, $bytes.Length)
-        $stream.Flush()
+        foreach ($case in @(
+            [pscustomobject]@{ Path = '/meta-data'; ExpectedBody = 'meta fixture' }
+            [pscustomobject]@{ Path = '/user-data'; ExpectedBody = 'delayed user fixture' }
+            [pscustomobject]@{ Path = '/vendor-data'; ExpectedBody = '' }
+            [pscustomobject]@{ Path = '/network-config'; ExpectedBody = '' }
+        )) {
+            $request = 'GET ' + $case.Path + ' HTTP/1.1' + $crlf + 'Host: seed.local' + $crlf + 'Connection: keep-alive' + $crlf + $crlf
+            $bytes = [Text.Encoding]::ASCII.GetBytes($request)
+            $stream.Write($bytes, 0, $bytes.Length)
+            $stream.Flush()
 
-        $deadline = [DateTime]::UtcNow.AddSeconds(2)
-        $handled = 0
-        while ($handled -eq 0 -and [DateTime]::UtcNow -lt $deadline) {
-            $handled = Invoke-EzVmSeedServerPending -Server $server -MaxRequests 1
-            if ($handled -eq 0) { Start-Sleep -Milliseconds 10 }
+            $deadline = [DateTime]::UtcNow.AddSeconds(2)
+            $handled = 0
+            while ($handled -eq 0 -and [DateTime]::UtcNow -lt $deadline) {
+                $handled = Invoke-EzVmSeedServerPending -Server $server -MaxRequests 1
+                if ($handled -eq 0) { Start-Sleep -Milliseconds 10 }
+            }
+            Assert-EzVmEqual -Actual $handled -Expected 1 -Message ('Persistent guestfwd request was not handled: ' + $case.Path)
+            Assert-EzVmEqual -Actual $server.Clients.Count -Expected 1 -Message 'The direct guestfwd host chardev must stay open across seed requests.'
+
+            $response = Read-EzVmSeedHttpFixtureResponse -Stream $stream
+            Assert-EzVmTrue -Condition ($response -match '^HTTP/1\.1 200 OK')
+            Assert-EzVmTrue -Condition ($response.EndsWith($case.ExpectedBody, [StringComparison]::Ordinal))
         }
-        Assert-EzVmEqual -Actual $handled -Expected 1
-        $reader = New-Object IO.StreamReader($stream, [Text.Encoding]::UTF8, $false, 1024, $true)
-        $response = $reader.ReadToEnd()
-        Assert-EzVmTrue -Condition ($response -match '^HTTP/1\.1 200 OK')
-        Assert-EzVmTrue -Condition ($response.EndsWith('delayed user fixture', [StringComparison]::Ordinal))
+
+        Assert-EzVmEqual -Actual $server.RequestCount -Expected 4
+        Assert-EzVmEqual -Actual @($server.RequestPaths.ToArray()) -Expected @('/meta-data', '/user-data', '/vendor-data', '/network-config')
     }
     finally {
-        if ($null -ne $reader) { $reader.Dispose() }
         if ($null -ne $stream) { $stream.Dispose() }
         $client.Dispose()
         Stop-EzVmSeedServer -Server $server
