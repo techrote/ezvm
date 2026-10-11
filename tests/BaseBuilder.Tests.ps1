@@ -292,4 +292,3 @@ Add-EzVmTest -Name 'Base builder: candidate validation fails before authoritativ
     }
     finally { Remove-EzVmBaseBuildFixture $fixture }
 }
-
