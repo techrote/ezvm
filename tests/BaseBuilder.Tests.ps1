@@ -245,15 +245,16 @@ Add-EzVmTest -Name 'Base builder: guest serial facts require READY, tool validat
     $module = Get-Module EzVm
     $buildId = '0123456789abcdef0123456789abcdef'
     $encode = { param($text) [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)) }
-    $lines = @(
-        'EZVM_BASE_BUILD_ID=' + $buildId,
-        'EZVM_BASE_OS_ID_B64=' + (& $encode 'ubuntu'),
-        'EZVM_BASE_OS_VERSION_B64=' + (& $encode '24.04'),
-        'EZVM_BASE_CLOUD_INIT_B64=' + (& $encode 'cloud-init 24.1'),
-        'EZVM_BASE_TOOLS_OK=1',
-        'EZVM_BASE_CLEAN_OK=1',
+    $markerLines = @(
+        ('EZVM_BASE_BUILD_ID=' + $buildId)
+        ('EZVM_BASE_OS_ID_B64=' + (& $encode 'ubuntu'))
+        ('EZVM_BASE_OS_VERSION_B64=' + (& $encode '24.04'))
+        ('EZVM_BASE_CLOUD_INIT_B64=' + (& $encode 'cloud-init 24.1'))
+        'EZVM_BASE_TOOLS_OK=1'
+        'EZVM_BASE_CLEAN_OK=1'
         'EZVM_BASE_READY=1'
-    ) -join [Environment]::NewLine
+    )
+    $lines = [string]::Join([Environment]::NewLine, [string[]]$markerLines)
     $facts = & $module { param($text, $id) Get-EzVmBaseGuestFacts -SerialText $text -BuildId $id } $lines $buildId
     Assert-EzVmEqual -Actual $facts.OsId -Expected 'ubuntu'
     Assert-EzVmEqual -Actual $facts.CloudInitVersion -Expected 'cloud-init 24.1'
