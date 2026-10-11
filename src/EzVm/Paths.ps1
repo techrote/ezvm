@@ -32,6 +32,8 @@ function Get-EzVmPaths {
     $cache = Join-Path $runtime 'cache'
     $config = Join-Path $resolvedRoot 'config'
     $manifests = Join-Path $resolvedRoot 'manifests'
+    $guest = Join-Path $resolvedRoot 'guest'
+    $baseCloudInit = Join-Path $guest 'base-cloud-init'
     # Pure path calculation: reading help/configuration never creates runtime directories.
     return [pscustomobject][ordered]@{
         Root = $resolvedRoot
@@ -40,6 +42,11 @@ function Get-EzVmPaths {
         Manifests = $manifests
         QemuManifest = Join-Path $manifests 'qemu-windows.json'
         UbuntuManifest = Join-Path $manifests 'ubuntu-noble-amd64.json'
+        Guest = $guest
+        BaseCloudInit = $baseCloudInit
+        BaseBaseline = Join-Path $baseCloudInit 'baseline.json'
+        BaseUserDataTemplate = Join-Path $baseCloudInit 'user-data.yaml'
+        BaseMetaDataTemplate = Join-Path $baseCloudInit 'meta-data.yaml'
         Runtime = $runtime
         UserConfig = Join-Path $runtime 'config.json'
         Qemu = Join-Path $runtime 'qemu'

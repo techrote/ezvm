@@ -1,0 +1,100 @@
+name: EZVM-004 real TCG qualification
+
+on:
+  push:
+    branches:
+      - ezvm-004-base-builder
+    paths:
+      - .github/workflows/ezvm-004-real-tcg.yml
+      - guest/base-cloud-init/**
+      - src/EzVm/BaseBuilder.ps1
+      - src/EzVm/BaseRecipe.ps1
+      - src/EzVm/SeedServer.ps1
+      - src/EzVm/Qemu.ps1
+      - src/EzVm/SourceImage.ps1
+      - manifests/qemu-windows.json
+      - manifests/ubuntu-noble-amd64.json
+
+concurrency:
+  group: ezvm-004-real-tcg-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  real-base-build:
+    name: Real Ubuntu base build (Windows TCG; WHPX SKIP)
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - name: Checkout reviewed branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bootstrap reviewed portable QEMU
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\ezvm.ps1 bootstrap
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Acquire reviewed Ubuntu Noble source
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\ezvm.ps1 base acquire
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build and validate real prepared base under explicit TCG
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          Import-Module .\src\EzVm\EzVm.psd1 -Force -ErrorAction Stop
+
+          try {
+              $result = Invoke-EzVmBaseBuild -Root $PWD.Path -Accelerator tcg -BuildTimeoutSeconds 2400
+          }
+          catch {
+              Write-Host 'EZVM_REAL_TCG_DIAGNOSTICS_BEGIN'
+              Get-ChildItem -LiteralPath .\runtime\bases -Directory -Filter '.build-*' -ErrorAction SilentlyContinue | ForEach-Object {
+                  $serial = Join-Path $_.FullName 'serial.log'
+                  $failure = Join-Path $_.FullName 'failure.json'
+                  Write-Host ('STAGING=' + $_.FullName)
+                  if (Test-Path -LiteralPath $failure) {
+                      Write-Host 'FAILURE_JSON_BEGIN'
+                      Get-Content -LiteralPath $failure -Raw | Write-Host
+                      Write-Host 'FAILURE_JSON_END'
+                  }
+                  if (Test-Path -LiteralPath $serial) {
+                      Write-Host 'SERIAL_TAIL_BEGIN'
+                      Get-Content -LiteralPath $serial -Tail 240 | ForEach-Object { Write-Host $_ }
+                      Write-Host 'SERIAL_TAIL_END'
+                  }
+              }
+              Write-Host 'EZVM_REAL_TCG_DIAGNOSTICS_END'
+              throw
+          }
+          $accepted = Test-EzVmPreparedBase -Root $PWD.Path -BaseId $result.baseId
+
+          if ($accepted.Manifest.build.accelerator -cne 'tcg') {
+              throw 'Real qualification did not record explicit TCG execution.'
+          }
+          if ($accepted.Manifest.guest.osId -cne 'ubuntu') {
+              throw "Unexpected guest OS identity: $($accepted.Manifest.guest.osId)"
+          }
+          if ($accepted.Manifest.guest.osVersion -notmatch '^24\.04') {
+              throw "Unexpected Ubuntu version: $($accepted.Manifest.guest.osVersion)"
+          }
+          if (-not $accepted.Manifest.guest.baselineToolsValidated -or -not $accepted.Manifest.guest.identityCleaned) {
+              throw 'Published base lacks real guest tool/identity-cleanup evidence.'
+          }
+
+          Write-Host ('EZVM_REAL_TCG_BASE_PASS=' + $result.baseId)
+          Write-Host ('EZVM_REAL_TCG_SHA256=' + $result.sha256)
+          Write-Host ('EZVM_REAL_GUEST_OS=' + $accepted.Manifest.guest.osId + ' ' + $accepted.Manifest.guest.osVersion)
+          Write-Host ('EZVM_REAL_CLOUD_INIT=' + $accepted.Manifest.guest.cloudInitVersion)
+          Write-Host 'EZVM_WHPX_EXECUTION=SKIP: GitHub-hosted runner qualification uses explicit TCG; no WHPX runtime PASS is claimed.'

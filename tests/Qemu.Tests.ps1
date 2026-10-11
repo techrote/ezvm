@@ -256,3 +256,33 @@ Add-EzVmTest -Name 'QEMU: strict manifest rejects wrong provider host, digest al
     }
     finally { Remove-EzVmTestDirectory -Path $root }
 }
+
+Add-EzVmTest -Name 'QEMU: atomic runtime promotion retries transient Windows-style locks without copy fallback' -ScriptBlock {
+    $root = New-EzVmTestDirectory -Prefix 'qemu atomic promotion retry'
+    try {
+        $source = Join-Path $root 'stage'
+        $destination = Join-Path $root 'runtime'
+        [void][IO.Directory]::CreateDirectory($source)
+        [IO.File]::WriteAllText((Join-Path $source 'marker.txt'), 'fixture')
+        $state = [pscustomobject]@{ Count = 0 }
+        $mover = {
+            param($from, $to)
+            $state.Count++
+            if ($state.Count -lt 3) {
+                throw [UnauthorizedAccessException]::new('synthetic transient scanner lock')
+            }
+            [IO.Directory]::Move($from, $to)
+        }.GetNewClosure()
+
+        $module = Get-Module EzVm
+        & $module {
+            param($from, $to, $move)
+            Move-EzVmDirectoryAtomically -Source $from -Destination $to -Attempts 4 -DelayMilliseconds 0 -Mover $move
+        } $source $destination $mover
+
+        Assert-EzVmEqual -Actual $state.Count -Expected 3
+        Assert-EzVmTrue -Condition (-not (Test-Path -LiteralPath $source))
+        Assert-EzVmTrue -Condition (Test-Path -LiteralPath (Join-Path $destination 'marker.txt') -PathType Leaf)
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}

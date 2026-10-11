@@ -131,3 +131,35 @@ v0.1 does not automatically configure:
 - inbound port forwarding other than explicitly managed localhost forwards.
 
 These may be future opt-in features.
+
+## Implemented base-build seed transport (EZVM-004)
+
+Prepared-base construction uses a minimal TCP HTTP implementation rather than
+Windows HTTP.sys, so normal use does not require URL reservations or elevation.
+The listener binds explicitly to `127.0.0.1` on an ephemeral host port.
+
+QEMU user networking maps the fixed guest-only endpoint
+`10.0.2.100:8000` to that loopback listener with `guestfwd`. SMBIOS carries
+`ds=nocloud;s=http://10.0.2.100:8000/`; the trailing slash is mandatory.
+
+The direct `guestfwd=...-tcp:127.0.0.1:<port>` target is a QEMU chardev that
+persists for the VM lifetime. The seed server therefore keeps that accepted
+host-side TCP connection open and parses multiple sequential HTTP requests from
+the same stream. Closing the host socket after the first seed request would make
+later NoCloud fetches retry against a dead forwarding channel.
+
+The seed server:
+
+- serves only `GET`/`HEAD` for the standard NoCloud paths
+  `/user-data`, `/meta-data`, `/vendor-data`, and `/network-config`;
+- returns the reviewed user/meta content and explicit empty 200 responses for
+  vendor/network data so current cloud-init does not spend its datasource retry
+  budget on absent optional seed files;
+- returns 404 for every other path and 405 for unsupported methods;
+- uses no directory traversal or generic file serving;
+- has a bounded lifetime controlled by the build timeout;
+- records only requested path names/counts for diagnostics, never seed bodies.
+
+The base-build path deliberately has no SSH host forwarding and no build SSH key.
+Outbound user-mode networking remains available so Ubuntu package acquisition can
+complete.

@@ -5,8 +5,9 @@ Portable, disposable QEMU + QCOW2 coding-agent environments for Windows hosts.
 ## Current state
 
 **EZVM-001 provides the control-plane foundation, EZVM-002 adds portable QEMU
-bootstrap plus Windows host preflight, and EZVM-003 adds verified Ubuntu source
-acquisition; the project remains version `0.0.0-dev`.**
+bootstrap plus Windows host preflight, EZVM-003 adds verified Ubuntu source
+acquisition, and EZVM-004 adds reproducible prepared-base construction; the
+project remains version `0.0.0-dev`.**
 The checkout has reviewed QEMU/7-Zip manifests, repository-local verified runtime
 bootstrap, `doctor`, and automated tests under Windows PowerShell 5.1 and
 PowerShell 7.
@@ -19,6 +20,7 @@ The commands available on this branch are:
 .\ezvm.ps1 doctor
 .\ezvm.ps1 bootstrap
 .\ezvm.ps1 base acquire
+.\ezvm.ps1 base build
 ~~~
 
 Running with no command also shows help. Unknown commands and malformed arguments
@@ -53,8 +55,20 @@ before atomic promotion, and records provenance beside it. Matching cached conte
 is rehashed and reused; corrupt or partial content is never accepted as authoritative.
 The source image is not booted or modified by acquisition.
 
-Prepared-base construction and VM lifecycle commands are delivered by subsequent
-programme issues. Version `0.0.0-dev` is not the v0.1 release.
+`base build` validates the managed QEMU runtime and verified Ubuntu source, boots
+only a temporary QCOW2 overlay, feeds build-specific NoCloud data through a
+loopback-only HTTP listener and QEMU `guestfwd`, validates the baseline toolset,
+cleans cloud-init/machine/SSH identity, then flattens and checks a standalone
+QCOW2. Accepted bases are content-addressed by their complete SHA-256, carry a
+provenance manifest, and are marked read-only under `runtime/bases/<base-id>/`.
+Failed builds retain non-authoritative staging evidence for diagnosis.
+
+The reviewed build process is reproducible in configuration/provenance terms; it
+does not claim byte-for-byte reproducibility when Ubuntu package repository state
+or timestamps differ between builds.
+
+Instance overlay and VM lifecycle commands are delivered by subsequent programme
+issues. Version `0.0.0-dev` is not the v0.1 release.
 
 ## Planned target experience
 

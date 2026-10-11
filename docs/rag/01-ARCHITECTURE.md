@@ -161,3 +161,24 @@ Multiple instances may run simultaneously. Any resource allocated globally withi
 ## Compatibility philosophy
 
 Configuration and state schemas carry schemaVersion fields. Breaking changes require an explicit migration path or a clear refusal with remediation. Silent reinterpretation of old state is not allowed.
+
+## Implemented prepared-base builder (EZVM-004)
+
+The prepared-base builder is split into reviewed recipe generation, loopback seed
+transport, stateful staging, guest qualification and immutable publication.
+
+Repository authority for the baseline is under `guest/base-cloud-init/`:
+
+- `baseline.json` defines the stable package/command set and build resources;
+- `user-data.yaml` is the reviewed cloud-init template;
+- `meta-data.yaml` supplies a build-specific NoCloud instance identity.
+
+A build creates only temporary state under `runtime/bases/.build-<id>/` until all
+guest and image checks pass. Publication uses a separate
+`runtime/bases/.publish-<id>/` directory and a same-volume directory rename into
+`runtime/bases/base-<full-sha256>/`. The authoritative directory contains only
+`base.qcow2` and `manifest.json`; both are marked read-only before publication.
+
+The base ID is content-addressed by the complete resulting QCOW2 SHA-256, so an ID
+is never intentionally reused for different content. A byte-identical rebuild may
+reuse an already validated authoritative base without replacing it.

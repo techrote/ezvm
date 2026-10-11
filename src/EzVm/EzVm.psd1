@@ -23,6 +23,15 @@
         'Get-EzVmSourceImageManifest',
         'Invoke-EzVmSourceImageAcquire',
         'Get-EzVmVerifiedSourceImage',
+        'Start-EzVmSeedServer',
+        'Invoke-EzVmSeedServerPending',
+        'Stop-EzVmSeedServer',
+        'Get-EzVmBaseRecipe',
+        'Get-EzVmBaseProvisioningDigest',
+        'New-EzVmBaseSeedData',
+        'New-EzVmBaseQemuArguments',
+        'Invoke-EzVmBaseBuild',
+        'Test-EzVmPreparedBase',
         'Invoke-EzVmCommand',
         'Write-EzVmResult'
     )

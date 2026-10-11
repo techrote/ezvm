@@ -43,8 +43,8 @@ Add-EzVmTest -Name 'CLI: help and empty input provide human usage' -ScriptBlock 
         Assert-EzVmEqual -Actual $result.StandardError -Expected ''
         Assert-EzVmTrue -Condition ($result.StandardOutput -match 'Usage:.*ezvm\.ps1')
         Assert-EzVmTrue -Condition ($result.StandardOutput -match 'help' -and $result.StandardOutput -match 'version')
-        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'doctor' -and $result.StandardOutput -match 'bootstrap' -and $result.StandardOutput -match 'base acquire') -Message 'Help must list all implemented host and source-acquisition commands.'
-        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'later issues') -Message 'Help must distinguish implemented tooling from later VM work.'
+        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'doctor' -and $result.StandardOutput -match 'bootstrap' -and $result.StandardOutput -match 'base acquire' -and $result.StandardOutput -match 'base build') -Message 'Help must list all implemented host, source and prepared-base commands.'
+        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'instance lifecycle') -Message 'Help must distinguish implemented prepared-base tooling from later instance lifecycle work.'
     }
 }
 
@@ -181,6 +181,22 @@ Add-EzVmTest -Name 'CLI: a broken checkout has a clean JSON execution-failure re
         Assert-EzVmEqual -Actual $value.exitCode -Expected 1
         Assert-EzVmEqual -Actual $value.error.code -Expected 'execution_failed'
         Assert-EzVmTrue -Condition ($value.error.message -match 'checkout')
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+
+Add-EzVmTest -Name 'CLI: base build is a real command and fails cleanly before mutation when QEMU is absent' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'base build CLI without runtime'
+    try {
+        $result = Invoke-EzVmCliForTest -ArgumentList @('base', 'build', '-Json') -Root $root
+        Assert-EzVmEqual -Actual $result.ExitCode -Expected 1
+        Assert-EzVmEqual -Actual $result.StandardError -Expected ''
+        $value = $result.StandardOutput | ConvertFrom-Json -ErrorAction Stop
+        Assert-EzVmEqual -Actual $value.success -Expected $false
+        Assert-EzVmEqual -Actual $value.error.code -Expected 'execution_failed'
+        Assert-EzVmTrue -Condition ($value.error.message -match 'bootstrap') -Message 'Missing QEMU must have actionable bootstrap remediation.'
+        Assert-EzVmTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $root 'runtime/bases'))) -Message 'Prerequisite failure must happen before base staging is created.'
     }
     finally { Remove-EzVmTestDirectory -Path $root }
 }
