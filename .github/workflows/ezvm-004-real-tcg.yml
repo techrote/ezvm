@@ -6,6 +6,14 @@ on:
       - ezvm-004-base-builder
     paths:
       - .github/workflows/ezvm-004-real-tcg.yml
+      - guest/base-cloud-init/**
+      - src/EzVm/BaseBuilder.ps1
+      - src/EzVm/BaseRecipe.ps1
+      - src/EzVm/SeedServer.ps1
+      - src/EzVm/Qemu.ps1
+      - src/EzVm/SourceImage.ps1
+      - manifests/qemu-windows.json
+      - manifests/ubuntu-noble-amd64.json
 
 permissions:
   contents: read
@@ -43,7 +51,29 @@ jobs:
           $ProgressPreference = 'SilentlyContinue'
           Import-Module .\src\EzVm\EzVm.psd1 -Force -ErrorAction Stop
 
-          $result = Invoke-EzVmBaseBuild -Root $PWD.Path -Accelerator tcg -BuildTimeoutSeconds 2400
+          try {
+              $result = Invoke-EzVmBaseBuild -Root $PWD.Path -Accelerator tcg -BuildTimeoutSeconds 2400
+          }
+          catch {
+              Write-Host 'EZVM_REAL_TCG_DIAGNOSTICS_BEGIN'
+              Get-ChildItem -LiteralPath .\runtime\bases -Directory -Filter '.build-*' -ErrorAction SilentlyContinue | ForEach-Object {
+                  $serial = Join-Path $_.FullName 'serial.log'
+                  $failure = Join-Path $_.FullName 'failure.json'
+                  Write-Host ('STAGING=' + $_.FullName)
+                  if (Test-Path -LiteralPath $failure) {
+                      Write-Host 'FAILURE_JSON_BEGIN'
+                      Get-Content -LiteralPath $failure -Raw | Write-Host
+                      Write-Host 'FAILURE_JSON_END'
+                  }
+                  if (Test-Path -LiteralPath $serial) {
+                      Write-Host 'SERIAL_TAIL_BEGIN'
+                      Get-Content -LiteralPath $serial -Tail 240 | ForEach-Object { Write-Host $_ }
+                      Write-Host 'SERIAL_TAIL_END'
+                  }
+              }
+              Write-Host 'EZVM_REAL_TCG_DIAGNOSTICS_END'
+              throw
+          }
           $accepted = Test-EzVmPreparedBase -Root $PWD.Path -BaseId $result.baseId
 
           if ($accepted.Manifest.build.accelerator -cne 'tcg') {
