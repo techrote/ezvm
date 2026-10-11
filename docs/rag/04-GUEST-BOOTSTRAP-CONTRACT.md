@@ -147,3 +147,27 @@ Readiness requires:
 Provisioning failure preserves logs and the staging overlay for diagnosis where safe.
 
 A failed or partially provisioned staging disk must never be promoted to an immutable prepared base.
+
+## Implemented source acquisition contract (EZVM-003)
+
+`manifests/ubuntu-noble-amd64.json` is the reviewed v0.1 source authority. The
+initial accepted pin is Canonical's dated Noble publication `20260926`,
+`ubuntu-24.04-server-cloudimg-amd64.img`, with SHA-256
+`6a81c37564db9b1ee84e141922625e1d7c5b389b99bb3c572e0243607d5bb4d2`.
+
+`ezvm base acquire` downloads only to a unique temporary file under the managed
+source-image cache, verifies the repository-reviewed digest, then atomically moves
+verified bytes to the authoritative cache path. A valid cached object is rehashed
+and reused without network access. A corrupt cache object is removed before
+reacquisition; an interrupted or mismatching transfer leaves no corrupt object at
+the authoritative path.
+
+A sidecar provenance JSON records the reviewed manifest digest, provider,
+release/publication identity, source URL, image digest, size and recording time.
+The source image itself is not booted or modified by acquisition. "Immutable"
+therefore means a managed policy enforced by repeated content verification and by
+later consumers treating the source as read-only input; it does not depend on a
+filesystem read-only attribute.
+
+A checksum downloaded alongside the image is never runtime trust authority.
+Updating the image pin requires a reviewed repository manifest change.

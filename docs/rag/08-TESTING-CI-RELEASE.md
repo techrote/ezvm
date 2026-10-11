@@ -187,3 +187,16 @@ reviewed artifacts. The initial EZVM-002 verification proved the verified
 7zr -> full 7-Zip -> QEMU NSIS extraction chain and real QEMU/qemu-img version
 probes. WHPX execution is not part of this issue's PASS evidence and remains
 explicitly unclaimed.
+
+## EZVM-003 acquisition coverage
+
+Normal pull-request CI exercises source acquisition entirely with deterministic
+small fixtures. The suite covers matching and mismatching digests, interrupted
+downloads, atomic promotion, cached-good idempotency, corrupt-cache replacement
+and failure, roots containing spaces, strict manifest/release/architecture
+validation, malformed provenance recovery and source-image non-mutation.
+
+Normal CI deliberately does not download the multi-hundred-megabyte Ubuntu image.
+The reviewed manifest digest is provider-reconciled when the manifest changes;
+provider revalidation is separate evidence and never substitutes a freshly
+downloaded checksum for the reviewed repository pin.

@@ -43,8 +43,8 @@ Add-EzVmTest -Name 'CLI: help and empty input provide human usage' -ScriptBlock 
         Assert-EzVmEqual -Actual $result.StandardError -Expected ''
         Assert-EzVmTrue -Condition ($result.StandardOutput -match 'Usage:.*ezvm\.ps1')
         Assert-EzVmTrue -Condition ($result.StandardOutput -match 'help' -and $result.StandardOutput -match 'version')
-        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'doctor' -and $result.StandardOutput -match 'bootstrap') -Message 'Help must list the implemented host commands.'
-        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'later issues') -Message 'Help must distinguish implemented host tooling from later VM work.'
+        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'doctor' -and $result.StandardOutput -match 'bootstrap' -and $result.StandardOutput -match 'base acquire') -Message 'Help must list all implemented host and source-acquisition commands.'
+        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'later issues') -Message 'Help must distinguish implemented tooling from later VM work.'
     }
 }
 
