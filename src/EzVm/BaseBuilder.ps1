@@ -273,7 +273,9 @@ function Invoke-EzVmBaseProvisioningVm {
 
         if (-not $handle.Process.HasExited) {
             Stop-EzVmBaseQemuProcess -Handle $handle
-            throw "Prepared-base guest provisioning exceeded its $TimeoutSeconds second timeout."
+            $paths = @($SeedServer.RequestPaths.ToArray())
+            $pathSummary = if ($paths.Count -eq 0) { 'none' } else { ($paths -join ', ') }
+            throw "Prepared-base guest provisioning exceeded its $TimeoutSeconds second timeout. Seed requests handled: $($SeedServer.RequestCount); paths: $pathSummary."
         }
 
         $result = Complete-EzVmBaseQemuProcess -Handle $handle
