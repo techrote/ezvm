@@ -193,10 +193,16 @@ function Test-EzVmQemuPayload {
 
 function Get-EzVmManagedQemuStatus {
     [CmdletBinding()]
-    param([string]$Root = $script:EzVmDefaultRoot, [object]$Manifest)
+    param(
+        [string]$Root = $script:EzVmDefaultRoot,
+        [object]$Manifest,
+        [string]$ManifestPath,
+        [scriptblock]$PayloadProbe
+    )
 
     $paths = Get-EzVmPaths -Root $Root
-    if ($null -eq $Manifest) { $Manifest = Get-EzVmQemuManifest -Root $Root }
+    if (-not $PSBoundParameters.ContainsKey('ManifestPath')) { $ManifestPath = $paths.QemuManifest }
+    if ($null -eq $Manifest) { $Manifest = Get-EzVmQemuManifest -Root $Root -ManifestPath $ManifestPath }
     $provenancePath = Join-Path $paths.Qemu 'ezvm-provenance.json'
     $systemPath = Join-Path $paths.Qemu 'qemu-system-x86_64.exe'
     $imgPath = Join-Path $paths.Qemu 'qemu-img.exe'
@@ -207,24 +213,36 @@ function Get-EzVmManagedQemuStatus {
     }
     try {
         $provenance = Read-EzVmJson -Path $provenancePath -SchemaVersion 1
-        $manifestDigest = Get-EzVmFileDigest -Path (Get-EzVmPaths -Root $Root).QemuManifest -Algorithm SHA256
+        $manifestDigest = Get-EzVmFileDigest -Path $ManifestPath -Algorithm SHA256
         $propertyNames = @($provenance.PSObject.Properties | ForEach-Object { $_.Name })
         if ($propertyNames -cnotcontains 'manifestSha256' -or $provenance.manifestSha256 -cne $manifestDigest) {
             return [pscustomobject][ordered]@{ Valid = $false; Reason = 'Managed QEMU provenance does not match the reviewed manifest.'; QemuSystem = $systemPath; QemuImg = $imgPath }
         }
-        $system = Invoke-EzVmProcess -FilePath $systemPath -ArgumentList @('--version') -WorkingDirectory $paths.Qemu -TimeoutSeconds 30 -ThrowOnError
-        $image = Invoke-EzVmProcess -FilePath $imgPath -ArgumentList @('--version') -WorkingDirectory $paths.Qemu -TimeoutSeconds 30 -ThrowOnError
-        if ($system.StdOut -notmatch ('(?m)^QEMU emulator version\s+' + [regex]::Escape($Manifest.qemu.expectedVersionPrefix)) -or
-            $image.StdOut -notmatch ('(?m)^qemu-img version\s+' + [regex]::Escape($Manifest.qemu.expectedVersionPrefix))) {
-            return [pscustomobject][ordered]@{ Valid = $false; Reason = 'Managed QEMU executable versions do not match the reviewed manifest.'; QemuSystem = $systemPath; QemuImg = $imgPath }
+        if ($null -ne $PayloadProbe) {
+            $probe = & $PayloadProbe $paths.Qemu $Manifest.qemu.expectedVersionPrefix
+            if ($null -eq $probe -or -not $probe.QemuSystemVersion -or -not $probe.QemuImgVersion) {
+                return [pscustomobject][ordered]@{ Valid = $false; Reason = 'Managed QEMU fixture probe did not return version evidence.'; QemuSystem = $systemPath; QemuImg = $imgPath }
+            }
+            $systemVersion = [string]$probe.QemuSystemVersion
+            $imageVersion = [string]$probe.QemuImgVersion
+        }
+        else {
+            $system = Invoke-EzVmProcess -FilePath $systemPath -ArgumentList @('--version') -WorkingDirectory $paths.Qemu -TimeoutSeconds 30 -ThrowOnError
+            $image = Invoke-EzVmProcess -FilePath $imgPath -ArgumentList @('--version') -WorkingDirectory $paths.Qemu -TimeoutSeconds 30 -ThrowOnError
+            if ($system.StdOut -notmatch ('(?m)^QEMU emulator version\s+' + [regex]::Escape($Manifest.qemu.expectedVersionPrefix)) -or
+                $image.StdOut -notmatch ('(?m)^qemu-img version\s+' + [regex]::Escape($Manifest.qemu.expectedVersionPrefix))) {
+                return [pscustomobject][ordered]@{ Valid = $false; Reason = 'Managed QEMU executable versions do not match the reviewed manifest.'; QemuSystem = $systemPath; QemuImg = $imgPath }
+            }
+            $systemVersion = ($system.StdOut -split '\r?\n')[0]
+            $imageVersion = ($image.StdOut -split '\r?\n')[0]
         }
         return [pscustomobject][ordered]@{
             Valid = $true
             Reason = 'Managed QEMU runtime matches reviewed provenance and version.'
             QemuSystem = $systemPath
             QemuImg = $imgPath
-            QemuSystemVersion = ($system.StdOut -split '\r?\n')[0]
-            QemuImgVersion = ($image.StdOut -split '\r?\n')[0]
+            QemuSystemVersion = $systemVersion
+            QemuImgVersion = $imageVersion
         }
     }
     catch {
@@ -254,7 +272,9 @@ function Install-EzVmQemuRuntime {
     if (-not $PSBoundParameters.ContainsKey('ManifestPath')) { $ManifestPath = $paths.QemuManifest }
     $manifestDigest = Get-EzVmFileDigest -Path $ManifestPath -Algorithm SHA256
 
-    $installed = Get-EzVmManagedQemuStatus -Root $Root -Manifest $manifest
+    $statusArguments = @{ Root = $Root; Manifest = $manifest; ManifestPath = $ManifestPath }
+    if ($null -ne $PayloadProbe) { $statusArguments.PayloadProbe = $PayloadProbe }
+    $installed = Get-EzVmManagedQemuStatus @statusArguments
     if ($installed.Valid) {
         return [pscustomobject][ordered]@{
             runtimePath = $paths.Qemu
