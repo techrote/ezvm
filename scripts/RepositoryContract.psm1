@@ -58,6 +58,7 @@ function Test-EzVmRepositoryContract {
         'src/EzVm/EzVm.psd1',
         'src/EzVm/EzVm.psm1',
         'config/defaults.json',
+        'manifests/qemu-windows.json',
         'tests/Run-Tests.ps1',
         'tests/TestHarness.ps1',
         'tests/tooling.json',
