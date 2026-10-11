@@ -142,6 +142,12 @@ QEMU user networking maps the fixed guest-only endpoint
 `10.0.2.100:8000` to that loopback listener with `guestfwd`. SMBIOS carries
 `ds=nocloud;s=http://10.0.2.100:8000/`; the trailing slash is mandatory.
 
+The direct `guestfwd=...-tcp:127.0.0.1:<port>` target is a QEMU chardev that
+persists for the VM lifetime. The seed server therefore keeps that accepted
+host-side TCP connection open and parses multiple sequential HTTP requests from
+the same stream. Closing the host socket after the first seed request would make
+later NoCloud fetches retry against a dead forwarding channel.
+
 The seed server:
 
 - serves only `GET`/`HEAD` for the standard NoCloud paths
