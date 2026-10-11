@@ -215,6 +215,8 @@ function New-EzVmBaseQemuArguments {
         $arguments.Add('-cpu')
         $arguments.Add('max')
     }
+    $arguments.Add('-no-user-config')
+    $arguments.Add('-nodefaults')
     $arguments.Add('-no-reboot')
 
     return [pscustomobject][ordered]@{
