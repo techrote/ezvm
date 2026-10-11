@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - ezvm-004-base-builder
+    paths:
+      - .github/workflows/ezvm-004-real-tcg.yml
 
 permissions:
   contents: read
