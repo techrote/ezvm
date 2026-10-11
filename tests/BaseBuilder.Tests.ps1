@@ -123,7 +123,7 @@ Add-EzVmTest -Name 'Base builder: verified staging is flattened, content-address
     $fixture = New-EzVmBaseBuildFixture
     try {
         $sourceBefore = Get-EzVmFileDigest -Path $fixture.SourcePath -Algorithm SHA256
-        $result = Build-EzVmPreparedBase -Root $fixture.Root -Accelerator tcg -BuildTimeoutSeconds 60 -QemuStatusProvider $fixture.QemuStatusProvider -SourceProvider $fixture.SourceProvider -QemuImgRunner $fixture.QemuImgRunner -GuestRunner $fixture.GuestRunner
+        $result = Invoke-EzVmBaseBuild -Root $fixture.Root -Accelerator tcg -BuildTimeoutSeconds 60 -QemuStatusProvider $fixture.QemuStatusProvider -SourceProvider $fixture.SourceProvider -QemuImgRunner $fixture.QemuImgRunner -GuestRunner $fixture.GuestRunner
         Assert-EzVmTrue -Condition ($result.baseId -match '^base-[a-f0-9]{64}$')
         Assert-EzVmEqual -Actual $result.baseId -Expected ('base-' + $result.sha256)
         Assert-EzVmEqual -Actual $result.accelerator -Expected 'tcg'
@@ -148,9 +148,9 @@ Add-EzVmTest -Name 'Base builder: verified staging is flattened, content-address
 Add-EzVmTest -Name 'Base builder: identical final content reuses the content-addressed base without replacement' -ScriptBlock {
     $fixture = New-EzVmBaseBuildFixture
     try {
-        $first = Build-EzVmPreparedBase -Root $fixture.Root -Accelerator tcg -BuildTimeoutSeconds 60 -QemuStatusProvider $fixture.QemuStatusProvider -SourceProvider $fixture.SourceProvider -QemuImgRunner $fixture.QemuImgRunner -GuestRunner $fixture.GuestRunner
+        $first = Invoke-EzVmBaseBuild -Root $fixture.Root -Accelerator tcg -BuildTimeoutSeconds 60 -QemuStatusProvider $fixture.QemuStatusProvider -SourceProvider $fixture.SourceProvider -QemuImgRunner $fixture.QemuImgRunner -GuestRunner $fixture.GuestRunner
         $firstManifest = [IO.File]::ReadAllText($first.manifestPath)
-        $second = Build-EzVmPreparedBase -Root $fixture.Root -Accelerator tcg -BuildTimeoutSeconds 60 -QemuStatusProvider $fixture.QemuStatusProvider -SourceProvider $fixture.SourceProvider -QemuImgRunner $fixture.QemuImgRunner -GuestRunner $fixture.GuestRunner
+        $second = Invoke-EzVmBaseBuild -Root $fixture.Root -Accelerator tcg -BuildTimeoutSeconds 60 -QemuStatusProvider $fixture.QemuStatusProvider -SourceProvider $fixture.SourceProvider -QemuImgRunner $fixture.QemuImgRunner -GuestRunner $fixture.GuestRunner
         Assert-EzVmTrue -Condition $second.reused
         Assert-EzVmEqual -Actual $second.baseId -Expected $first.baseId
         Assert-EzVmEqual -Actual ([IO.File]::ReadAllText($first.manifestPath)) -Expected $firstManifest -Message 'Existing immutable base manifest must not be replaced.'
@@ -163,7 +163,7 @@ Add-EzVmTest -Name 'Base builder: guest provisioning failure never creates an au
     try {
         $failedGuest = { param($context) throw 'synthetic cloud-init failure' }
         Assert-EzVmThrows -ScriptBlock {
-            Build-EzVmPreparedBase -Root $fixture.Root -Accelerator tcg -BuildTimeoutSeconds 60 -QemuStatusProvider $fixture.QemuStatusProvider -SourceProvider $fixture.SourceProvider -QemuImgRunner $fixture.QemuImgRunner -GuestRunner $failedGuest
+            Invoke-EzVmBaseBuild -Root $fixture.Root -Accelerator tcg -BuildTimeoutSeconds 60 -QemuStatusProvider $fixture.QemuStatusProvider -SourceProvider $fixture.SourceProvider -QemuImgRunner $fixture.QemuImgRunner -GuestRunner $failedGuest
         } -MessagePattern 'No authoritative base was promoted.*synthetic cloud-init failure' | Out-Null
         Assert-EzVmEqual -Actual @(Get-ChildItem -LiteralPath $fixture.Paths.Bases -Directory -Filter 'base-*' -Force).Count -Expected 0
         $failed = @(Get-ChildItem -LiteralPath $fixture.Paths.Bases -Directory -Filter '.build-*' -Force)
@@ -189,7 +189,7 @@ Add-EzVmTest -Name 'Base builder: flatten or integrity failure never becomes aut
         }.GetNewClosure()
 
         Assert-EzVmThrows -ScriptBlock {
-            Build-EzVmPreparedBase -Root $fixture.Root -Accelerator tcg -BuildTimeoutSeconds 60 -QemuStatusProvider $fixture.QemuStatusProvider -SourceProvider $fixture.SourceProvider -QemuImgRunner $brokenRunner -GuestRunner $fixture.GuestRunner
+            Invoke-EzVmBaseBuild -Root $fixture.Root -Accelerator tcg -BuildTimeoutSeconds 60 -QemuStatusProvider $fixture.QemuStatusProvider -SourceProvider $fixture.SourceProvider -QemuImgRunner $brokenRunner -GuestRunner $fixture.GuestRunner
         } -MessagePattern 'No authoritative base was promoted.*flatten failure' | Out-Null
         Assert-EzVmEqual -Actual @(Get-ChildItem -LiteralPath $fixture.Paths.Bases -Directory -Filter 'base-*' -Force).Count -Expected 0
     }
@@ -203,14 +203,14 @@ Add-EzVmTest -Name 'Base builder: rejects unverified QEMU and source content bef
         $script:EzVmGuestRan = $false
         $guest = { $script:EzVmGuestRan = $true; throw 'must not launch' }
         Assert-EzVmThrows -ScriptBlock {
-            Build-EzVmPreparedBase -Root $fixture.Root -Accelerator tcg -BuildTimeoutSeconds 60 -QemuStatusProvider $badQemu -SourceProvider $fixture.SourceProvider -QemuImgRunner $fixture.QemuImgRunner -GuestRunner $guest
+            Invoke-EzVmBaseBuild -Root $fixture.Root -Accelerator tcg -BuildTimeoutSeconds 60 -QemuStatusProvider $badQemu -SourceProvider $fixture.SourceProvider -QemuImgRunner $fixture.QemuImgRunner -GuestRunner $guest
         } -MessagePattern 'validated managed QEMU.*provenance mismatch' | Out-Null
         Assert-EzVmTrue -Condition (-not $script:EzVmGuestRan)
 
         $badQemu = $fixture.QemuStatusProvider
         [IO.File]::AppendAllText($fixture.SourcePath, 'tamper')
         Assert-EzVmThrows -ScriptBlock {
-            Build-EzVmPreparedBase -Root $fixture.Root -Accelerator tcg -BuildTimeoutSeconds 60 -QemuStatusProvider $badQemu -SourceProvider $fixture.SourceProvider -QemuImgRunner $fixture.QemuImgRunner -GuestRunner $guest
+            Invoke-EzVmBaseBuild -Root $fixture.Root -Accelerator tcg -BuildTimeoutSeconds 60 -QemuStatusProvider $badQemu -SourceProvider $fixture.SourceProvider -QemuImgRunner $fixture.QemuImgRunner -GuestRunner $guest
         } -MessagePattern 'no longer matches the reviewed manifest' | Out-Null
         Assert-EzVmTrue -Condition (-not $script:EzVmGuestRan)
     }
@@ -220,7 +220,7 @@ Add-EzVmTest -Name 'Base builder: rejects unverified QEMU and source content bef
 Add-EzVmTest -Name 'Base builder: standalone validation rejects an unexpected backing chain' -ScriptBlock {
     $fixture = New-EzVmBaseBuildFixture
     try {
-        $result = Build-EzVmPreparedBase -Root $fixture.Root -Accelerator tcg -BuildTimeoutSeconds 60 -QemuStatusProvider $fixture.QemuStatusProvider -SourceProvider $fixture.SourceProvider -QemuImgRunner $fixture.QemuImgRunner -GuestRunner $fixture.GuestRunner
+        $result = Invoke-EzVmBaseBuild -Root $fixture.Root -Accelerator tcg -BuildTimeoutSeconds 60 -QemuStatusProvider $fixture.QemuStatusProvider -SourceProvider $fixture.SourceProvider -QemuImgRunner $fixture.QemuImgRunner -GuestRunner $fixture.GuestRunner
         $badInfo = {
             param($argumentList)
             $arguments = @($argumentList)
