@@ -53,9 +53,9 @@ Instead, bootstrap must:
 1. read a reviewed manifest that pins an exact QEMU Windows installer URL, filename and cryptographic digest;
 2. download into a temporary/cache path;
 3. verify the expected digest before treating the artifact as trusted;
-4. obtain a reviewed, pinned standalone 7-Zip extractor artifact such as 7zr from an official 7-Zip source and verify its expected digest before execution;
-5. use that extractor to unpack the verified NSIS QEMU package into staging without running the installer;
-6. identify and preserve the actual QEMU payload, required DLL/data/firmware files and licensing material;
+4. obtain a reviewed, pinned official `7zr.exe` bootstrap extractor and a reviewed, pinned official full 7-Zip x64 self-extracting package; verify both expected digests before use;
+5. use verified `7zr.exe` only to unpack the verified full 7-Zip package without installing it, then use its extracted `7z.exe` + `7z.dll` (which contain the NSIS handler absent from reduced 7zr/7za builds) to unpack the verified QEMU NSIS package into staging without running either installer;
+6. identify and preserve the actual QEMU payload, required DLL/data/firmware files and licensing material while dropping NSIS-only installer scaffolding;
 7. execute only the extracted QEMU tools for bounded version/functional validation;
 8. atomically promote the validated staged runtime into runtime/qemu.
 
@@ -138,3 +138,31 @@ Do not embed the original absolute ezvm root into portable instance configuratio
 - QEMU invocation: https://www.qemu.org/docs/master/system/qemu-manpage.html
 - 7-Zip: https://www.7-zip.org/
 - 7-Zip download: https://www.7-zip.org/download.html
+
+## Implemented provider pins and bootstrap (EZVM-002)
+
+The reviewed initial v0.1 host-tool pins are:
+
+- Stefan Weil Windows QEMU provider build `20260811`, QEMU `11.1.0`,
+  `qemu-w64-setup-20260811.exe`, SHA-512
+  `5bcf9eed634e8575a37b74f445af41a2fe4106da512d0c30c368301d4c105037fdfab40a5287367a28a957624cddebbc8c07e16c88ab6634f554cdf3d16bf543`;
+- official 7-Zip `26.04` bootstrap `7zr.exe`, SHA-256
+  `256feca8e274e5da655e2a284fabafd9f554365eb164862089dacd4e8276d282`;
+- official 7-Zip `26.04` x64 package `7z2604-x64.exe`, SHA-256
+  `d54bf805f9f3704d1e8db2fa3498ae7ef2df0312b40b558e7c71c734430a665d`.
+
+A Windows qualification run verified that this exact two-stage extractor chain
+unpacks the pinned QEMU NSIS payload and that the resulting
+`qemu-system-x86_64.exe` and `qemu-img.exe` both report the reviewed 11.1.0
+provider build. Normal PR CI does not repeat the large provider download.
+
+Bootstrap caches verified provider artifacts under `runtime/cache/downloads`,
+stages extraction under `runtime`, performs executable/version and qemu-img
+functional validation, writes reviewed provenance, then uses same-volume directory
+renames to promote the staged runtime. Existing matching provenance is re-probed
+and reused idempotently.
+
+`doctor` is diagnostic only. In particular, feature detection never establishes
+that WHPX execution itself has succeeded; physical/local accelerator qualification
+remains a later release gate.
+
