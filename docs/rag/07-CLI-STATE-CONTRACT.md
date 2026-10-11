@@ -265,4 +265,3 @@ absolute managed QEMU paths. Structured output uses the standard result envelope
 Known missing configuration takes precedence over unknown optional evidence, and
 unsupported host requirements take highest precedence. WHPX remediation is printed
 as guidance only; no command path performs elevation or feature enablement.
-
