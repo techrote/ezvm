@@ -53,7 +53,7 @@ Add-EzVmTest -Name 'Doctor: JSON CLI output is structured even when host is not 
         $value = Assert-EzVmJsonEnvelope -Result $result -Command 'doctor' -ExitCode 0
         Assert-EzVmTrue -Condition (@('ready', 'supported-but-not-configured', 'unsupported', 'unknown') -ccontains $value.data.status)
         Assert-EzVmEqual -Actual $value.data.whpxExecutionTested -Expected $false
-        Assert-EzVmTrue -Condition (@($value.data.checks).Count -ge 8
+        Assert-EzVmTrue -Condition (@($value.data.checks).Count -ge 8)
     }
     finally { Remove-EzVmTestDirectory -Path $root }
 }
