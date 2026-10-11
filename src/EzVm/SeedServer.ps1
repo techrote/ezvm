@@ -20,6 +20,7 @@ function Start-EzVmSeedServer {
         StartedAt = $startedAt
         DeadlineUtc = $startedAt.AddSeconds($TimeoutSeconds)
         RequestCount = 0
+        Clients = New-Object 'System.Collections.Generic.List[object]'
         Closed = $false
     }
 }
@@ -29,7 +30,18 @@ function Stop-EzVmSeedServer {
     param([Parameter(Mandatory = $true)][object]$Server)
 
     if ($Server.Closed) { return }
-    try { $Server.Listener.Stop() }
+    try {
+        foreach ($state in @($Server.Clients.ToArray())) {
+            try {
+                if ($null -ne $state.Stream) { $state.Stream.Dispose() }
+                $state.Client.Dispose()
+                $state.Buffer.Dispose()
+            }
+            catch { }
+        }
+        $Server.Clients.Clear()
+        $Server.Listener.Stop()
+    }
     finally { $Server.Closed = $true }
 }
 
@@ -58,6 +70,85 @@ function Write-EzVmSeedHttpResponse {
     $Stream.Flush()
 }
 
+function Add-EzVmSeedPendingClients {
+    param([Parameter(Mandatory = $true)][object]$Server, [int]$Maximum)
+
+    $accepted = 0
+    while ($accepted -lt $Maximum -and $Server.Listener.Pending()) {
+        $client = $Server.Listener.AcceptTcpClient()
+        $client.NoDelay = $true
+        $Server.Clients.Add([pscustomobject]@{
+            Client = $client
+            Stream = $client.GetStream()
+            Buffer = New-Object System.IO.MemoryStream
+            Closed = $false
+        })
+        $accepted++
+    }
+    return $accepted
+}
+
+function Close-EzVmSeedPendingClient {
+    param([Parameter(Mandatory = $true)][object]$State)
+    if ($State.Closed) { return }
+    try {
+        if ($null -ne $State.Stream) { $State.Stream.Dispose() }
+        $State.Client.Dispose()
+        $State.Buffer.Dispose()
+    }
+    finally { $State.Closed = $true }
+}
+
+function Complete-EzVmSeedPendingRequest {
+    param(
+        [Parameter(Mandatory = $true)][object]$Server,
+        [Parameter(Mandatory = $true)][object]$State
+    )
+
+    if ($State.Buffer.Length -gt 16384) {
+        Write-EzVmSeedHttpResponse -Stream $State.Stream -StatusCode 431 -Reason 'Request Header Fields Too Large' -Method GET
+        return $true
+    }
+
+    $text = [Text.Encoding]::ASCII.GetString($State.Buffer.ToArray())
+    $boundary = [regex]::Match($text, '(?s)^(?<headers>.*?)\r?\n\r?\n')
+    if (-not $boundary.Success) { return $false }
+
+    $lines = @($boundary.Groups['headers'].Value -split '\r?\n')
+    if ($lines.Count -eq 0 -or [string]::IsNullOrWhiteSpace($lines[0])) {
+        Write-EzVmSeedHttpResponse -Stream $State.Stream -StatusCode 400 -Reason 'Bad Request' -Method GET
+        return $true
+    }
+    if ($lines.Count -gt 65) {
+        Write-EzVmSeedHttpResponse -Stream $State.Stream -StatusCode 431 -Reason 'Request Header Fields Too Large' -Method GET
+        return $true
+    }
+
+    $match = [regex]::Match($lines[0], '^(?<method>[A-Z]+) (?<target>[^ ]+) HTTP/1\.[01]$')
+    if (-not $match.Success) {
+        Write-EzVmSeedHttpResponse -Stream $State.Stream -StatusCode 400 -Reason 'Bad Request' -Method GET
+        return $true
+    }
+
+    $method = $match.Groups['method'].Value
+    $target = $match.Groups['target'].Value
+    if ($method -cnotin @('GET', 'HEAD')) {
+        Write-EzVmSeedHttpResponse -Stream $State.Stream -StatusCode 405 -Reason 'Method Not Allowed' -Method GET
+        return $true
+    }
+
+    if ($target -ceq '/user-data') {
+        Write-EzVmSeedHttpResponse -Stream $State.Stream -StatusCode 200 -Reason 'OK' -Method $method -Body $Server.UserData
+    }
+    elseif ($target -ceq '/meta-data') {
+        Write-EzVmSeedHttpResponse -Stream $State.Stream -StatusCode 200 -Reason 'OK' -Method $method -Body $Server.MetaData
+    }
+    else {
+        Write-EzVmSeedHttpResponse -Stream $State.Stream -StatusCode 404 -Reason 'Not Found' -Method $method
+    }
+    return $true
+}
+
 function Invoke-EzVmSeedServerPending {
     [CmdletBinding()]
     param(
@@ -70,68 +161,44 @@ function Invoke-EzVmSeedServerPending {
         throw 'The cloud-init seed server exceeded its bounded lifetime.'
     }
 
+    $null = Add-EzVmSeedPendingClients -Server $Server -Maximum $MaxRequests
     $handled = 0
-    while ($handled -lt $MaxRequests -and $Server.Listener.Pending()) {
-        $client = $null
-        $stream = $null
-        $reader = $null
+    $buffer = New-Object byte[] 4096
+
+    foreach ($state in @($Server.Clients.ToArray())) {
+        if ($handled -ge $MaxRequests) { break }
+        if ($state.Closed) { continue }
+
         try {
-            $client = $Server.Listener.AcceptTcpClient()
-            $client.ReceiveTimeout = 5000
-            $client.SendTimeout = 5000
-            $stream = $client.GetStream()
-            $reader = New-Object System.IO.StreamReader($stream, [Text.Encoding]::ASCII, $false, 1024, $true)
-            $requestLine = $reader.ReadLine()
-            if ([string]::IsNullOrWhiteSpace($requestLine)) {
-                Write-EzVmSeedHttpResponse -Stream $stream -StatusCode 400 -Reason 'Bad Request' -Method GET
+            while ($state.Stream.DataAvailable) {
+                $read = $state.Stream.Read($buffer, 0, $buffer.Length)
+                if ($read -le 0) { break }
+                $state.Buffer.Write($buffer, 0, $read)
+                if ($state.Buffer.Length -gt 16384) { break }
+            }
+
+            if (Complete-EzVmSeedPendingRequest -Server $Server -State $state) {
+                $handled++
+                $Server.RequestCount++
+                Close-EzVmSeedPendingClient -State $state
                 continue
             }
 
-            $headerCount = 0
-            $headerBytes = 0
-            while ($true) {
-                $line = $reader.ReadLine()
-                if ($null -eq $line -or $line.Length -eq 0) { break }
-                $headerCount++
-                $headerBytes += $line.Length
-                if ($headerCount -gt 64 -or $headerBytes -gt 16384) {
-                    Write-EzVmSeedHttpResponse -Stream $stream -StatusCode 431 -Reason 'Request Header Fields Too Large' -Method GET
-                    $requestLine = $null
-                    break
-                }
-            }
-            if ($null -eq $requestLine) { continue }
-
-            $match = [regex]::Match($requestLine, '^(?<method>[A-Z]+) (?<target>[^ ]+) HTTP/1\.[01]$')
-            if (-not $match.Success) {
-                Write-EzVmSeedHttpResponse -Stream $stream -StatusCode 400 -Reason 'Bad Request' -Method GET
-                continue
-            }
-
-            $method = $match.Groups['method'].Value
-            $target = $match.Groups['target'].Value
-            if ($method -cnotin @('GET', 'HEAD')) {
-                Write-EzVmSeedHttpResponse -Stream $stream -StatusCode 405 -Reason 'Method Not Allowed' -Method GET
-                continue
-            }
-
-            if ($target -ceq '/user-data') {
-                Write-EzVmSeedHttpResponse -Stream $stream -StatusCode 200 -Reason 'OK' -Method $method -Body $Server.UserData
-            }
-            elseif ($target -ceq '/meta-data') {
-                Write-EzVmSeedHttpResponse -Stream $stream -StatusCode 200 -Reason 'OK' -Method $method -Body $Server.MetaData
-            }
-            else {
-                Write-EzVmSeedHttpResponse -Stream $stream -StatusCode 404 -Reason 'Not Found' -Method $method
+            $socket = $state.Client.Client
+            if ($socket.Poll(0, [System.Net.Sockets.SelectMode]::SelectRead) -and $socket.Available -eq 0) {
+                Close-EzVmSeedPendingClient -State $state
             }
         }
-        finally {
-            if ($null -ne $reader) { $reader.Dispose() }
-            if ($null -ne $stream) { $stream.Dispose() }
-            if ($null -ne $client) { $client.Dispose() }
-            $handled++
-            $Server.RequestCount++
+        catch [System.IO.IOException] {
+            Close-EzVmSeedPendingClient -State $state
         }
+        catch [System.Net.Sockets.SocketException] {
+            Close-EzVmSeedPendingClient -State $state
+        }
+    }
+
+    for ($index = $Server.Clients.Count - 1; $index -ge 0; $index--) {
+        if ($Server.Clients[$index].Closed) { $Server.Clients.RemoveAt($index) }
     }
     return $handled
 }
