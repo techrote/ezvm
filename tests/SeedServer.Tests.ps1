@@ -12,7 +12,13 @@ function Invoke-EzVmSeedHttpFixture {
         $bytes = [Text.Encoding]::ASCII.GetBytes($request)
         $stream.Write($bytes, 0, $bytes.Length)
         $stream.Flush()
-        $null = Invoke-EzVmSeedServerPending -Server $Server -MaxRequests 1
+        $deadline = [DateTime]::UtcNow.AddSeconds(2)
+        $handled = 0
+        while ($handled -eq 0 -and [DateTime]::UtcNow -lt $deadline) {
+            $handled = Invoke-EzVmSeedServerPending -Server $Server -MaxRequests 1
+            if ($handled -eq 0) { Start-Sleep -Milliseconds 10 }
+        }
+        Assert-EzVmEqual -Actual $handled -Expected 1 -Message 'Seed fixture request was not handled within two seconds.'
         $reader = New-Object IO.StreamReader($stream, [Text.Encoding]::UTF8, $false, 1024, $true)
         return $reader.ReadToEnd()
     }
@@ -75,4 +81,47 @@ Add-EzVmTest -Name 'Seed server: bounded lifetime expires and closed servers ref
     }
     finally { Stop-EzVmSeedServer -Server $server }
     Assert-EzVmThrows -ScriptBlock { Invoke-EzVmSeedServerPending -Server $server } -MessagePattern 'already closed' | Out-Null
+}
+
+
+Add-EzVmTest -Name 'Seed server: idle guestfwd connection remains non-blocking until request bytes arrive' -ScriptBlock {
+    $server = Start-EzVmSeedServer -UserData 'delayed user fixture' -MetaData 'meta fixture' -TimeoutSeconds 30
+    $client = New-Object Net.Sockets.TcpClient
+    $stream = $null
+    $reader = $null
+    try {
+        $client.Connect('127.0.0.1', $server.Port)
+        $stream = $client.GetStream()
+
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        $handled = Invoke-EzVmSeedServerPending -Server $server -MaxRequests 1
+        $clock.Stop()
+        Assert-EzVmEqual -Actual $handled -Expected 0
+        Assert-EzVmTrue -Condition ($clock.ElapsedMilliseconds -lt 1000) -Message 'An idle QEMU guestfwd socket must not block the seed pump.'
+        Assert-EzVmEqual -Actual $server.Clients.Count -Expected 1 -Message 'Idle forwarding socket should remain available for later guest bytes.'
+
+        $crlf = [char]13 + [char]10
+        $request = 'GET /user-data HTTP/1.1' + $crlf + 'Host: seed.local' + $crlf + $crlf
+        $bytes = [Text.Encoding]::ASCII.GetBytes($request)
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Flush()
+
+        $deadline = [DateTime]::UtcNow.AddSeconds(2)
+        $handled = 0
+        while ($handled -eq 0 -and [DateTime]::UtcNow -lt $deadline) {
+            $handled = Invoke-EzVmSeedServerPending -Server $server -MaxRequests 1
+            if ($handled -eq 0) { Start-Sleep -Milliseconds 10 }
+        }
+        Assert-EzVmEqual -Actual $handled -Expected 1
+        $reader = New-Object IO.StreamReader($stream, [Text.Encoding]::UTF8, $false, 1024, $true)
+        $response = $reader.ReadToEnd()
+        Assert-EzVmTrue -Condition ($response -match '^HTTP/1\.1 200 OK')
+        Assert-EzVmTrue -Condition ($response.EndsWith('delayed user fixture', [StringComparison]::Ordinal))
+    }
+    finally {
+        if ($null -ne $reader) { $reader.Dispose() }
+        if ($null -ne $stream) { $stream.Dispose() }
+        $client.Dispose()
+        Stop-EzVmSeedServer -Server $server
+    }
 }
