@@ -30,7 +30,7 @@
         'Get-EzVmBaseProvisioningDigest',
         'New-EzVmBaseSeedData',
         'New-EzVmBaseQemuArguments',
-        'Build-EzVmPreparedBase',
+        'Invoke-EzVmBaseBuild',
         'Test-EzVmPreparedBase',
         'Invoke-EzVmCommand',
         'Write-EzVmResult'
