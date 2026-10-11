@@ -200,3 +200,27 @@ Normal CI deliberately does not download the multi-hundred-megabyte Ubuntu image
 The reviewed manifest digest is provider-reconciled when the manifest changes;
 provider revalidation is separate evidence and never substitutes a freshly
 downloaded checksum for the reviewed repository pin.
+
+## EZVM-004 base-builder coverage
+
+Normal PR CI keeps the large provider artifacts out of the fast test path. Fixture
+coverage exercises:
+
+- deterministic baseline/seed generation and provisioning-source digesting;
+- explicit q35/virtio/OVMF/NoCloud QEMU argument arrays;
+- WHPX-vs-explicit-TCG selection with no silent fallback;
+- loopback-only seed listener, exact path/method restrictions and expiry;
+- verified source/QEMU prerequisite refusal;
+- staging overlay, flatten, no-backing and qemu-img-check state transitions;
+- content-addressed immutable/read-only publication;
+- byte-identical base reuse without replacement;
+- guest/cloud-init failure and flatten failure with zero authoritative promotion;
+- serial READY/tool/cleanup/build-ID evidence parsing;
+- source-image non-mutation and spaces in managed roots.
+
+A separate bounded real-provider integration run is required before EZVM-004 is
+accepted. Hosted execution may use TCG to prove real Ubuntu cloud-init,
+guestfwd/SMBIOS seed discovery, package provisioning, cleanup and qemu-img
+flattening. Such evidence is an orchestration PASS only. WHPX remains an explicit
+capability SKIP until it runs on a suitable Windows host.
+
