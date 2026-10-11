@@ -173,3 +173,18 @@ A documented clean-host scenario must cover:
 13. re-run doctor and start after relocation.
 
 Where CI cannot execute a platform capability, retain automation for every surrounding contract and document the unexercised capability precisely.
+
+## EZVM-002 bootstrap/preflight coverage
+
+Normal CI uses deterministic tiny provider/extraction fixtures to cover digest
+acceptance/rejection, interrupted transfers, unexpected extraction layouts,
+reviewed-version mismatch, idempotent bootstrap, paths containing spaces,
+absolute managed-tool invocation, PATH/registry independence and doctor
+classification. It never downloads the large QEMU provider artifact on every PR.
+
+Provider-pin refreshes require an explicit bounded Windows verification of the real
+reviewed artifacts. The initial EZVM-002 verification proved the verified
+7zr -> full 7-Zip -> QEMU NSIS extraction chain and real QEMU/qemu-img version
+probes. WHPX execution is not part of this issue's PASS evidence and remains
+explicitly unclaimed.
+
