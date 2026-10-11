@@ -1,0 +1,69 @@
+#cloud-config
+preserve_hostname: false
+ssh_pwauth: false
+disable_root: true
+package_update: true
+package_upgrade: false
+packages:
+__PACKAGE_LINES__
+
+write_files:
+  - path: /usr/local/sbin/ezvm-finalize-base
+    owner: root:root
+    permissions: '0755'
+    content: |
+      #!/bin/sh
+      set -eu
+
+      while systemctl is-active --quiet cloud-final.service; do
+        sleep 1
+      done
+
+      missing=""
+      for command_name in __REQUIRED_COMMANDS__; do
+        if ! command -v "$command_name" >/dev/null 2>&1; then
+          missing="$missing $command_name"
+        fi
+      done
+      if [ -n "$missing" ]; then
+        failure="$(printf '%s' "missing commands:$missing" | base64 -w0)"
+        printf 'EZVM_BASE_FAILURE_B64=%s\n' "$failure" > /dev/ttyS0 || true
+        sync
+        systemctl poweroff || poweroff -f
+        exit 1
+      fi
+
+      cloud_version="$(cloud-init --version 2>&1 | head -n 1)"
+      os_id=""
+      os_version=""
+      if [ -r /etc/os-release ]; then
+        . /etc/os-release
+        os_id="${ID:-}"
+        os_version="${VERSION_ID:-}"
+      fi
+
+      rm -f /etc/ssh/ssh_host_*
+      find /root /home -type f -path '*/.ssh/authorized_keys' -delete 2>/dev/null || true
+      rm -rf /var/lib/cloud/seed
+
+      if cloud-init clean --help 2>&1 | grep -q -- '--seed'; then
+        cloud-init clean --logs --machine-id --seed
+      else
+        cloud-init clean --logs --machine-id
+        rm -rf /var/lib/cloud/seed
+      fi
+
+      rm -f /usr/local/sbin/ezvm-finalize-base
+
+      printf 'EZVM_BASE_BUILD_ID=%s\n' '__BUILD_ID__' > /dev/ttyS0
+      printf 'EZVM_BASE_OS_ID_B64=%s\n' "$(printf '%s' "$os_id" | base64 -w0)" > /dev/ttyS0
+      printf 'EZVM_BASE_OS_VERSION_B64=%s\n' "$(printf '%s' "$os_version" | base64 -w0)" > /dev/ttyS0
+      printf 'EZVM_BASE_CLOUD_INIT_B64=%s\n' "$(printf '%s' "$cloud_version" | base64 -w0)" > /dev/ttyS0
+      printf 'EZVM_BASE_TOOLS_OK=1\n' > /dev/ttyS0
+      printf 'EZVM_BASE_CLEAN_OK=1\n' > /dev/ttyS0
+      printf 'EZVM_BASE_READY=1\n' > /dev/ttyS0
+      sync
+      systemctl poweroff || poweroff -f
+
+runcmd:
+  - [systemd-run, --unit=ezvm-base-finalize-__BUILD_ID__, --collect, --property=Type=oneshot, /usr/local/sbin/ezvm-finalize-base]
