@@ -69,7 +69,7 @@ function Invoke-EzVmCommand {
             $data = Invoke-EzVmSourceImageAcquire -Root $Root
         }
         'base build' {
-            $data = Build-EzVmPreparedBase -Root $Root -Accelerator whpx
+            $data = Invoke-EzVmBaseBuild -Root $Root -Accelerator whpx
         }
         'help' {
             $data = [pscustomobject][ordered]@{
