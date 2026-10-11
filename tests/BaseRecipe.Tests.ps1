@@ -21,8 +21,10 @@ Add-EzVmTest -Name 'Base recipe: generated NoCloud seed is build-specific, crede
     Assert-EzVmTrue -Condition ($seed.UserData -match 'cloud-init clean --logs --machine-id')
     Assert-EzVmTrue -Condition ($seed.UserData -match 'rm -f /etc/ssh/ssh_host_')
     Assert-EzVmTrue -Condition ($seed.UserData -match 'systemd-run')
+    Assert-EzVmTrue -Condition ($seed.UserData -match 'systemd-run, --no-block, .*--property=Type=oneshot') -Message 'The oneshot finalizer must be queued non-blocking so cloud-final can finish before cloud-init status --wait returns.'
     Assert-EzVmTrue -Condition ($seed.UserData -match 'cloud-init status --wait') -Message 'Finalization must wait on cloud-init completion state.'
     Assert-EzVmTrue -Condition ($seed.UserData -notmatch 'systemctl is-active --quiet cloud-final') -Message 'cloud-final remains active after exit on supported cloud-init units; do not use it as completion state.'
+    Assert-EzVmTrue -Condition ($seed.UserData -notmatch '(?m)^\s*- \[systemd-run, --unit=.*--property=Type=oneshot') -Message 'A blocking Type=oneshot launch deadlocks cloud-final against cloud-init status --wait.'
     Assert-EzVmTrue -Condition ($seed.UserData -match 'EZVM_BASE_READY=1')
     Assert-EzVmTrue -Condition ($seed.UserData -notmatch '__[A-Z0-9_]+__')
     Assert-EzVmTrue -Condition ($seed.UserData -notmatch '(?im)PRIVATE KEY|github_pat_|ghp_[A-Za-z0-9]')
