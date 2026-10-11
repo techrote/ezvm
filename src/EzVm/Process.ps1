@@ -157,7 +157,7 @@ function Invoke-EzVmProcess {
     child can be killed. Exception Data includes captured output on non-zero exit.
     Framework launches briefly use the same console input code page without a
     preamble and restore its encoding before returning. ezvm launches serialize
-    this adjustment across runspaces; unrelated code must not change the console
+    this adjustment across runspaces; unrelated code must not access the console
     encoding or input reader concurrently. Hosts that cannot update a required
     encoding fail clearly and can use current PowerShell 7 without this adjustment.
     #>

@@ -211,7 +211,7 @@ An encoding that already has no preamble requires no console update.
 
 A bounded per-process named mutex coordinates this Framework adjustment among
 ezvm calls in different runspaces. Its wait consumes the command's timeout
-budget. Unrelated code must not change `Console.InputEncoding` or `Console.In`
+budget. Unrelated code must not access `Console.InputEncoding` or `Console.In`
 concurrently. If a host without a usable console cannot apply a required encoding
 adjustment, the launch fails clearly with guidance to use current PowerShell 7;
 it must not send a preamble as a fallback. Redirected callers with no window are
