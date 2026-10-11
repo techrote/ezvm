@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "provider": "Stefan Weil QEMU for Windows",
+  "qemu": {
+    "version": "11.1.0",
+    "providerBuild": "20260811",
+    "url": "https://qemu.weilnetz.de/w64/qemu-w64-setup-20260811.exe",
+    "filename": "qemu-w64-setup-20260811.exe",
+    "digestAlgorithm": "SHA512",
+    "digest": "5bcf9eed634e8575a37b74f445af41a2fe4106da512d0c30c368301d4c105037fdfab40a5287367a28a957624cddebbc8c07e16c88ab6634f554cdf3d16bf543",
+    "sizeBytes": 206615928,
+    "expectedVersionPrefix": "11.1.0"
+  },
+  "extractor": {
+    "version": "26.04",
+    "bootstrap": {
+      "url": "https://github.com/ip7z/7zip/releases/download/26.04/7zr.exe",
+      "filename": "7zr.exe",
+      "digestAlgorithm": "SHA256",
+      "digest": "256feca8e274e5da655e2a284fabafd9f554365eb164862089dacd4e8276d282",
+      "sizeBytes": 602624
+    },
+    "package": {
+      "url": "https://github.com/ip7z/7zip/releases/download/26.04/7z2604-x64.exe",
+      "filename": "7z2604-x64.exe",
+      "digestAlgorithm": "SHA256",
+      "digest": "d54bf805f9f3704d1e8db2fa3498ae7ef2df0312b40b558e7c71c734430a665d",
+      "sizeBytes": 1664082
+    }
+  }
+}
