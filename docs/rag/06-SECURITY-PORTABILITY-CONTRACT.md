@@ -133,3 +133,23 @@ Recovery commands distinguish:
 - port collision.
 
 Diagnostics should preserve evidence rather than immediately deleting the artifact that explains the failure.
+
+## Prepared-base credential boundary (EZVM-004)
+
+The base-build cloud-init recipe contains no private key, API token, GitHub token
+or commercial-agent credential. Host control of the build does not require SSH.
+
+Before READY, guest finalization removes generated SSH host keys and
+`authorized_keys` files, then cleans cloud-init and machine identity. The
+resulting prepared base therefore carries neither controller authentication nor a
+build-specific SSH identity.
+
+Failed build staging may retain seed text and serial diagnostics under
+`runtime/bases/.build-*` for diagnosis. The reviewed base-build seed is
+credential-free by construction; future work must not reuse this retention policy
+for secret-bearing instance seeds without explicit redaction/cleanup rules.
+
+Prepared-base manifests store artifact/provisioning hashes and version identities,
+not host absolute paths or credentials. Normal cold relocation therefore derives
+all executable and disk paths again from the moved ezvm root.
+
