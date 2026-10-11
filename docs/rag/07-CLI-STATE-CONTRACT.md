@@ -294,4 +294,3 @@ envelope.
 Prepared-base durable state is `runtime/bases/<base-id>/base.qcow2` plus
 `manifest.json`. The manifest contains no relocatable absolute paths. Temporary
 `.build-*` and `.publish-*` directories are not authoritative bases.
-
