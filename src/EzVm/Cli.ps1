@@ -45,7 +45,7 @@ function Invoke-EzVmCommand {
     if ($tokens.Count -gt 0) {
         $command = (($tokens.ToArray() | ForEach-Object { $_.ToLowerInvariant() }) -join ' ')
     }
-    $valid = @('help', 'version', 'bootstrap', 'doctor', 'base acquire')
+    $valid = @('help', 'version', 'bootstrap', 'doctor', 'base acquire', 'base build')
     if ($jsonCount -gt 1 -or [string]::IsNullOrWhiteSpace($command) -or $valid -cnotcontains $command) {
         $errorCode = if ($tokens.Count -gt 0 -and $valid -cnotcontains $command) { 'unknown_command' } else { 'invalid_arguments' }
         $errorCommand = 'help'
@@ -68,6 +68,9 @@ function Invoke-EzVmCommand {
         'base acquire' {
             $data = Invoke-EzVmSourceImageAcquire -Root $Root
         }
+        'base build' {
+            $data = Build-EzVmPreparedBase -Root $Root -Accelerator whpx
+        }
         'help' {
             $data = [pscustomobject][ordered]@{
                 name = 'ezvm'
@@ -79,8 +82,9 @@ function Invoke-EzVmCommand {
                     [pscustomobject]@{ name = 'doctor'; description = 'Report Windows, WHPX, storage and managed-QEMU prerequisites.' }
                     [pscustomobject]@{ name = 'bootstrap'; description = 'Install the reviewed QEMU runtime into this ezvm root without system installation.' }
                     [pscustomobject]@{ name = 'base acquire'; description = 'Acquire and verify the pinned Ubuntu Noble amd64 source image.' }
+                    [pscustomobject]@{ name = 'base build'; description = 'Build and publish an immutable prepared coding base using WHPX.' }
                 )
-                stage = 'Portable QEMU bootstrap, host preflight and verified Ubuntu source acquisition are implemented; prepared-base and VM lifecycle work is delivered by later issues.'
+                stage = 'Portable QEMU, host preflight, verified Ubuntu acquisition and reproducible prepared-base construction are implemented; instance lifecycle work follows.'
             }
         }
     }
@@ -124,6 +128,14 @@ function Write-EzVmResult {
             Write-Output ("  $($Result.data.path)")
             Write-Output ("  SHA-256 $($Result.data.sha256)")
             Write-Output ("  publication $($Result.data.publication)")
+        }
+        'base build' {
+            $verb = if ($Result.data.reused) { 'Verified existing' } else { 'Published' }
+            Write-Output ("$verb prepared base $($Result.data.baseId)")
+            Write-Output ("  image: $($Result.data.path)")
+            Write-Output ("  manifest: $($Result.data.manifestPath)")
+            Write-Output ("  SHA-256 $($Result.data.sha256)")
+            Write-Output ("  accelerator: $($Result.data.accelerator)")
         }
         'help' {
             Write-Output ("ezvm $($Result.data.version)")
