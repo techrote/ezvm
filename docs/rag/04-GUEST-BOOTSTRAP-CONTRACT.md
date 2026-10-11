@@ -171,3 +171,34 @@ filesystem read-only attribute.
 
 A checksum downloaded alongside the image is never runtime trust authority.
 Updating the image pin requires a reviewed repository manifest change.
+
+## Implemented prepared-base provisioning (EZVM-004)
+
+The reviewed baseline recipe installs the stable development prerequisites listed
+above and validates their expected commands before a base can be accepted. The
+staging disk is expanded to 16 GiB so the Ubuntu first-boot grow/resize path has
+room for the baseline packages.
+
+Base provisioning does not create or inject an ezvm SSH controller key. Instead,
+the guest reports build qualification through its emulated serial console. The
+cloud-init `runcmd` starts a transient systemd unit; that unit waits until
+`cloud-final.service` has finished, validates the baseline commands, records
+guest OS/cloud-init identity, removes SSH host keys and any authorized-key files,
+cleans cloud-init state and machine identity, emits explicit build/TOOLS/CLEAN/READY
+markers, then powers off.
+
+The cleanup path uses `cloud-init clean --logs --machine-id`, which cloud-init
+documents as golden-image practice. Where the guest cloud-init version exposes
+`--seed`, it is used; the seed directory is also removed explicitly so older
+Ubuntu-supported cloud-init versions are handled without depending on that newer
+CLI option.
+
+The host accepts no base unless the serial evidence proves:
+
+- the READY marker belongs to the current random build ID;
+- baseline tool validation succeeded;
+- cloud-init/machine identity cleanup succeeded;
+- guest OS and cloud-init version facts were returned.
+
+This avoids treating a mere QEMU exit as provisioning success.
+
