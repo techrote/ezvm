@@ -13,6 +13,13 @@
         'Read-EzVmJson',
         'Write-EzVmJson',
         'Invoke-EzVmProcess',
+        'Get-EzVmFileDigest',
+        'Get-EzVmVerifiedArtifact',
+        'Get-EzVmQemuManifest',
+        'Install-EzVmQemuRuntime',
+        'Get-EzVmManagedQemuStatus',
+        'Get-EzVmQemuToolPath',
+        'Get-EzVmDoctorReport',
         'Invoke-EzVmCommand',
         'Write-EzVmResult'
     )

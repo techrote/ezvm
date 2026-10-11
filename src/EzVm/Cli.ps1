@@ -40,21 +40,30 @@ function Invoke-EzVmCommand {
         if ($argument -ieq '-Json') { $jsonCount++; continue }
         $tokens.Add($argument)
     }
+
     $command = 'help'
-    if ($tokens.Count -gt 0) { $command = $tokens[0].ToLowerInvariant() }
-    if ($jsonCount -gt 1 -or $tokens.Count -gt 1 -or [string]::IsNullOrWhiteSpace($command)) {
-        return New-EzVmCommandResult -Success $false -Command $command -ExitCode 2 -ErrorCode 'invalid_arguments' -Message 'Expected help or version with at most one -Json switch. Run .\ezvm.ps1 help for usage.'
+    if ($tokens.Count -gt 0) {
+        $command = (($tokens.ToArray() | ForEach-Object { $_.ToLowerInvariant() }) -join ' ')
     }
-    if (@('help', 'version') -notcontains $command) {
-        return New-EzVmCommandResult -Success $false -Command $command -ExitCode 2 -ErrorCode 'unknown_command' -Message "Command '$command' is unavailable. This foundation implements help and version; run .\ezvm.ps1 help for usage."
+    $valid = @('help', 'version', 'bootstrap', 'doctor')
+    if ($jsonCount -gt 1 -or [string]::IsNullOrWhiteSpace($command) -or $valid -cnotcontains $command) {
+        $errorCode = if ($tokens.Count -gt 0 -and $valid -cnotcontains $command) { 'unknown_command' } else { 'invalid_arguments' }
+        $errorCommand = 'help'
+        if ($tokens.Count -gt 0) { $errorCommand = $tokens[0].ToLowerInvariant() }
+        return New-EzVmCommandResult -Success $false -Command $errorCommand -ExitCode 2 -ErrorCode $errorCode -Message "Command or arguments '$command' are unavailable. Run .\ezvm.ps1 help for usage."
     }
 
-    # Establish the current source root without loading user state or creating directories.
     $null = Get-EzVmRoot -Path $Root
     $version = Get-EzVmVersion
     switch ($command) {
         'version' {
             $data = [pscustomobject][ordered]@{ name = 'ezvm'; version = $version }
+        }
+        'bootstrap' {
+            $data = Install-EzVmQemuRuntime -Root $Root
+        }
+        'doctor' {
+            $data = Get-EzVmDoctorReport -Root $Root
         }
         'help' {
             $data = [pscustomobject][ordered]@{
@@ -64,8 +73,10 @@ function Invoke-EzVmCommand {
                 commands = @(
                     [pscustomobject]@{ name = 'help'; description = 'Show available commands and usage.' }
                     [pscustomobject]@{ name = 'version'; description = 'Show the control-plane version.' }
+                    [pscustomobject]@{ name = 'doctor'; description = 'Report Windows, WHPX, storage and managed-QEMU prerequisites.' }
+                    [pscustomobject]@{ name = 'bootstrap'; description = 'Install the reviewed QEMU runtime into this ezvm root without system installation.' }
                 )
-                stage = 'Foundation: VM acquisition and lifecycle commands are scheduled in subsequent issues.'
+                stage = 'Portable QEMU bootstrap and host preflight are implemented; guest-image and VM lifecycle work is delivered by later issues.'
             }
         }
     }
@@ -86,6 +97,23 @@ function Write-EzVmResult {
     }
     switch ($Result.command) {
         'version' { Write-Output ("ezvm $($Result.data.version)") }
+        'bootstrap' {
+            $verb = if ($Result.data.idempotent) { 'Verified existing' } else { 'Installed' }
+            Write-Output ("$verb managed QEMU $($Result.data.version) (provider build $($Result.data.providerBuild))")
+            Write-Output ("  runtime: $($Result.data.runtimePath)")
+            Write-Output ("  qemu-system-x86_64: $($Result.data.qemuSystem)")
+            Write-Output ("  qemu-img: $($Result.data.qemuImg)")
+        }
+        'doctor' {
+            Write-Output ("ezvm doctor: $($Result.data.status)")
+            foreach ($check in $Result.data.checks) {
+                Write-Output (('  {0,-28} {1,-30} {2}' -f $check.name, $check.status, $check.message))
+                if (-not [string]::IsNullOrWhiteSpace($check.remediation)) {
+                    Write-Output ("    remediation: $($check.remediation)")
+                }
+            }
+            Write-Output ('  WHPX execution tested: false (doctor reports prerequisites only).')
+        }
         'help' {
             Write-Output ("ezvm $($Result.data.version)")
             Write-Output ('Portable QEMU + QCOW2 coding-agent environments for Windows.')
@@ -93,13 +121,13 @@ function Write-EzVmResult {
             Write-Output ("Usage: $($Result.data.usage)")
             Write-Output ('')
             Write-Output ('Commands:')
-            foreach ($command in $Result.data.commands) {
-                Write-Output (('  {0,-10} {1}' -f $command.name, $command.description))
+            foreach ($item in $Result.data.commands) {
+                Write-Output (('  {0,-10} {1}' -f $item.name, $item.description))
             }
             Write-Output ('')
             Write-Output ('Use -Json for one structured result, including errors. Omitting the command shows this help.')
             Write-Output ($Result.data.stage)
         }
-        default { throw "No human-readable formatter is registered for '$($Result.command)'. Add a formatter for this command." }
+        default { throw "No human-readable formatter is registered for '$($Result.command)'." }
     }
 }

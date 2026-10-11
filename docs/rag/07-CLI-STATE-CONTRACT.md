@@ -253,3 +253,15 @@ process still exits non-zero on failure. Human-readable failures go to stderr.
 This also supports `ezvm.ps1 version -Json | ConvertFrom-Json` in a PowerShell
 session. `help` and `version` do not load optional user configuration, allowing
 their diagnostic use when that file needs repair.
+
+## Bootstrap and doctor CLI (EZVM-002)
+
+`bootstrap` installs only the reviewed repository-local QEMU runtime. Human output
+reports whether a matching runtime was reused or newly promoted and always prints
+absolute managed QEMU paths. Structured output uses the standard result envelope.
+
+`doctor` returns an overall status and independent checks using exactly
+`ready`, `supported-but-not-configured`, `unsupported`, or `unknown`.
+Known missing configuration takes precedence over unknown optional evidence, and
+unsupported host requirements take highest precedence. WHPX remediation is printed
+as guidance only; no command path performs elevation or feature enablement.

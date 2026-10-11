@@ -31,11 +31,15 @@ function Get-EzVmPaths {
     $runtime = Join-Path $resolvedRoot 'runtime'
     $cache = Join-Path $runtime 'cache'
     $config = Join-Path $resolvedRoot 'config'
+    $manifests = Join-Path $resolvedRoot 'manifests'
     # Pure path calculation: reading help/configuration never creates runtime directories.
     return [pscustomobject][ordered]@{
         Root = $resolvedRoot
         Config = $config
         Defaults = Join-Path $config 'defaults.json'
+        Manifests = $manifests
+        QemuManifest = Join-Path $manifests 'qemu-windows.json'
+        UbuntuManifest = Join-Path $manifests 'ubuntu-noble-amd64.json'
         Runtime = $runtime
         UserConfig = Join-Path $runtime 'config.json'
         Qemu = Join-Path $runtime 'qemu'
