@@ -144,11 +144,15 @@ QEMU user networking maps the fixed guest-only endpoint
 
 The seed server:
 
-- serves only `GET`/`HEAD` for exactly `/user-data` and `/meta-data`;
+- serves only `GET`/`HEAD` for the standard NoCloud paths
+  `/user-data`, `/meta-data`, `/vendor-data`, and `/network-config`;
+- returns the reviewed user/meta content and explicit empty 200 responses for
+  vendor/network data so current cloud-init does not spend its datasource retry
+  budget on absent optional seed files;
 - returns 404 for every other path and 405 for unsupported methods;
 - uses no directory traversal or generic file serving;
 - has a bounded lifetime controlled by the build timeout;
-- does not log user-data or meta-data bodies.
+- records only requested path names/counts for diagnostics, never seed bodies.
 
 The base-build path deliberately has no SSH host forwarding and no build SSH key.
 Outbound user-mode networking remains available so Ubuntu package acquisition can
