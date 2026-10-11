@@ -55,7 +55,8 @@ function New-EzVmStorageFixture {
 
                 $backing = [string]$payload.backing
                 $resolved = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetDirectoryName($path)) $backing))
-                $format = if ($stateForRunner.Mode -ceq 'wrong-backing-format') { 'raw' } else { 'qcow2' }
+                $format = if ($stateForRunner.Mode -ceq 'wrong-backing-format' -or
+                    ($stateForRunner.Mode -ceq 'wrong-replacement-format' -and [int]$payload.generation -gt 1)) { 'raw' } else { 'qcow2' }
                 $top = [pscustomobject][ordered]@{
                     filename = $path
                     format = 'qcow2'
@@ -135,10 +136,9 @@ function Set-EzVmStorageOverlayBacking {
     [IO.File]::WriteAllText($Path, ($payload | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding($false)))
 }
 
-Add-EzVmTest -Name 'Storage: creates a thin one-level overlay with explicit formats and relative backing' -ScriptBlock {
+Add-EzVmTest -Name 'Storage: rejects unsafe instance names before filesystem mutation' -ScriptBlock {
     $fixture = New-EzVmStorageFixture
     try {
-        $baseBefore = Get-EzVmFileDigest -Path $fixture.BasePath -Algorithm SHA256
         $result = New-EzVmInstanceOverlay -Root $fixture.Root -InstanceName 'agent one' -BaseId $fixture.BaseId -LifecycleGuard $fixture.SafeGuard -QemuImgRunner $fixture.Runner
         throw 'fixture should reject spaces in instance names before this point'
     }
@@ -319,7 +319,7 @@ Add-EzVmTest -Name 'Storage: reset validates replacement before changing origina
     try {
         $created = New-EzVmInstanceOverlay -Root $fixture.Root -InstanceName 'reset-invalid' -BaseId $fixture.BaseId -LifecycleGuard $fixture.SafeGuard -QemuImgRunner $fixture.Runner
         $before = [IO.File]::ReadAllText($created.Disk)
-        $fixture.State.Mode = 'wrong-backing-format'
+        $fixture.State.Mode = 'wrong-replacement-format'
         Assert-EzVmThrows -ScriptBlock {
             Reset-EzVmInstanceOverlayStorage -Root $fixture.Root -InstanceName 'reset-invalid' -BaseId $fixture.BaseId -LifecycleGuard $fixture.SafeGuard -QemuImgRunner $fixture.Runner
         } -MessagePattern 'backing format' | Out-Null
@@ -337,7 +337,7 @@ Add-EzVmTest -Name 'Storage: failed replacement promotion restores original over
         $mover = {
             param($source, $destination)
             $moveState.Count++
-            if ($moveState.Count -eq 2) { throw [IO.IOException]::new('synthetic candidate promotion failure') }
+            if ($moveState.Count -eq 2) { throw [InvalidOperationException]::new('synthetic candidate promotion failure') }
             [IO.File]::Move($source, $destination)
         }.GetNewClosure()
         Assert-EzVmThrows -ScriptBlock {
