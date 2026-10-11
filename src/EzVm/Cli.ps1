@@ -48,7 +48,9 @@ function Invoke-EzVmCommand {
     $valid = @('help', 'version', 'bootstrap', 'doctor')
     if ($jsonCount -gt 1 -or [string]::IsNullOrWhiteSpace($command) -or $valid -cnotcontains $command) {
         $errorCode = if ($tokens.Count -gt 0 -and $valid -cnotcontains $command) { 'unknown_command' } else { 'invalid_arguments' }
-        return New-EzVmCommandResult -Success $false -Command $command -ExitCode 2 -ErrorCode $errorCode -Message "Command or arguments '$command' are unavailable. Run .\ezvm.ps1 help for usage."
+        $errorCommand = 'help'
+        if ($tokens.Count -gt 0) { $errorCommand = $tokens[0].ToLowerInvariant() }
+        return New-EzVmCommandResult -Success $false -Command $errorCommand -ExitCode 2 -ErrorCode $errorCode -Message "Command or arguments '$command' are unavailable. Run .\ezvm.ps1 help for usage."
     }
 
     $null = Get-EzVmRoot -Path $Root
