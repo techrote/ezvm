@@ -4,17 +4,19 @@ Portable, disposable QEMU + QCOW2 coding-agent environments for Windows hosts.
 
 ## Current state
 
-**EZVM-001 provides the control-plane foundation, version `0.0.0-dev`.** The
-checkout has a PowerShell command dispatcher, versioned configuration, root/path
-discovery, atomic JSON state helpers, a bounded native-process helper and automated
-tests for Windows PowerShell 5.1 and PowerShell 7.
+**EZVM-001 provides the control-plane foundation and EZVM-002 adds portable QEMU
+bootstrap plus Windows host preflight; the project remains version `0.0.0-dev`.**
+The checkout has reviewed QEMU/7-Zip manifests, repository-local verified runtime
+bootstrap, `doctor`, and automated tests under Windows PowerShell 5.1 and
+PowerShell 7.
 
-The commands available now are:
+The commands available on this branch are:
 
 ~~~powershell
 .\ezvm.ps1 help
 .\ezvm.ps1 version
-.\ezvm.ps1 version -Json
+.\ezvm.ps1 doctor
+.\ezvm.ps1 bootstrap
 ~~~
 
 Running with no command also shows help. Unknown commands and malformed arguments
@@ -32,9 +34,19 @@ can run the checked-out source without changing the machine's policy:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\ezvm.ps1 help
 ~~~
 
-`doctor`, `bootstrap`, image acquisition and VM lifecycle commands are scheduled
-in the subsequent implementation issues. The foundation does not yet create or
-boot a VM. Version `0.0.0-dev` is not the v0.1 release.
+`bootstrap` downloads only reviewed hash-pinned QEMU and 7-Zip artifacts, verifies
+them before execution/extraction, unpacks QEMU's NSIS package without running the
+installer, validates the resulting QEMU tools, then atomically promotes them into
+`runtime/qemu`. It does not elevate, install QEMU system-wide, write uninstall
+registry state, or modify PATH.
+
+`doctor` independently reports host OS/architecture, PowerShell, virtualization
+indicators, WHPX feature state, managed QEMU, runtime writeability, path/disk
+conditions and visible stale runtime state. It never enables WHPX and never claims
+that WHPX execution succeeded merely from feature detection.
+
+Ubuntu image acquisition and VM lifecycle commands are delivered by subsequent
+programme issues. Version `0.0.0-dev` is not the v0.1 release.
 
 ## Planned target experience
 
