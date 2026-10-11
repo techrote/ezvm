@@ -347,21 +347,43 @@ function Assert-EzVmPreparedBaseManifest {
     }
 }
 
-function Test-EzVmPreparedBase {
-    [CmdletBinding()]
+function Test-EzVmPreparedBaseDirectory {
     param(
-        [string]$Root = $script:EzVmDefaultRoot,
+        [string]$Root,
+        [Parameter(Mandatory = $true)][string]$Directory,
         [Parameter(Mandatory = $true)][string]$BaseId,
         [scriptblock]$QemuImgRunner
     )
 
     if ($BaseId -cnotmatch '^base-[a-f0-9]{64}$') { throw "Invalid prepared-base ID '$BaseId'." }
     $paths = Get-EzVmPaths -Root $Root
-    $directory = Join-Path $paths.Bases $BaseId
-    $image = Join-Path $directory 'base.qcow2'
-    $manifestPath = Join-Path $directory 'manifest.json'
+    $directoryPath = [IO.Path]::GetFullPath($Directory)
+    $basesPath = [IO.Path]::GetFullPath($paths.Bases)
+    $comparison = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+        [StringComparison]::OrdinalIgnoreCase
+    } else {
+        [StringComparison]::Ordinal
+    }
+    $prefix = $basesPath.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+    if (-not $directoryPath.StartsWith($prefix, $comparison)) {
+        throw "Prepared-base candidate directory escapes the managed base root: '$directoryPath'."
+    }
+    if (-not (Test-Path -LiteralPath $directoryPath -PathType Container)) {
+        throw "Prepared-base candidate directory does not exist: '$directoryPath'."
+    }
+    if ((Get-Item -LiteralPath $directoryPath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw 'Prepared-base candidate directory must not be a reparse point.'
+    }
+
+    $image = Join-Path $directoryPath 'base.qcow2'
+    $manifestPath = Join-Path $directoryPath 'manifest.json'
     if (-not (Test-Path -LiteralPath $image -PathType Leaf) -or -not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
         throw "Prepared base '$BaseId' is incomplete. Expected base.qcow2 and manifest.json."
+    }
+    foreach ($path in @($image, $manifestPath)) {
+        if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw 'Prepared-base image and manifest must not be reparse points.'
+        }
     }
 
     $manifest = Read-EzVmJson -Path $manifestPath -SchemaVersion 1
@@ -384,12 +406,24 @@ function Test-EzVmPreparedBase {
 
     return [pscustomobject][ordered]@{
         BaseId = $BaseId
-        Directory = $directory
+        Directory = $directoryPath
         Image = $image
         ManifestPath = $manifestPath
         Manifest = $manifest
         ReadOnly = $readOnly
     }
+}
+
+function Test-EzVmPreparedBase {
+    [CmdletBinding()]
+    param(
+        [string]$Root = $script:EzVmDefaultRoot,
+        [Parameter(Mandatory = $true)][string]$BaseId,
+        [scriptblock]$QemuImgRunner
+    )
+
+    $paths = Get-EzVmPaths -Root $Root
+    return Test-EzVmPreparedBaseDirectory -Root $Root -Directory (Join-Path $paths.Bases $BaseId) -BaseId $BaseId -QemuImgRunner $QemuImgRunner
 }
 
 function Write-EzVmBaseFailureEvidence {
@@ -559,6 +593,10 @@ function Invoke-EzVmBaseBuild {
         $manifestAttributes = (Get-Item -LiteralPath $publishManifest -Force).Attributes -bor [IO.FileAttributes]::ReadOnly
         [IO.File]::SetAttributes($publishManifest, $manifestAttributes)
 
+        # Fully validate the read-only candidate while it is still non-authoritative.
+        # The subsequent same-volume rename is the publication commit point.
+        $candidate = Test-EzVmPreparedBaseDirectory -Root $Root -Directory $publish -BaseId $baseId -QemuImgRunner $QemuImgRunner
+
         $final = Join-Path $paths.Bases $baseId
         if (Test-Path -LiteralPath $final -PathType Container) {
             $existing = Test-EzVmPreparedBase -Root $Root -BaseId $baseId -QemuImgRunner $QemuImgRunner
@@ -567,7 +605,7 @@ function Invoke-EzVmBaseBuild {
             }
             Remove-Item -LiteralPath $publish -Recurse -Force
             $publish = $null
-            Remove-Item -LiteralPath $stage -Recurse -Force
+            try { Remove-Item -LiteralPath $stage -Recurse -Force } catch { }
             return [pscustomobject][ordered]@{
                 baseId = $baseId
                 path = $existing.Image
@@ -579,15 +617,14 @@ function Invoke-EzVmBaseBuild {
             }
         }
 
-        [IO.Directory]::Move($publish, $final)
+        Move-EzVmDirectoryAtomically -Source $publish -Destination $final
         $publish = $null
-        $accepted = Test-EzVmPreparedBase -Root $Root -BaseId $baseId -QemuImgRunner $QemuImgRunner
-        Remove-Item -LiteralPath $stage -Recurse -Force
+        try { Remove-Item -LiteralPath $stage -Recurse -Force } catch { }
 
         return [pscustomobject][ordered]@{
             baseId = $baseId
-            path = $accepted.Image
-            manifestPath = $accepted.ManifestPath
+            path = Join-Path $final 'base.qcow2'
+            manifestPath = Join-Path $final 'manifest.json'
             sha256 = $baseDigest
             virtualSizeBytes = $virtualSize
             reused = $false
