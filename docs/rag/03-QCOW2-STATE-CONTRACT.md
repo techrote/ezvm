@@ -149,7 +149,12 @@ the guest-visible staging chain into a new qcow2. Acceptance requires:
 - `qemu-img check` succeeds while the new image is stopped;
 - the resulting SHA-256 is recorded and becomes the content-addressed base ID.
 
-Only after those checks and manifest validation does a prepared base move into its
-authoritative `base-<sha256>` directory. A build or flatten failure leaves no
-authoritative base. Non-authoritative `.build-*` staging is retained with
-`failure.json` where possible so diagnosis does not require destructive repair.
+Only after those checks, read-only marking, digest verification and full manifest
+validation succeed **inside the non-authoritative `.publish-*` directory** does
+the candidate move into its authoritative `base-<sha256>` directory. The
+same-volume directory rename is the publication commit point; there is no
+post-publication validation step that can fail while leaving an invalid
+authoritative-looking directory. A build, flatten or candidate-validation failure
+leaves no authoritative base. Non-authoritative `.build-*` staging is retained
+with `failure.json` where possible so diagnosis does not require destructive
+repair.
