@@ -23,9 +23,11 @@ A manually installed base is easy once but difficult to rebuild, audit or update
 
 Improvement: build the prepared base from a pinned official Ubuntu cloud image plus repository-controlled cloud-init/provisioning.
 
-### Review finding 2 — bundling QEMU in git harms provenance and repository size
+### Review finding 2 — bundling or normally installing QEMU defeats portability
 
-Improvement: keep QEMU out of git. Pin a Windows installer/artifact and digest in a manifest, download it into runtime state, verify it and install/extract into runtime/qemu.
+Committing QEMU binaries would bloat the repository and obscure provenance. Executing the current Windows NSIS installer as an installer also conflicts with ezvm's no-system-install goal because that path requests administrator execution and writes machine installation metadata.
+
+Improvement: keep QEMU out of git. Pin the exact Windows QEMU package and digest, and separately pin an official standalone 7-Zip extractor and digest. Verify both before use, extract the verified NSIS package into repository-local staging without running the installer, validate the QEMU binaries, then promote the payload into runtime/qemu. Normal bootstrap therefore requires no registry writes, PATH mutation or elevation.
 
 ### Review finding 3 — a cloud-init ISO generator creates an unnecessary dependency
 
@@ -56,7 +58,7 @@ Improvement: separate pure/control-plane coverage from accelerator smoke coverag
 ~~~text
 repository source + manifests
           |
-          +--> managed QEMU runtime
+          +--> verified/extracted QEMU runtime
           |
           +--> pinned Ubuntu cloud source
                       |
