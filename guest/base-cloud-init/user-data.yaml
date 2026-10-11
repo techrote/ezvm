@@ -72,4 +72,4 @@ write_files:
       systemctl poweroff || poweroff -f
 
 runcmd:
-  - [systemd-run, --unit=ezvm-base-finalize-__BUILD_ID__, --collect, --property=Type=oneshot, /usr/local/sbin/ezvm-finalize-base]
+  - [systemd-run, --no-block, --unit=ezvm-base-finalize-__BUILD_ID__, --collect, --property=Type=oneshot, /usr/local/sbin/ezvm-finalize-base]
