@@ -605,10 +605,27 @@ function New-EzVmRuntimeQemuArguments {
         [Parameter(Mandatory = $true)][string]$SerialLog,
         [Parameter(Mandatory = $true)][string]$QemuLog,
         [Parameter(Mandatory = $true)][ValidateRange(1024, 65535)][int]$QmpPort,
-        [ValidateSet('whpx', 'tcg')][string]$Accelerator = 'whpx'
+        [ValidateSet('whpx', 'tcg')][string]$Accelerator = 'whpx',
+        [ValidateRange(0, 65535)][int]$SshPort = 0,
+        [ValidateRange(0, 65535)][int]$SeedHostPort = 0,
+        [string]$SeedGuestAddress = '10.0.2.100',
+        [ValidateRange(1, 65535)][int]$SeedGuestPort = 8000
     )
 
     Assert-EzVmInstanceIntent -Intent $Intent -ExpectedName $InstanceName
+    if ($SshPort -gt 0 -and $SshPort -lt 1024) { throw 'SSH host forwarding requires a non-privileged port from 1024 to 65535.' }
+    if ($SeedHostPort -gt 0 -and $SeedHostPort -lt 1024) { throw 'Seed guest forwarding requires a non-privileged host port from 1024 to 65535.' }
+    if ($SeedHostPort -gt 0 -and $SeedGuestAddress -cne '10.0.2.100') {
+        throw 'The EZVM-007 NoCloud guest-forward address must be exactly 10.0.2.100.'
+    }
+
+    $netdev = 'user,id=net0,ipv6=off'
+    if ($SshPort -gt 0) {
+        $netdev += ',hostfwd=tcp:127.0.0.1:' + $SshPort + '-:22'
+    }
+    if ($SeedHostPort -gt 0) {
+        $netdev += ',guestfwd=tcp:' + $SeedGuestAddress + ':' + $SeedGuestPort + '-tcp:127.0.0.1:' + $SeedHostPort
+    }
 
     $arguments = New-Object 'System.Collections.Generic.List[string]'
     foreach ($pair in @(
@@ -627,13 +644,18 @@ function New-EzVmRuntimeQemuArguments {
         @('-drive', ('if=pflash,format=raw,file=' + [IO.Path]::GetFullPath($FirmwareVariables))),
         @('-drive', ('if=none,id=osdisk,format=qcow2,file=' + [IO.Path]::GetFullPath($Disk))),
         @('-device', 'virtio-blk-pci,drive=osdisk,bootindex=0'),
-        @('-netdev', 'user,id=net0,ipv6=off'),
+        @('-netdev', $netdev),
         @('-device', 'virtio-net-pci,netdev=net0'),
         @('-boot', 'order=c,strict=on'),
         @('-rtc', 'base=utc')
     )) {
         $arguments.Add($pair[0])
         $arguments.Add($pair[1])
+    }
+    if ($SeedHostPort -gt 0) {
+        $seedUrl = 'http://' + $SeedGuestAddress + ':' + $SeedGuestPort + '/'
+        $arguments.Add('-smbios')
+        $arguments.Add('type=1,serial=ds=nocloud;s=' + $seedUrl)
     }
     if ($Accelerator -ceq 'tcg') {
         $arguments.Add('-cpu')
@@ -781,7 +803,11 @@ function Start-EzVmInstance {
         [scriptblock]$QemuStatusProvider,
         [scriptblock]$ProcessProvider,
         [scriptblock]$ProcessLauncher,
-        [scriptblock]$QmpInvoker
+        [scriptblock]$QmpInvoker,
+        [ValidateRange(0, 65535)][int]$SshPort = 0,
+        [ValidateRange(0, 65535)][int]$SeedHostPort = 0,
+        [string]$SeedGuestAddress = '10.0.2.100',
+        [ValidateRange(1, 65535)][int]$SeedGuestPort = 8000
     )
 
     Assert-EzVmStorageInstanceName -Name $InstanceName
@@ -814,7 +840,7 @@ function Start-EzVmInstance {
         $qmpPort = Get-EzVmEphemeralLoopbackPort
         $serialLog = Join-Path $runtimePaths.Logs ('serial-' + $launchId + '.log')
         $qemuLog = Join-Path $runtimePaths.Logs ('qemu-' + $launchId + '.log')
-        $arguments = New-EzVmRuntimeQemuArguments -InstanceName $InstanceName -Intent $intent -Disk $storage.OverlayPath -FirmwareCode $firmware.Code -FirmwareVariables $firmware.Variables -SerialLog $serialLog -QemuLog $qemuLog -QmpPort $qmpPort -Accelerator $Accelerator
+        $arguments = New-EzVmRuntimeQemuArguments -InstanceName $InstanceName -Intent $intent -Disk $storage.OverlayPath -FirmwareCode $firmware.Code -FirmwareVariables $firmware.Variables -SerialLog $serialLog -QemuLog $qemuLog -QmpPort $qmpPort -Accelerator $Accelerator -SshPort $SshPort -SeedHostPort $SeedHostPort -SeedGuestAddress $SeedGuestAddress -SeedGuestPort $SeedGuestPort
         $fingerprint = Get-EzVmArgumentFingerprint -ArgumentList $arguments
 
         if ($null -ne $ProcessLauncher) {
@@ -937,8 +963,24 @@ function Stop-EzVmInstance {
         $null = Invoke-EzVmRuntimeQmp -HostAddress $runtime.qmpHost -Port ([int]$runtime.qmpPort) -Command 'system_powerdown' -TimeoutMilliseconds 3000 -QmpInvoker $QmpInvoker
 
         $deadline = [DateTime]::UtcNow.AddSeconds($ShutdownTimeoutSeconds)
+        $lastIdentityObservationError = $null
         while ([DateTime]::UtcNow -lt $deadline) {
-            $observed = @(Get-EzVmObservedQemuProcesses -ProcessId ([int]$runtime.pid) -ProcessProvider $ProcessProvider)
+            try {
+                $observed = @(Get-EzVmObservedQemuProcesses -ProcessId ([int]$runtime.pid) -ProcessProvider $ProcessProvider)
+                $lastIdentityObservationError = $null
+            }
+            catch {
+                # Windows can briefly retain a terminating PID after QEMU has
+                # exited far enough that CIM no longer exposes its command line.
+                # That state is not proof of exit, so never mark STOPPED from the
+                # query failure itself. Retry within the existing bounded shutdown
+                # deadline and require either a proven matching/reused identity or
+                # an empty PID observation before releasing storage ownership.
+                $lastIdentityObservationError = $_.Exception.Message
+                Start-Sleep -Milliseconds 100
+                continue
+            }
+
             if ($observed.Count -eq 0) {
                 $runtime.state = 'STOPPED'
                 $runtime.lastObservedAt = [DateTime]::UtcNow.ToString('o')
@@ -948,7 +990,7 @@ function Stop-EzVmInstance {
             }
             if ($observed.Count -eq 1) {
                 $current = Get-EzVmRuntimeIdentityResult -Runtime $runtime -ProcessProvider $ProcessProvider
-                if (-not $current.Match -and $current.Kind -eq 'reused') {
+                if (-not $current.Match -and @('missing', 'reused') -ccontains $current.Kind) {
                     $runtime.state = 'STOPPED'
                     $runtime.lastObservedAt = [DateTime]::UtcNow.ToString('o')
                     $runtime.stoppedAt = $runtime.lastObservedAt
@@ -964,7 +1006,12 @@ function Stop-EzVmInstance {
             }
             Start-Sleep -Milliseconds 100
         }
-        throw "Guest powerdown was requested, but instance '$InstanceName' did not exit within $ShutdownTimeoutSeconds seconds. QEMU was not killed; runtime state remains STOPPING."
+        $detail = if ([string]::IsNullOrWhiteSpace([string]$lastIdentityObservationError)) {
+            ''
+        } else {
+            ' Last process-identity observation error: ' + [string]$lastIdentityObservationError
+        }
+        throw "Guest powerdown was requested, but instance '$InstanceName' did not exit within $ShutdownTimeoutSeconds seconds. QEMU was not killed; runtime state remains STOPPING.$detail"
     }
     finally { $lock.Dispose() }
 }

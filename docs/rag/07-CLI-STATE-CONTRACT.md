@@ -374,3 +374,56 @@ revalidated/regenerated after relocation; they are not durable portable intent.
 Lifecycle status may report ABSENT, CREATED, STARTING, RUNNING, STOPPING, STOPPED,
 STALE or UNKNOWN. Only CREATED/STOPPED can yield the storage layer's
 `proven-safe` guard.
+
+
+## SSH/access CLI and state (EZVM-007)
+
+The additional public commands are:
+
+~~~text
+ezvm ssh <name>
+ezvm exec <name> -- <command> [arguments...]
+ezvm copy-to <name> <host-file> <guest-path>
+ezvm copy-from <name> <guest-path> <host-file>
+~~~
+
+`start <name>` now returns only after the existing QEMU lifecycle reaches
+RUNNING **and** the EZVM-007 SSH readiness contract reaches READY. The process
+lifecycle itself remains EZVM-006 RUNNING/STOPPING/etc.; READY is deliberately a
+separate access/provisioning layer rather than a new process-ownership state.
+
+The per-launch `access.json` schema is:
+
+~~~json
+{
+  "schemaVersion": 1,
+  "instanceName": "example",
+  "launchId": "<32 lowercase hex>",
+  "sshHost": "127.0.0.1",
+  "sshPort": 22000,
+  "sshUser": "coder",
+  "state": "PROVISIONING",
+  "cloudInstanceId": "ezvm-example-...",
+  "profile": "normal",
+  "readyAt": ""
+}
+~~~
+
+READY requires a non-empty ISO `readyAt`. The file contains no absolute
+relocatable path and is stale if its launch ID no longer matches the current
+runtime state.
+
+`exec` treats SSH exit 255 as a transport/authentication failure. Other non-zero
+exit codes are the remote command result and are propagated to the ezvm process.
+The module API preserves the captured remote stdout/stderr. At the CLI boundary a
+remote non-zero result uses the normal failure envelope
+(`success: false`, `data: null`, `error.code: remote_command_failed`) while
+retaining the guest exit code and bounded stdout/stderr evidence in the error
+message; it is never represented as successful execution. The `--` separator
+ends ezvm global switch parsing, so a remote argument literally named `-Json`
+stays a guest argument. Interactive `ssh` rejects ezvm `-Json` because the
+child owns the console streams.
+
+The copy commands are intentionally directional and transfer one file in
+EZVM-007. All SSH/scp commands use the managed controller key and scoped
+known-hosts state.

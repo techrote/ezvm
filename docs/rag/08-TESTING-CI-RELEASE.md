@@ -260,3 +260,28 @@ binary under explicit TCG to exercise the real host management transport and
 Windows process-command-line observation. Hosted CI must report WHPX execution as
 SKIP unless the runner actually exposes a usable WHPX environment; TCG smoke
 evidence is not WHPX evidence.
+
+
+## EZVM-007 SSH/network coverage
+
+Fast Windows CI covers:
+
+- explicit `hostfwd=tcp:127.0.0.1:<port>-:22` and instance NoCloud guestfwd;
+- loopback-only seed transport through the existing seed-server suite;
+- public-key-only instance seed generation with exact identity markers;
+- scoped strict known-hosts argv and absence of
+  `StrictHostKeyChecking=no`;
+- first-use candidate trust, port-independent trusted key continuity and
+  unexpected host-key replacement refusal;
+- command/scp argument boundaries including spaces and shell-significant
+  characters;
+- authenticated identity mismatch;
+- cloud-init incomplete, failed and completed states;
+- total readiness timeout;
+- remote non-zero exit propagation versus SSH transport exit 255;
+- configured-range port collision handling;
+- explicit missing OpenSSH-tool remediation.
+
+EZVM-007 does not claim WHPX execution on GitHub-hosted runners. Any bounded
+software-virtualization qualification must identify TCG explicitly; construction
+tests and TCG evidence do not become a WHPX PASS.

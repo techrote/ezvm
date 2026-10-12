@@ -160,6 +160,14 @@ function Get-EzVmDoctorReport {
         $checks.Add((New-EzVmDoctorCheck -Name 'managed-qemu' -Status 'supported-but-not-configured' -Message "Managed QEMU cannot be validated: $($_.Exception.Message)" -Remediation "Restore the reviewed manifest and run '.\ezvm.ps1 bootstrap'."))
     }
 
+    $openSsh = Get-EzVmOpenSshTools
+    if ($openSsh.Valid) {
+        $checks.Add((New-EzVmDoctorCheck -Name 'openssh-client' -Status 'ready' -Message $openSsh.Reason))
+    }
+    else {
+        $checks.Add((New-EzVmDoctorCheck -Name 'openssh-client' -Status 'supported-but-not-configured' -Message $openSsh.Reason -Remediation 'Install the Windows OpenSSH Client optional feature so ssh.exe, scp.exe and ssh-keygen.exe are available.'))
+    }
+
     $runtimeState = @()
     if (Test-Path -LiteralPath $paths.Instances -PathType Container) {
         $runtimeState = @(Get-ChildItem -LiteralPath $paths.Instances -Filter 'runtime.json' -File -Recurse -ErrorAction SilentlyContinue)
@@ -168,7 +176,7 @@ function Get-EzVmDoctorReport {
         $checks.Add((New-EzVmDoctorCheck -Name 'runtime-state' -Status 'ready' -Message 'No existing instance runtime state requires reconciliation.'))
     }
     else {
-        $checks.Add((New-EzVmDoctorCheck -Name 'runtime-state' -Status 'unknown' -Message "Found $($runtimeState.Count) instance runtime-state file(s). Process identity cannot be proven until the lifecycle issue provides reconciliation." -Remediation 'Do not delete or mutate instance disks based only on stale PID files.'))
+        $checks.Add((New-EzVmDoctorCheck -Name 'runtime-state' -Status 'unknown' -Message "Found $($runtimeState.Count) instance runtime-state file(s). Reconcile each instance with status before destructive storage work." -Remediation "Use '.\ezvm.ps1 status <name>' and do not mutate instance disks from PID files alone."))
     }
 
     $array = @($checks.ToArray())

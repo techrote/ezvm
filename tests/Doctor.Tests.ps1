@@ -23,7 +23,7 @@ Add-EzVmTest -Name 'Doctor: report has independent prerequisite checks and never
         $names = @($report.checks | ForEach-Object { $_.name })
         foreach ($required in @(
             'host-os', 'powershell', 'hardware-virtualization', 'whpx',
-            'runtime-write', 'path', 'disk-space', 'managed-qemu', 'runtime-state'
+            'runtime-write', 'path', 'disk-space', 'managed-qemu', 'openssh-client', 'runtime-state'
         )) {
             Assert-EzVmTrue -Condition ($names -ccontains $required) -Message "Doctor omitted '$required'."
         }
@@ -79,7 +79,7 @@ Add-EzVmTest -Name 'Doctor: runtime-state files are reported as unknown rather t
         $report = Get-EzVmDoctorReport -Root $root
         $state = @($report.checks | Where-Object { $_.name -ceq 'runtime-state' })[0]
         Assert-EzVmEqual -Actual $state.status -Expected 'unknown'
-        Assert-EzVmTrue -Condition ($state.message -match 'cannot be proven')
+        Assert-EzVmTrue -Condition ($state.message -match 'Reconcile each instance')
     }
     finally { Remove-EzVmTestDirectory -Path $root }
 }
