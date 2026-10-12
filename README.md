@@ -22,6 +22,9 @@ The commands available on this branch are:
 .\ezvm.ps1 bootstrap
 .\ezvm.ps1 base acquire
 .\ezvm.ps1 base build
+.\ezvm.ps1 status <name>
+.\ezvm.ps1 start <name>
+.\ezvm.ps1 stop <name>
 ~~~
 
 Running with no command also shows help. Unknown commands and malformed arguments
