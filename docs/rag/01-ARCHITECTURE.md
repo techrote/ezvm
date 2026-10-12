@@ -204,3 +204,20 @@ Storage mutation APIs require explicit positive lifecycle evidence
 (`proven-safe`). Missing, running, transitional or unknown state fails closed.
 This interface is intentionally separate from EZVM-006, which owns the complete
 QEMU process/state machine.
+
+## Implemented runtime lifecycle (EZVM-006)
+
+EZVM-006 owns the long-running QEMU/process boundary. Durable `instance.json`
+intent is separate from ephemeral `runtime.json` observation. Runtime evidence
+records the PID, observed process start time, absolute managed QEMU executable,
+launch-specific argument fingerprint, QMP endpoint identity, accelerator and log
+paths.
+
+Lifecycle reconciliation reports CREATED, STARTING, RUNNING, STOPPING, STOPPED,
+STALE or UNKNOWN as appropriate. A PID is evidence only: executable identity,
+start time and the observed argv fingerprint must all agree before QEMU ownership
+is considered proven.
+
+Per-instance start/stop mutation is serialized by an exclusive lifecycle lock.
+EZVM-005 storage mutation receives `proven-safe` evidence only from a reconciled
+CREATED or STOPPED instance. STALE and UNKNOWN never become implicit STOPPED.
