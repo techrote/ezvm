@@ -7,8 +7,10 @@ Portable, disposable QEMU + QCOW2 coding-agent environments for Windows hosts.
 **EZVM-001 provides the control-plane foundation, EZVM-002 adds portable QEMU
 bootstrap plus Windows host preflight, EZVM-003 adds verified Ubuntu source
 acquisition, EZVM-004 adds reproducible prepared-base construction, EZVM-005
-adds validated thin-overlay storage primitives, and EZVM-006 adds headless
-start/status/stop lifecycle control; the project remains version `0.0.0-dev`.**
+adds validated thin-overlay storage primitives, EZVM-006 adds headless
+start/status/stop lifecycle control, and EZVM-007 adds localhost-only managed
+SSH, authenticated readiness, exec and file transfer; the project remains
+version `0.0.0-dev`.**
 The checkout has reviewed QEMU/7-Zip manifests, repository-local verified runtime
 bootstrap, `doctor`, and automated tests under Windows PowerShell 5.1 and
 PowerShell 7.
@@ -25,6 +27,10 @@ The commands available on this branch are:
 .\ezvm.ps1 status <name>
 .\ezvm.ps1 start <name>
 .\ezvm.ps1 stop <name>
+.\ezvm.ps1 ssh <name>
+.\ezvm.ps1 exec <name> -- <command> [arguments]
+.\ezvm.ps1 copy-to <name> <host-file> <guest-path>
+.\ezvm.ps1 copy-from <name> <guest-path> <host-file>
 ~~~
 
 Running with no command also shows help. Unknown commands and malformed arguments
@@ -78,8 +84,19 @@ content-addressed prepared base, complete chains are validated with machine-read
 and reset storage is replaced only after a candidate overlay validates. No public
 instance-create/start command is introduced by EZVM-005.
 
-VM lifecycle commands are delivered by subsequent programme issues. Version
-`0.0.0-dev` is not the v0.1 release.
+EZVM-007 makes the existing lifecycle start path wait beyond QEMU RUNNING until
+the forwarded localhost SSH endpoint authenticates with the ezvm controller key,
+the guest proves its requested instance/base/profile identity, cloud-init reports
+completion, and the readiness marker exists. The controller private key and
+per-instance known-hosts trust remain under ignored `runtime/keys`; only the
+public key enters the instance NoCloud seed. SSH forwarding is explicitly bound
+to `127.0.0.1`; no TAP, bridge or LAN listener is configured.
+
+`exec` preserves the remote program's exit status and captured stdout/stderr.
+The directional `copy-to` and `copy-from` commands use the same scoped key and
+host-key policy. Instance creation, durable profile/port allocation and the
+multi-instance registry remain EZVM-008 work. Version `0.0.0-dev` is not the
+v0.1 release.
 
 ## Planned target experience
 
@@ -175,3 +192,30 @@ reconciled.
 
 The public start path uses WHPX and never silently substitutes TCG. Explicit TCG
 is reserved for bounded qualification/troubleshooting paths.
+
+
+## EZVM-007 SSH and readiness
+
+Each launch uses QEMU user networking with a virtio NIC. The SSH forward has the
+explicit form `hostfwd=tcp:127.0.0.1:<port>-:22`. A temporary loopback seed
+server is exposed only to the guest through
+`guestfwd=tcp:10.0.2.100:8000-tcp:127.0.0.1:<seed-port>`; SMBIOS points
+NoCloud at `http://10.0.2.100:8000/`.
+
+The controller identity is an Ed25519 keypair in `runtime/keys`. On Windows the
+private-key ACL is restricted to the current user with `icacls`. ezvm requires
+`ssh.exe`, `scp.exe`, `ssh-keygen.exe` and `ssh-keyscan.exe`; `doctor`
+reports a concrete OpenSSH Client remediation if any are unavailable.
+
+Host-key checking is never disabled. A scanned host key is first placed in a
+launch candidate known-hosts file and becomes durable trust only after managed-key
+SSH succeeds and the guest proves the expected ezvm identity/readiness state.
+Unexpected changes to an already trusted host key fail closed rather than silently
+replacing trust. A later explicit reset/rebuild operation may own a controlled
+re-key transition.
+
+EZVM-007 stores launch SSH metadata in per-instance `access.json`, separately
+from EZVM-006's durable instance intent and process-lifecycle schema. It contains
+no relocatable absolute path and is valid only while its launch ID matches the
+current RUNNING QEMU process. EZVM-008 will add durable instance port/profile
+allocation and registry semantics.
