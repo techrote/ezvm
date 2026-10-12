@@ -266,3 +266,25 @@ Add-EzVmTest -Name 'CLI: interactive ssh explicitly rejects structured output' -
     $value = Assert-EzVmJsonEnvelope -Result $result -Command 'ssh' -ExitCode 2
     Assert-EzVmTrue -Condition ($value.error.message -match 'Interactive ssh cannot be combined with -Json')
 }
+
+
+Add-EzVmTest -Name 'CLI: remote non-zero exec result is failure without losing exit or stderr evidence' -ScriptBlock {
+    $module = Get-Module EzVm
+    $result = & $module {
+        New-EzVmRemoteCommandFailureResult -ExitCode 23 -StdOut 'partial output' -StdErr 'guest diagnostic'
+    }
+    Assert-EzVmEqual -Actual $result.success -Expected $false
+    Assert-EzVmEqual -Actual $result.command -Expected 'exec'
+    Assert-EzVmEqual -Actual $result.exitCode -Expected 23
+    Assert-EzVmEqual -Actual $result.data -Expected $null
+    Assert-EzVmEqual -Actual $result.error.code -Expected 'remote_command_failed'
+    Assert-EzVmTrue -Condition ($result.error.message -match 'code 23' -and $result.error.message -match 'guest diagnostic' -and $result.error.message -match 'partial output')
+}
+
+Add-EzVmTest -Name 'CLI: remote exec failure diagnostics are bounded in the standard envelope' -ScriptBlock {
+    $module = Get-Module EzVm
+    $result = & $module {
+        New-EzVmRemoteCommandFailureResult -ExitCode 7 -StdOut ('o' * 900) -StdErr ('e' * 3000)
+    }
+    Assert-EzVmTrue -Condition ($result.error.message.Length -lt 2200) -Message 'Remote failure evidence must be useful but bounded.'
+}
