@@ -557,23 +557,29 @@ function New-EzVmCandidateKnownHosts {
         throw "Scanned SSH host-key entry belongs to '$($scanned.Host)', expected '$expectedHost'."
     }
 
+    $existingMaterial = $null
+    $changed = $false
     if (Test-Path -LiteralPath $paths.InstanceKnownHosts -PathType Leaf) {
         $existingLines = @([IO.File]::ReadAllLines($paths.InstanceKnownHosts) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and -not $_.TrimStart().StartsWith('#') })
         if ($existingLines.Count -ne 1) {
             throw "Managed known-hosts state for instance '$InstanceName' is malformed; refusing to weaken host-key verification."
         }
         $existing = Get-EzVmKnownHostKeyMaterial -Line $existingLines[0]
-        if ($existing.Material -cne $scanned.Material) {
-            throw "SSH host key changed unexpectedly for instance '$InstanceName'. Refusing automatic trust replacement without an explicit rebuild/reset identity transition."
-        }
+        $existingMaterial = $existing.Material
+        $changed = $existing.Material -cne $scanned.Material
     }
 
+    # A changed key is never trusted merely because keyscan observed it. Keep the
+    # existing managed entry untouched and use this launch-local candidate only
+    # for the authenticated identity/readiness proof. Promotion happens later.
     $candidate = Join-Path $paths.KnownHostsDirectory ('.' + $InstanceName + '.' + $LaunchId + '.candidate')
     [IO.File]::WriteAllText($candidate, ($ScannedLine.Trim() + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
     return [pscustomobject][ordered]@{
         Candidate = [IO.Path]::GetFullPath($candidate)
         Managed = $paths.InstanceKnownHosts
         Material = $scanned.Material
+        ExistingMaterial = $existingMaterial
+        Changed = $changed
     }
 }
 
@@ -774,7 +780,7 @@ function Wait-EzVmSshReady {
                     $candidate = New-EzVmCandidateKnownHosts -Root $Root -InstanceName $InstanceName -LaunchId ([string]$Access.launchId) -Port ([int]$Access.sshPort) -ScannedLine ([string]$line)
                 }
                 catch {
-                    if ($_.Exception.Message -match 'host key changed unexpectedly|malformed.*known-hosts|belongs to') { throw }
+                    if ($_.Exception.Message -match 'malformed.*known-hosts|belongs to') { throw }
                     $lastError = $_.Exception.Message
                     if ($null -ne $SleepProvider) { & $SleepProvider 100 } else { Start-Sleep -Milliseconds 100 }
                     continue
