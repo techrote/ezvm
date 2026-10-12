@@ -165,7 +165,7 @@ function Get-EzVmDoctorReport {
         $checks.Add((New-EzVmDoctorCheck -Name 'openssh-client' -Status 'ready' -Message $openSsh.Reason))
     }
     else {
-        $checks.Add((New-EzVmDoctorCheck -Name 'openssh-client' -Status 'supported-but-not-configured' -Message $openSsh.Reason -Remediation 'Install the Windows OpenSSH Client optional feature so ssh.exe, scp.exe, ssh-keygen.exe and ssh-keyscan.exe are available.'))
+        $checks.Add((New-EzVmDoctorCheck -Name 'openssh-client' -Status 'supported-but-not-configured' -Message $openSsh.Reason -Remediation 'Install the Windows OpenSSH Client optional feature so ssh.exe, scp.exe and ssh-keygen.exe are available.'))
     }
 
     $runtimeState = @()
