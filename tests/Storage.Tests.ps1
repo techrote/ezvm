@@ -372,3 +372,46 @@ Add-EzVmTest -Name 'Storage: source contains no normal commit, rebase, unsafe cr
     Assert-EzVmTrue -Condition ($source -notmatch "(?i)'rebase'|\bqemu-img\s+rebase\b") -Message 'Storage implementation must not automatically rebase broken chains.'
     Assert-EzVmTrue -Condition ($source -notmatch "(?i)'create'[^\r\n]*'-u'") -Message 'Storage implementation must not use unsafe backing creation.'
 }
+
+$storageWindowsSkip = $null
+if (-not $script:EzVmIsWindowsHost) {
+    $storageWindowsSkip = 'Windows drive-letter and junction semantics require a Windows host; both required Windows CI lanes execute these cases.'
+}
+
+Add-EzVmTest -Name 'Storage: relative backing string is invariant across Windows drive-letter relocation' -SkipReason $storageWindowsSkip -ScriptBlock {
+    $baseId = 'base-' + ('a' * 64)
+    $fromC = 'C:\ezvm root\runtime\instances\agent'
+    $baseC = 'C:\ezvm root\runtime\bases\' + $baseId + '\base.qcow2'
+    $fromD = 'D:\portable ezvm\runtime\instances\agent'
+    $baseD = 'D:\portable ezvm\runtime\bases\' + $baseId + '\base.qcow2'
+
+    $relativeC = Get-EzVmStorageRelativePath -FromDirectory $fromC -TargetPath $baseC
+    $relativeD = Get-EzVmStorageRelativePath -FromDirectory $fromD -TargetPath $baseD
+    Assert-EzVmEqual -Actual $relativeD -Expected $relativeC
+    Assert-EzVmEqual -Actual $relativeC -Expected ('..\..\bases\' + $baseId + '\base.qcow2')
+
+    Assert-EzVmThrows -ScriptBlock {
+        Get-EzVmStorageRelativePath -FromDirectory $fromC -TargetPath $baseD
+    } -MessagePattern 'cannot cross filesystem roots' | Out-Null
+}
+
+Add-EzVmTest -Name 'Storage: junction instance directory is refused before overlay mutation' -SkipReason $storageWindowsSkip -ScriptBlock {
+    $fixture = New-EzVmStorageFixture
+    $outside = New-EzVmTestDirectory -Prefix 'storage junction outside target'
+    $junction = $null
+    try {
+        [void][IO.Directory]::CreateDirectory($fixture.Paths.Instances)
+        $junction = Join-Path $fixture.Paths.Instances 'junction-agent'
+        $null = New-Item -ItemType Junction -Path $junction -Target $outside -ErrorAction Stop
+        Assert-EzVmThrows -ScriptBlock {
+            New-EzVmInstanceOverlay -Root $fixture.Root -InstanceName 'junction-agent' -BaseId $fixture.BaseId -LifecycleGuard $fixture.SafeGuard -QemuImgRunner $fixture.Runner
+        } -MessagePattern 'reparse point' | Out-Null
+        Assert-EzVmEqual -Actual @(Get-ChildItem -LiteralPath $outside -Force).Count -Expected 0
+    }
+    finally {
+        if ($null -ne $junction -and (Test-Path -LiteralPath $junction)) { Remove-Item -LiteralPath $junction -Force }
+        Remove-EzVmTestDirectory -Path $outside
+        Remove-EzVmStorageFixture $fixture
+    }
+}
+
