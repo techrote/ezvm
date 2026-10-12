@@ -6,9 +6,9 @@ Portable, disposable QEMU + QCOW2 coding-agent environments for Windows hosts.
 
 **EZVM-001 provides the control-plane foundation, EZVM-002 adds portable QEMU
 bootstrap plus Windows host preflight, EZVM-003 adds verified Ubuntu source
-acquisition, EZVM-004 adds reproducible prepared-base construction, and EZVM-005
-adds validated thin-overlay storage primitives; the project remains version
-`0.0.0-dev`.**
+acquisition, EZVM-004 adds reproducible prepared-base construction, EZVM-005
+adds validated thin-overlay storage primitives, and EZVM-006 adds headless
+start/status/stop lifecycle control; the project remains version `0.0.0-dev`.**
 The checkout has reviewed QEMU/7-Zip manifests, repository-local verified runtime
 bootstrap, `doctor`, and automated tests under Windows PowerShell 5.1 and
 PowerShell 7.
@@ -153,3 +153,22 @@ Key upstream references are recorded in docs/rag. The principal sources are QEMU
 ## License
 
 No project license has been selected yet. Third-party QEMU and Ubuntu artifacts are not intended to be committed into this repository.
+
+## EZVM-006 runtime lifecycle
+
+EZVM-006 adds headless lifecycle control for already-created instances. `status
+<name>` reconciles durable intent, runtime evidence and observed Windows process
+identity. `start <name>` validates the complete EZVM-005 QCOW2 chain and starts
+the managed QEMU executable with WHPX, explicit q35/virtio devices, per-instance
+UEFI variables, serial/QEMU logs and a host-local QMP management channel. `stop
+<name>` requests guest `system_powerdown` over QMP and waits for clean QEMU exit.
+
+A stored PID is never sufficient to prove ownership. Active runtime evidence
+includes process start time, managed QEMU executable path and a SHA-256
+fingerprint of the observed argv, including the instance-specific QEMU name
+marker. Stale or ambiguous ownership fails closed. A graceful-stop timeout does
+not silently kill QEMU; the instance remains STOPPING until ownership is
+reconciled.
+
+The public start path uses WHPX and never silently substitutes TCG. Explicit TCG
+is reserved for bounded qualification/troubleshooting paths.
