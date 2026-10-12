@@ -569,33 +569,6 @@ function Assert-EzVmCandidateKnownHostsEntry {
     return $entry
 }
 
-function Get-EzVmSshHostKeyScanLine {
-    param(
-        [Parameter(Mandatory = $true)][object]$Tooling,
-        [Parameter(Mandatory = $true)][ValidateRange(1024, 65535)][int]$Port,
-        [ValidateRange(1, 30)][int]$TimeoutSeconds = 5,
-        [scriptblock]$ProcessRunner
-    )
-
-    $arguments = @('-T', [string]$TimeoutSeconds, '-p', [string]$Port, '-t', 'ed25519', '127.0.0.1')
-    $result = if ($null -ne $ProcessRunner) {
-        & $ProcessRunner $Tooling.Keyscan $arguments $TimeoutSeconds
-    } else {
-        Invoke-EzVmProcess -FilePath $Tooling.Keyscan -ArgumentList $arguments -TimeoutSeconds $TimeoutSeconds
-    }
-    if ($null -eq $result -or [int]$result.ExitCode -ne 0) {
-        $detail = if ($null -ne $result) { [string]$result.StdErr } else { '' }
-        throw "ssh-keyscan could not read the forwarded guest host key. $detail"
-    }
-    $expectedHost = '[127.0.0.1]:' + $Port
-    $lines = @([string]$result.StdOut -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and -not $_.StartsWith('#') })
-    foreach ($line in $lines) {
-        $parsed = Get-EzVmKnownHostKeyMaterial -Line $line
-        if ($parsed.Host -ceq $expectedHost) { return $line.Trim() }
-    }
-    throw "ssh-keyscan returned no Ed25519 key for $expectedHost."
-}
-
 function New-EzVmCandidateKnownHosts {
     param(
         [string]$Root,
