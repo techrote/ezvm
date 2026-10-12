@@ -46,7 +46,39 @@ Add-EzVmTest -Name 'CLI: help and empty input provide human usage' -ScriptBlock 
         Assert-EzVmTrue -Condition ($result.StandardOutput -match 'doctor' -and $result.StandardOutput -match 'bootstrap' -and $result.StandardOutput -match 'base acquire' -and $result.StandardOutput -match 'base build') -Message 'Help must list all implemented host, source and prepared-base commands.'
         Assert-EzVmTrue -Condition ($result.StandardOutput -match 'status <name>' -and $result.StandardOutput -match 'start <name>' -and $result.StandardOutput -match 'stop <name>') -Message 'Help must list implemented lifecycle commands.'
         Assert-EzVmTrue -Condition ($result.StandardOutput -match 'ssh <name>' -and $result.StandardOutput -match 'exec <name> -- <command>' -and $result.StandardOutput -match 'copy-to <name>' -and $result.StandardOutput -match 'copy-from <name>') -Message 'Help must list implemented SSH control commands.'
-        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'instance creation/registry allocation follows') -Message 'Help must distinguish implemented SSH control from later instance creation/registry work.'
+        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'create <name>' -and $result.StandardOutput -match '(?m)^\s+list\s') -Message 'Help must list the EZVM-008 create and list commands.'
+        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'concurrent named-instance allocation are implemented' -and $result.StandardOutput -match 'guest coding-agent provisioning follows') -Message 'Help must distinguish implemented EZVM-008 instance management from later guest provisioning work.'
+    }
+}
+
+Add-EzVmTest -Name 'CLI: list of an empty registry succeeds in human and structured modes' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'cli empty registry'
+    try {
+        $human = Invoke-EzVmCliForTest -ArgumentList @('list') -Root $root
+        Assert-EzVmEqual -Actual $human.ExitCode -Expected 0
+        Assert-EzVmEqual -Actual $human.StandardError -Expected ''
+        Assert-EzVmTrue -Condition ($human.StandardOutput -match 'No managed instances')
+
+        $json = Invoke-EzVmCliForTest -ArgumentList @('list', '-Json') -Root $root
+        $value = Assert-EzVmJsonEnvelope -Result $json -Command 'list' -ExitCode 0
+        Assert-EzVmEqual -Actual $value.data.count -Expected 0
+        Assert-EzVmEqual -Actual @($value.data.instances).Count -Expected 0
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'CLI: create validates its public option grammar before execution' -ScriptBlock {
+    foreach ($case in @(
+        [pscustomobject]@{ Args = @('create'); Pattern = 'requires an instance name' }
+        [pscustomobject]@{ Args = @('create', '..'); Pattern = 'invalid|unsafe' }
+        [pscustomobject]@{ Args = @('create', 'agent', '-Unknown', 'x'); Pattern = 'Unknown create option' }
+        [pscustomobject]@{ Args = @('create', 'agent', '-Profile'); Pattern = 'requires a value' }
+        [pscustomobject]@{ Args = @('create', 'agent', '-Cpus', 'abc'); Pattern = 'positive integer' }
+        [pscustomobject]@{ Args = @('create', 'agent', '-Cpus', '4', '-Cpus', '8'); Pattern = 'at most once' }
+    )) {
+        $result = Invoke-EzVmCliForTest -ArgumentList $case.Args
+        Assert-EzVmEqual -Actual $result.ExitCode -Expected 2
+        Assert-EzVmTrue -Condition ($result.StandardError -match $case.Pattern) -Message ('Unexpected create argument error for: ' + ($case.Args -join ' '))
     }
 }
 
