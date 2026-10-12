@@ -732,6 +732,7 @@ function Start-EzVmInstance {
         [ValidateSet('whpx', 'tcg')][string]$Accelerator = 'whpx',
         [ValidateRange(1, 3600)][int]$StartupTimeoutSeconds = 60,
         [scriptblock]$QemuImgRunner,
+        [scriptblock]$QemuStatusProvider,
         [scriptblock]$ProcessProvider,
         [scriptblock]$ProcessLauncher,
         [scriptblock]$QmpInvoker
@@ -747,8 +748,12 @@ function Start-EzVmInstance {
         }
         $storage = Test-EzVmInstanceStorage -Root $Root -InstanceName $InstanceName -BaseId $intent.baseId -QemuImgRunner $QemuImgRunner
         $paths = Get-EzVmPaths -Root $Root
-        $managed = Get-EzVmManagedQemuStatus -Root $Root
-        if (-not $managed.Valid) { throw "Instance start requires validated managed QEMU. $($managed.Reason) Run '.\ezvm.ps1 bootstrap' and retry." }
+        $managed = if ($null -ne $QemuStatusProvider) {
+            & $QemuStatusProvider $Root
+        } else {
+            Get-EzVmManagedQemuStatus -Root $Root
+        }
+        if ($null -eq $managed -or -not $managed.Valid) { throw "Instance start requires validated managed QEMU. $($managed.Reason) Run '.\ezvm.ps1 bootstrap' and retry." }
 
         $runtimePaths = Get-EzVmInstanceRuntimePaths -Root $Root -InstanceName $InstanceName
         [void][IO.Directory]::CreateDirectory($runtimePaths.Logs)
