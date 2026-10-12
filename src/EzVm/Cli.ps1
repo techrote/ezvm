@@ -32,6 +32,23 @@ function New-EzVmCliArgumentError {
     return New-EzVmCommandResult -Success $false -Command $Command -ExitCode 2 -ErrorCode $Code -Message ($Message + ' Run .\ezvm.ps1 help for usage.')
 }
 
+function New-EzVmRemoteCommandFailureResult {
+    param(
+        [Parameter(Mandatory = $true)][int]$ExitCode,
+        [AllowEmptyString()][string]$StdOut = '',
+        [AllowEmptyString()][string]$StdErr = ''
+    )
+    if ($ExitCode -eq 0) { throw 'A remote-command failure result requires a non-zero exit code.' }
+    $stderrText = $StdErr.Trim()
+    $stdoutText = $StdOut.Trim()
+    if ($stderrText.Length -gt 1536) { $stderrText = $stderrText.Substring(0, 1536) + '...' }
+    if ($stdoutText.Length -gt 512) { $stdoutText = $stdoutText.Substring(0, 512) + '...' }
+    $message = "Remote command exited with code $ExitCode."
+    if (-not [string]::IsNullOrWhiteSpace($stderrText)) { $message += " stderr: $stderrText" }
+    if (-not [string]::IsNullOrWhiteSpace($stdoutText)) { $message += " stdout: $stdoutText" }
+    return New-EzVmCommandResult -Success $false -Command 'exec' -ExitCode $ExitCode -ErrorCode 'remote_command_failed' -Message $message
+}
+
 function Invoke-EzVmCommand {
     [CmdletBinding()]
     param(
@@ -158,7 +175,10 @@ function Invoke-EzVmCommand {
         'exec' {
             $configuration = Get-EzVmConfiguration -Root $Root
             $data = Invoke-EzVmExec -Root $Root -InstanceName $instanceName -Command $remoteCommand -TimeoutSeconds ([int]$configuration.timeouts.processSeconds)
-            return New-EzVmCommandResult -Success $true -Command 'exec' -ExitCode ([int]$data.exitCode) -Data $data
+            if ([int]$data.exitCode -ne 0) {
+                return New-EzVmRemoteCommandFailureResult -ExitCode ([int]$data.exitCode) -StdOut ([string]$data.stdout) -StdErr ([string]$data.stderr)
+            }
+            return New-EzVmCommandResult -Success $true -Command 'exec' -ExitCode 0 -Data $data
         }
         'copy-to' {
             $configuration = Get-EzVmConfiguration -Root $Root
