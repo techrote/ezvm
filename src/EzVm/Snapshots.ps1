@@ -24,7 +24,9 @@ function Read-EzVmQcow2Header {
     if (-not $Stream.CanSeek -or $Stream.Length -lt 72) { throw 'QCOW2 header is truncated.' }
     $Stream.Position = 0
     $prefix = New-Object byte[] 104
-    $prefixLength = [int][Math]::Min(104, $Stream.Length)
+    # Select Int64 before bounding the file length; an Int32 first operand
+    # makes PowerShell narrow even a multi-GiB stream before Min can run.
+    $prefixLength = [int][Math]::Min([long]$prefix.Length, [long]$Stream.Length)
     $read = 0
     while ($read -lt $prefixLength) {
         $count = $Stream.Read($prefix, $read, $prefixLength - $read)

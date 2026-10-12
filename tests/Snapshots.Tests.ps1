@@ -6,6 +6,42 @@ function Set-EzVmSnapshotFixtureInteger {
     }
 }
 
+function New-EzVmSnapshotHeaderBoundaryStream {
+    param([byte[]]$Header, [long]$ReportedLength, [int]$ReadChunk = 17)
+    if ($null -eq ('EzVmSnapshotHeaderBoundaryStream' -as [type])) {
+        # A seekable stream models a multi-GiB image while keeping only its
+        # first cluster in memory. Short reads exercise the real parser loops.
+        Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+public sealed class EzVmSnapshotHeaderBoundaryStream : MemoryStream
+{
+    private readonly long reportedLength;
+    private readonly int readChunk;
+    public long BytesRead { get; private set; }
+    public int ReadCalls { get; private set; }
+    public int LargestReadRequest { get; private set; }
+    public EzVmSnapshotHeaderBoundaryStream(byte[] header, long length, int chunk)
+        : base(header, false)
+    {
+        reportedLength = length;
+        readChunk = chunk;
+    }
+    public override long Length { get { return reportedLength; } }
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+        ReadCalls++;
+        LargestReadRequest = Math.Max(LargestReadRequest, count);
+        int read = base.Read(buffer, offset, Math.Min(count, readChunk));
+        BytesRead += read;
+        return read;
+    }
+}
+'@ -ErrorAction Stop
+    }
+    return [EzVmSnapshotHeaderBoundaryStream]::new($Header, $ReportedLength, $ReadChunk)
+}
+
 function Write-EzVmSnapshotFixtureImage {
     param(
         [string]$Path, [string]$Backing = '', [string]$Data = '', [long]$VirtualSize = 67108864,
@@ -150,6 +186,81 @@ Add-EzVmTest -Name 'Snapshots: QCOW2 header accepts only bounded supported stand
         Assert-EzVmEqual $fixture.State.Calls.Count 0
     }
     finally { Remove-EzVmSnapshotFixture $fixture }
+}
+
+Add-EzVmTest -Name 'Snapshots: image lengths above 2 GiB retain bounded first-cluster reads' -ScriptBlock {
+    $root = New-EzVmTestDirectory -Prefix 'large QCOW2 header stream'
+    $module = Get-Module EzVm
+    try {
+        $path = Join-Path $root 'small header fixture.qcow2'
+        foreach ($backing in @('', '../../bases/base-known/base.qcow2')) {
+            Write-EzVmSnapshotFixtureImage -Path $path -Backing $backing -VirtualSize 17179869184L
+            $fixtureBytes = [IO.File]::ReadAllBytes($path)
+            foreach ($case in @(
+                @{ Length = 2147483647L; ClusterBits = 9; ReadChunk = 17 },
+                @{ Length = 2147483648L; ClusterBits = 9; ReadChunk = 17 },
+                @{ Length = 2736259072L; ClusterBits = 16; ReadChunk = 4093 },
+                @{ Length = [long]::MaxValue; ClusterBits = 9; ReadChunk = 17 },
+                @{ Length = [long]::MaxValue; ClusterBits = 21; ReadChunk = 65521 }
+            )) {
+                $clusterSize = 1 -shl $case.ClusterBits
+                $headerBytes = New-Object byte[] $clusterSize
+                [Array]::Copy($fixtureBytes, 0, $headerBytes, 0, 512)
+                Set-EzVmSnapshotFixtureInteger $headerBytes 20 4 $case.ClusterBits
+                $stream = New-EzVmSnapshotHeaderBoundaryStream -Header $headerBytes -ReportedLength $case.Length -ReadChunk $case.ReadChunk
+                try {
+                    $header = & $module { param($inputStream, $expected) Read-EzVmQcow2Header -Stream $inputStream -ExpectedBacking $expected } $stream $backing
+                    Assert-EzVmEqual $header.Version 3
+                    Assert-EzVmEqual $header.VirtualSizeBytes 17179869184L
+                    Assert-EzVmEqual $header.BackingReference $backing
+                    Assert-EzVmEqual $header.ClusterSizeBytes $clusterSize
+                    Assert-EzVmEqual $stream.BytesRead (104L + $clusterSize) -Message 'Large logical images must read only the prefix and one bounded cluster.'
+                    Assert-EzVmTrue ($stream.LargestReadRequest -le $clusterSize)
+                    Assert-EzVmTrue ($stream.ReadCalls -gt 2) -Message 'The fixture must exercise partial stream reads.'
+                }
+                finally { $stream.Dispose() }
+            }
+        }
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'Snapshots: large stream lengths preserve dependency bounds and truncated-read refusal' -ScriptBlock {
+    $root = New-EzVmTestDirectory -Prefix 'unsafe large QCOW2 header stream'
+    $module = Get-Module EzVm
+    try {
+        $path = Join-Path $root 'small unsafe header fixture.qcow2'
+        foreach ($case in @('external-backing', 'backing-offset', 'extension-length', 'truncated-cluster')) {
+            $backing = if ($case -eq 'external-backing' -or $case -eq 'backing-offset') { '../outside.qcow2' } else { '' }
+            Write-EzVmSnapshotFixtureImage -Path $path -Backing $backing
+            $fixtureBytes = [IO.File]::ReadAllBytes($path)
+            $headerBytes = New-Object byte[] $(if ($case -eq 'truncated-cluster') { 256 } else { 512 })
+            [Array]::Copy($fixtureBytes, 0, $headerBytes, 0, $headerBytes.Length)
+            $expectedBacking = ''
+            $pattern = 'no backing file'
+            if ($case -eq 'backing-offset') {
+                Set-EzVmSnapshotFixtureInteger $headerBytes 8 8 2736259072L
+                $expectedBacking = $backing
+                $pattern = 'out-of-cluster bounds'
+            }
+            elseif ($case -eq 'extension-length') {
+                Set-EzVmSnapshotFixtureInteger $headerBytes 104 4 0x6803f857L
+                Set-EzVmSnapshotFixtureInteger $headerBytes 108 4 0xffffffffL
+                $pattern = 'exceeds its bounded first-cluster'
+            }
+            elseif ($case -eq 'truncated-cluster') { $pattern = 'first-cluster read ended unexpectedly' }
+            $stream = New-EzVmSnapshotHeaderBoundaryStream -Header $headerBytes -ReportedLength 2736259072L
+            try {
+                Assert-EzVmThrows {
+                    & $module { param($inputStream, $expected) Read-EzVmQcow2Header -Stream $inputStream -ExpectedBacking $expected } $stream $expectedBacking
+                } -MessagePattern $pattern | Out-Null
+                Assert-EzVmTrue ($stream.BytesRead -le 616)
+                Assert-EzVmTrue ($stream.LargestReadRequest -le 512)
+            }
+            finally { $stream.Dispose() }
+        }
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
 }
 
 Add-EzVmTest -Name 'Snapshots: malformed or dependency-bearing imports refuse before any qemu-img call' -ScriptBlock {
