@@ -397,7 +397,7 @@ Add-EzVmTest -Name 'SSH: configured port allocation skips collisions and stays i
         Assert-EzVmEqual -Actual $port -Expected 22003
         Assert-EzVmThrows -ScriptBlock {
             Get-EzVmAvailableSshPort -Root $root -PortProbe { param($candidate) return $false }
-        } -MessagePattern 'No loopback SSH port is available.*22000-22999' | Out-Null
+        } -MessagePattern 'No (?:unreserved )?loopback SSH port is available.*22000-22999' | Out-Null
     }
     finally { Remove-EzVmTestDirectory -Path $root }
 }
