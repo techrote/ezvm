@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "name": "coding-default",
+  "version": 1,
+  "user": "coder",
+  "home": "/home/coder",
+  "workspace": "/home/coder/workspace",
+  "privilege": "passwordless-sudo",
+  "requiredCommands": [
+    "sshd",
+    "ssh",
+    "scp",
+    "sudo",
+    "cloud-init",
+    "git",
+    "gcc",
+    "g++",
+    "make",
+    "cmake",
+    "ninja",
+    "python3",
+    "pip3",
+    "curl",
+    "wget",
+    "jq",
+    "rg",
+    "unzip",
+    "zip",
+    "rsync",
+    "tmux"
+  ]
+}

@@ -279,6 +279,12 @@ function Get-EzVmGuestHostname {
     return 'ezvm-' + $label + '-' + $suffix
 }
 
+function Get-EzVmGuestCloudInstanceId {
+    param([Parameter(Mandatory = $true)][object]$Intent)
+    $hash = Get-EzVmSshSha256Hex -Text ([string]$Intent.name + '|' + [string]$Intent.baseId + '|' + [string]$Intent.createdAt)
+    return 'ezvm-' + ([string]$Intent.name).ToLowerInvariant() + '-' + $hash.Substring(0, 12)
+}
+
 function New-EzVmInstanceSeedData {
     [CmdletBinding()]
     param(
@@ -295,22 +301,28 @@ function New-EzVmInstanceSeedData {
         $ControllerPublicKey -match '(?i)PRIVATE KEY') {
         throw 'Instance seed requires exactly one Ed25519 controller public key and must never receive private-key material.'
     }
+    # Comments are not key material and can accidentally contain host paths or
+    # credentials. Only the algorithm and public-key bytes enter the guest seed.
+    $ControllerPublicKey = [string]::Join(' ', @($ControllerPublicKey -split ' ' | Select-Object -First 2))
+    $codingProfile = Get-EzVmCodingProfile -Root $Root -Name ([string]$Intent.provisioningProfile) -Version ([int]$Intent.provisioningVersion)
     if ([string]::IsNullOrWhiteSpace($Profile)) {
         $Profile = Get-EzVmIntentProfileName -Root $Root -Intent $Intent
     }
-    if ($Profile -cnotmatch '^[a-z0-9][a-z0-9._-]{0,31}$') {
-        throw "Instance profile marker '$Profile' is invalid."
+    if ($Profile -cnotmatch '^[a-z0-9][a-z0-9._-]{0,31}$' -or $Profile -cne [string]$Intent.profile) {
+        throw "Instance resource profile marker '$Profile' does not match durable intent."
     }
 
     $hostname = Get-EzVmGuestHostname -InstanceName $InstanceName
-    $cloudIdHash = Get-EzVmSshSha256Hex -Text ($InstanceName + '|' + [string]$Intent.baseId + '|' + [string]$Intent.createdAt)
-    $cloudInstanceId = 'ezvm-' + $InstanceName.ToLowerInvariant() + '-' + $cloudIdHash.Substring(0, 12)
+    $cloudInstanceId = Get-EzVmGuestCloudInstanceId -Intent $Intent
     $identity = [pscustomobject][ordered]@{
-        schemaVersion = 1
+        schemaVersion = 2
         instanceName = $InstanceName
         baseId = [string]$Intent.baseId
         profile = $Profile
         cloudInstanceId = $cloudInstanceId
+        provisioningProfile = [string]$codingProfile.Name
+        provisioningVersion = [int]$codingProfile.Version
+        provisioningDigest = [string]$codingProfile.Digest
     }
     $identityJson = $identity | ConvertTo-Json -Compress
 
@@ -324,29 +336,52 @@ function New-EzVmInstanceSeedData {
         '  - default',
         '  - name: coder',
         '    gecos: ezvm coding user',
+        '    homedir: /home/coder',
         '    groups: [adm, sudo]',
-        "    sudo: ['ALL=(ALL) NOPASSWD:ALL']",
+        "    sudo: ['ALL=(ALL:ALL) NOPASSWD:ALL']",
         '    shell: /bin/bash',
         '    lock_passwd: true',
         '    ssh_authorized_keys:',
         ('      - ' + (ConvertTo-EzVmYamlSingleQuoted $ControllerPublicKey)),
         'write_files:',
+        '  - path: /etc/ssh/sshd_config.d/00-ezvm-coding.conf',
+        '    owner: root:root',
+        "    permissions: '0644'",
+        '    content: |',
+        '      PasswordAuthentication no',
+        '      KbdInteractiveAuthentication no',
+        '      PubkeyAuthentication yes',
+        '      PermitRootLogin no',
         '  - path: /etc/ezvm/identity.json',
         '    owner: root:root',
         "    permissions: '0644'",
         '    content: |',
         ('      ' + $identityJson),
+        '  - path: /etc/ezvm/profile.json',
+        '    owner: root:root',
+        "    permissions: '0644'",
+        '    encoding: b64',
+        ('    content: ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$codingProfile.ManifestJson))),
+        '  - path: /usr/local/sbin/ezvm-coding-profile',
+        '    owner: root:root',
+        "    permissions: '0755'",
+        '    encoding: b64',
+        ('    content: ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$codingProfile.Script))),
         '  - path: /usr/local/sbin/ezvm-instance-finalize',
         '    owner: root:root',
         "    permissions: '0755'",
         '    content: |',
         '      #!/bin/sh',
         '      set -eu',
+        '      export PATH=/usr/sbin:/usr/bin:/sbin:/bin',
         '      install -d -m 0755 /var/lib/ezvm',
+        '      rm -f /var/lib/ezvm/ready.json',
         '      if cloud-init status --wait >/var/log/ezvm-cloud-init-status.log 2>&1; then',
-        '        cp /etc/ezvm/identity.json /var/lib/ezvm/ready.json',
-        '        chmod 0644 /var/lib/ezvm/ready.json',
-        '        rm -f /var/lib/ezvm/provisioning-failed',
+        '        if ! /usr/sbin/sshd -t || ! systemctl reload ssh; then',
+        "          printf '%s\n' 'SSH policy activation failed' > /var/lib/ezvm/provisioning-failed",
+        '          exit 1',
+        '        fi',
+        '        exec /usr/local/sbin/ezvm-coding-profile provision',
         '      else',
         "        printf '%s\n' 'cloud-init failed' > /var/lib/ezvm/provisioning-failed",
         '        exit 1',
@@ -358,8 +393,9 @@ function New-EzVmInstanceSeedData {
         ('instance-id: ' + (ConvertTo-EzVmYamlSingleQuoted $cloudInstanceId)),
         ('local-hostname: ' + (ConvertTo-EzVmYamlSingleQuoted $hostname))
     )
-    $userData = [string]::Join([Environment]::NewLine, $userDataLines) + [Environment]::NewLine
-    $metaData = [string]::Join([Environment]::NewLine, $metaDataLines) + [Environment]::NewLine
+    # Guest scripts must use Unix newlines even when generated on Windows.
+    $userData = [string]::Join("`n", $userDataLines) + "`n"
+    $metaData = [string]::Join("`n", $metaDataLines) + "`n"
     if (($userData + $metaData) -match '(?i)BEGIN .*PRIVATE KEY|OPENSSH PRIVATE KEY') {
         throw 'Generated instance NoCloud data unexpectedly contains private-key material.'
     }
@@ -373,6 +409,7 @@ function New-EzVmInstanceSeedData {
         Hostname = $hostname
         CloudInstanceId = $cloudInstanceId
         Identity = $identity
+        CodingProfile = $codingProfile
     }
 }
 
@@ -630,20 +667,24 @@ function New-EzVmCandidateKnownHosts {
 
 function Assert-EzVmSshAccessState {
     param([Parameter(Mandatory = $true)][object]$Access, [string]$ExpectedName)
-    $expected = @('schemaVersion', 'instanceName', 'launchId', 'sshHost', 'sshPort', 'sshUser', 'state', 'cloudInstanceId', 'profile', 'readyAt')
+    $expected = @('schemaVersion', 'instanceName', 'baseId', 'launchId', 'sshHost', 'sshPort', 'sshUser', 'state', 'cloudInstanceId', 'profile', 'provisioningProfile', 'provisioningVersion', 'provisioningDigest', 'readyAt')
     if ($Access -isnot [pscustomobject]) { throw 'SSH access state must be a JSON object.' }
     $actual = @($Access.PSObject.Properties.Name)
     foreach ($name in $actual) { if ($expected -cnotcontains $name) { throw "SSH access state contains unknown field '$name'." } }
     foreach ($name in $expected) { if ($actual -cnotcontains $name) { throw "SSH access state is missing required field '$name'." } }
-    if ($Access.schemaVersion -ne 1) { throw 'SSH access state schemaVersion must be integer 1.' }
+    Assert-EzVmRuntimeInteger -Value $Access.schemaVersion -Description 'SSH access state schemaVersion; stop and restart to regenerate legacy access state' -Minimum 2 -Maximum 2
     if ($Access.instanceName -cne $ExpectedName) { throw 'SSH access state belongs to a different instance.' }
+    if ($Access.baseId -isnot [string] -or $Access.baseId -cnotmatch '^base-[a-f0-9]{64}$') { throw 'SSH access baseId is invalid.' }
     if ($Access.launchId -isnot [string] -or $Access.launchId -cnotmatch '^[a-f0-9]{32}$') { throw 'SSH access launchId is invalid.' }
     if ($Access.sshHost -cne '127.0.0.1') { throw 'SSH access must bind exactly to 127.0.0.1.' }
     Assert-EzVmRuntimeInteger -Value $Access.sshPort -Description 'SSH access port' -Minimum 1024 -Maximum 65535
-    if ($Access.sshUser -cne 'coder') { throw 'SSH access user must be coder for the EZVM-007 profile.' }
+    if ($Access.sshUser -cne 'coder') { throw 'SSH access user must be coder for the coding-default profile.' }
     if (@('PROVISIONING', 'READY') -cnotcontains [string]$Access.state) { throw "SSH access state '$($Access.state)' is unsupported." }
     if ($Access.cloudInstanceId -isnot [string] -or [string]::IsNullOrWhiteSpace($Access.cloudInstanceId)) { throw 'SSH access cloudInstanceId is invalid.' }
     if ($Access.profile -isnot [string] -or $Access.profile -cnotmatch '^[a-z0-9][a-z0-9._-]{0,31}$') { throw 'SSH access profile is invalid.' }
+    if ($Access.provisioningProfile -isnot [string] -or $Access.provisioningProfile -cne 'coding-default') { throw 'SSH access provisioningProfile must be coding-default.' }
+    Assert-EzVmRuntimeInteger -Value $Access.provisioningVersion -Description 'SSH access provisioningVersion' -Minimum 1 -Maximum 1
+    if ($Access.provisioningDigest -isnot [string] -or $Access.provisioningDigest -cnotmatch '^[a-f0-9]{64}$') { throw 'SSH access provisioningDigest must be a SHA256 identity.' }
     Assert-EzVmRuntimeTimestamp -Value $Access.readyAt -Description 'SSH access readyAt' -AllowEmpty
     if ($Access.state -ceq 'READY' -and [string]::IsNullOrWhiteSpace([string]$Access.readyAt)) {
         throw 'READY SSH access state requires readyAt.'
@@ -654,7 +695,7 @@ function Write-EzVmSshAccessState {
     param([string]$Root, [string]$InstanceName, [Parameter(Mandatory = $true)][object]$Access)
     Assert-EzVmSshAccessState -Access $Access -ExpectedName $InstanceName
     $path = (Get-EzVmSshPaths -Root $Root -InstanceName $InstanceName).AccessState
-    Write-EzVmJson -Path $path -Value $Access -SchemaVersion 1
+    Write-EzVmJson -Path $path -Value $Access -SchemaVersion 2
 }
 
 function Get-EzVmSshAccessState {
@@ -668,10 +709,21 @@ function Get-EzVmSshAccessState {
 
     $paths = Get-EzVmSshPaths -Root $Root -InstanceName $InstanceName
     if (-not (Test-Path -LiteralPath $paths.AccessState -PathType Leaf)) {
-        throw "Instance '$InstanceName' has no SSH access state. Start it through the EZVM-007 start path first."
+        throw "Instance '$InstanceName' has no SSH access state. Start it through the coding-ready start path first."
     }
-    $access = Read-EzVmJson -Path $paths.AccessState -SchemaVersion 1
+    $access = Read-EzVmJson -Path $paths.AccessState -SchemaVersion 2
     Assert-EzVmSshAccessState -Access $access -ExpectedName $InstanceName
+    $intent = Get-EzVmInstanceIntent -Root $Root -InstanceName $InstanceName
+    $codingProfile = Get-EzVmCodingProfile -Root $Root -Name ([string]$intent.provisioningProfile) -Version ([int]$intent.provisioningVersion)
+    if ($access.baseId -cne $intent.baseId -or
+        $access.cloudInstanceId -cne (Get-EzVmGuestCloudInstanceId -Intent $intent) -or
+        $access.profile -cne $intent.profile -or
+        [int]$access.sshPort -ne [int]$intent.sshPort -or
+        $access.provisioningProfile -cne $codingProfile.Name -or
+        [int]$access.provisioningVersion -ne $codingProfile.Version -or
+        $access.provisioningDigest -cne $codingProfile.Digest) {
+        throw "SSH access profile identity for instance '$InstanceName' no longer matches durable intent and reviewed source. Stop the instance and create a new named instance for the requested profile; do not rewrite an existing overlay's identity."
+    }
     $runtime = Get-EzVmRuntimeStateFile -Root $Root -InstanceName $InstanceName
     if ($null -eq $runtime -or $runtime.launchId -cne $access.launchId) {
         throw "SSH access state for instance '$InstanceName' is stale relative to the current QEMU launch."
@@ -716,63 +768,124 @@ function ConvertFrom-EzVmReadinessProbe {
         [Parameter(Mandatory = $true)][string]$ExpectedInstanceName,
         [Parameter(Mandatory = $true)][string]$ExpectedBaseId,
         [Parameter(Mandatory = $true)][string]$ExpectedProfile,
-        [Parameter(Mandatory = $true)][string]$ExpectedCloudInstanceId
+        [Parameter(Mandatory = $true)][string]$ExpectedCloudInstanceId,
+        [Parameter(Mandatory = $true)][string]$ExpectedProvisioningProfile,
+        [Parameter(Mandatory = $true)][ValidateRange(1, 2147483647)][int]$ExpectedProvisioningVersion,
+        [Parameter(Mandatory = $true)][ValidatePattern('^[a-f0-9]{64}$')][string]$ExpectedProvisioningDigest
     )
 
-    $identityEncoded = $null
-    $cloudEncoded = $null
-    $marker = $null
+    if ($StdOut.Length -gt 65536) { throw 'Authenticated guest readiness evidence exceeds its bounded protocol size.' }
+    $evidence = @{}
+    $expectedFields = @('EZVM_IDENTITY_B64', 'EZVM_CLOUD_B64', 'EZVM_CLOUD_EXIT', 'EZVM_READY_B64', 'EZVM_PROFILE_CHECK', 'EZVM_PROFILE_ERROR_B64')
     foreach ($line in @($StdOut -split '\r?\n')) {
-        if ($line.StartsWith('EZVM_IDENTITY_B64=', [StringComparison]::Ordinal)) { $identityEncoded = $line.Substring(18) }
-        elseif ($line.StartsWith('EZVM_CLOUD_B64=', [StringComparison]::Ordinal)) { $cloudEncoded = $line.Substring(15) }
-        elseif ($line.StartsWith('EZVM_READY=', [StringComparison]::Ordinal)) { $marker = $line.Substring(11) }
-    }
-
-    $identity = $null
-    if (-not [string]::IsNullOrWhiteSpace($identityEncoded)) {
-        try {
-            $identityJson = (New-Object Text.UTF8Encoding($false, $true)).GetString([Convert]::FromBase64String($identityEncoded))
-            $identity = $identityJson | ConvertFrom-Json -ErrorAction Stop
+        if ($line.Length -eq 0) { continue }
+        $separator = $line.IndexOf('=')
+        if ($separator -lt 1) { throw 'Authenticated guest returned malformed readiness protocol evidence.' }
+        $key = $line.Substring(0, $separator)
+        if ($expectedFields -cnotcontains $key -or $evidence.ContainsKey($key)) {
+            throw 'Authenticated guest returned unexpected or duplicate readiness protocol fields.'
         }
-        catch { throw "Authenticated guest returned malformed ezvm identity evidence: $($_.Exception.Message)" }
+        $evidence[$key] = $line.Substring($separator + 1)
+    }
+    foreach ($key in $expectedFields) {
+        if (-not $evidence.ContainsKey($key)) { throw "Authenticated guest readiness evidence is missing '$key'; legacy SSH-only readiness cannot grant coding READY." }
+    }
+    if (@('pending', 'pass', 'failed') -cnotcontains $evidence['EZVM_PROFILE_CHECK']) { throw 'Authenticated guest returned an invalid coding profile check state.' }
 
-        foreach ($field in @('schemaVersion', 'instanceName', 'baseId', 'profile', 'cloudInstanceId')) {
-            if (@($identity.PSObject.Properties.Name) -cnotcontains $field) {
-                throw "Authenticated guest identity is missing '$field'."
+    $documents = @{}
+    foreach ($key in @('EZVM_IDENTITY_B64', 'EZVM_READY_B64', 'EZVM_CLOUD_B64', 'EZVM_PROFILE_ERROR_B64')) {
+        try {
+            $decoded = (New-Object Text.UTF8Encoding($false, $true)).GetString([Convert]::FromBase64String($evidence[$key]))
+            if ($decoded.Length -gt 8192) { throw 'decoded field exceeds 8192 characters' }
+            $documents[$key] = $decoded
+        }
+        catch { throw "Authenticated guest returned malformed bounded readiness evidence in '$key'." }
+    }
+    $identityFields = @('schemaVersion', 'instanceName', 'baseId', 'profile', 'cloudInstanceId', 'provisioningProfile', 'provisioningVersion', 'provisioningDigest')
+    $identity = $null
+    $readyMarker = $null
+    foreach ($key in @('EZVM_IDENTITY_B64', 'EZVM_READY_B64')) {
+        if ([string]::IsNullOrWhiteSpace($documents[$key])) { continue }
+        $document = ConvertFrom-EzVmJsonText -Text $documents[$key] -SchemaVersion 2 -Description 'Authenticated guest identity/readiness marker'
+        $fields = $identityFields
+        if ($key -ceq 'EZVM_READY_B64') { $fields = $identityFields + @('provisioningState') }
+        Assert-EzVmRuntimeFields -Value $document -Expected $fields -Description 'Authenticated guest identity/readiness marker'
+        Assert-EzVmRuntimeInteger -Value $document.provisioningVersion -Description 'Guest provisioningVersion' -Minimum 1 -Maximum 2147483647
+        foreach ($pair in @(
+            @('instanceName', $ExpectedInstanceName), @('baseId', $ExpectedBaseId),
+            @('profile', $ExpectedProfile), @('cloudInstanceId', $ExpectedCloudInstanceId),
+            @('provisioningProfile', $ExpectedProvisioningProfile), @('provisioningDigest', $ExpectedProvisioningDigest)
+        )) {
+            if ($document.($pair[0]) -isnot [string] -or $document.($pair[0]) -cne $pair[1]) {
+                throw "Authenticated guest identity mismatch for requested instance '$ExpectedInstanceName' ($($pair[0])). Refusing READY."
             }
         }
-        if ($identity.schemaVersion -ne 1 -or
-            [string]$identity.instanceName -cne $ExpectedInstanceName -or
-            [string]$identity.baseId -cne $ExpectedBaseId -or
-            [string]$identity.profile -cne $ExpectedProfile -or
-            [string]$identity.cloudInstanceId -cne $ExpectedCloudInstanceId) {
-            throw "Authenticated guest identity mismatch for requested instance '$ExpectedInstanceName'. Refusing READY."
+        if ([int]$document.provisioningVersion -ne $ExpectedProvisioningVersion) { throw "Authenticated guest identity mismatch for requested coding profile version. Refusing READY." }
+        if ($key -ceq 'EZVM_IDENTITY_B64') { $identity = $document }
+        else {
+            if ($document.provisioningState -isnot [string] -or $document.provisioningState -cne 'complete') {
+                throw 'Authenticated coding profile marker does not record complete provisioning. Refusing READY.'
+            }
+            $readyMarker = $document
         }
     }
 
-    $cloudStatus = ''
-    if (-not [string]::IsNullOrWhiteSpace($cloudEncoded)) {
-        try { $cloudStatus = (New-Object Text.UTF8Encoding($false, $true)).GetString([Convert]::FromBase64String($cloudEncoded)).Trim() }
-        catch { throw 'Authenticated guest returned malformed cloud-init status evidence.' }
-    }
-    if ($cloudStatus -match '(?im)^status:\s*error\b') {
+    $cloudStatus = $documents['EZVM_CLOUD_B64'].Trim()
+    if ($evidence['EZVM_CLOUD_EXIT'] -cne '0' -or $cloudStatus -match '(?im)^status:\s*error\b') {
         throw "cloud-init reports failed provisioning for instance '$ExpectedInstanceName'. Inspect guest cloud-init logs before retrying."
     }
+    if ($evidence['EZVM_PROFILE_CHECK'] -ceq 'failed') {
+        $detail = $documents['EZVM_PROFILE_ERROR_B64'].Trim()
+        if ($detail.Length -gt 2048) { $detail = $detail.Substring(0, 2048) }
+        throw "Coding profile validation failed for instance '$ExpectedInstanceName'. Refusing READY. $detail"
+    }
 
-    $cloudDone = $cloudStatus -match '(?im)^status:\s*done\b'
-    $markerReady = $marker -ceq '1'
+    $cloudDone = $cloudStatus -cmatch '^status:\s*done\s*$'
+    $markerReady = $null -ne $readyMarker
+    $profileReady = $evidence['EZVM_PROFILE_CHECK'] -ceq 'pass'
     return [pscustomobject][ordered]@{
         IdentityPresent = $null -ne $identity
         CloudStatus = $cloudStatus
         CloudDone = $cloudDone
         MarkerReady = $markerReady
-        Ready = ($null -ne $identity -and $cloudDone -and $markerReady)
+        ProfileReady = $profileReady
+        Ready = ($null -ne $identity -and $cloudDone -and $markerReady -and $profileReady)
         Identity = $identity
+        ReadyMarker = $readyMarker
     }
 }
 
 function Get-EzVmReadinessRemoteScript {
-    return 'identity_b64="$(base64 -w0 /etc/ezvm/identity.json 2>/dev/null || true)"; cloud_text="$(cloud-init status 2>/dev/null || true)"; cloud_b64="$(printf %s "$cloud_text" | base64 -w0)"; ready=0; test -f /var/lib/ezvm/ready.json && ready=1; printf "EZVM_IDENTITY_B64=%s\nEZVM_CLOUD_B64=%s\nEZVM_READY=%s\n" "$identity_b64" "$cloud_b64" "$ready"'
+    param([Parameter(Mandatory = $true)][ValidatePattern('^[a-f0-9]{64}$')][string]$ProvisioningDigest)
+    $script = @'
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+LC_ALL=C
+export PATH LC_ALL
+identity_b64="$(head -c 8193 /etc/ezvm/identity.json 2>/dev/null | base64 -w0)"
+cloud_text="$(cloud-init status 2>/dev/null)"
+cloud_exit=$?
+cloud_b64="$(printf %s "$cloud_text" | base64 -w0)"
+ready_b64="$(head -c 8193 /var/lib/ezvm/ready.json 2>/dev/null | base64 -w0)"
+profile_check=pending
+profile_error=''
+if test -f /var/lib/ezvm/provisioning-failed; then
+    profile_check=failed
+    profile_error="$(head -c 2048 /var/lib/ezvm/provisioning-failed 2>/dev/null)"
+elif test "$cloud_exit" -eq 0 && test "$cloud_text" = 'status: done' && test -n "$ready_b64"; then
+    actual_digest="$({ printf 'profile.json\000'; cat /etc/ezvm/profile.json; printf '\000provision.sh\000'; cat /usr/local/sbin/ezvm-coding-profile; printf '\000'; } 2>/dev/null | sha256sum)"
+    if test "$actual_digest" != '__EZVM_PROFILE_DIGEST__  -'; then
+        profile_check=failed
+        profile_error='coding profile source digest does not match the reviewed requested version'
+    elif profile_error="$(sudo -n -- timeout --signal=TERM --kill-after=5s 110s /usr/local/sbin/ezvm-coding-profile validate 2>&1)"; then
+        profile_check=pass
+    else
+        profile_check=failed
+    fi
+fi
+profile_error_b64="$(printf %s "$profile_error" | head -c 2048 | base64 -w0)"
+printf 'EZVM_IDENTITY_B64=%s\nEZVM_CLOUD_B64=%s\nEZVM_CLOUD_EXIT=%s\nEZVM_READY_B64=%s\nEZVM_PROFILE_CHECK=%s\nEZVM_PROFILE_ERROR_B64=%s\n' "$identity_b64" "$cloud_b64" "$cloud_exit" "$ready_b64" "$profile_check" "$profile_error_b64"
+'@
+    return $script.Replace('__EZVM_PROFILE_DIGEST__', $ProvisioningDigest).Replace(([string][char]13 + [char]10), [string][char]10)
 }
 
 function Wait-EzVmSshReady {
@@ -786,6 +899,7 @@ function Wait-EzVmSshReady {
         [Parameter(Mandatory = $true)][object]$Tooling,
         [AllowNull()][object]$SeedServer = $null,
         [ValidateRange(1, 3600)][int]$TimeoutSeconds = 60,
+        [DateTime]$DeadlineUtc = [DateTime]::MinValue,
         [scriptblock]$PortProbe,
         [scriptblock]$HostKeyScanner,
         [scriptblock]$SshRunner,
@@ -793,7 +907,26 @@ function Wait-EzVmSshReady {
     )
 
     Assert-EzVmSshAccessState -Access $Access -ExpectedName $InstanceName
+    Assert-EzVmInstanceIntent -Intent $Intent -ExpectedName $InstanceName
+    $codingProfile = Get-EzVmCodingProfile -Root $Root -Name ([string]$Intent.provisioningProfile) -Version ([int]$Intent.provisioningVersion)
+    if ($Access.baseId -cne $Intent.baseId -or $Access.profile -cne $Intent.profile -or
+        [int]$Access.sshPort -ne [int]$Intent.sshPort -or
+        $Access.cloudInstanceId -cne (Get-EzVmGuestCloudInstanceId -Intent $Intent) -or
+        $Access.provisioningProfile -cne $codingProfile.Name -or
+        [int]$Access.provisioningVersion -ne $codingProfile.Version -or
+        $Access.provisioningDigest -cne $codingProfile.Digest) {
+        throw 'SSH readiness access identity does not match the requested instance and coding profile.'
+    }
+    # Revalidation invalidates cached host READY before any fallible probe. A
+    # missing tool or mismatched marker must never leave old access authoritative.
+    $Access.state = 'PROVISIONING'
+    $Access.readyAt = ''
+    Write-EzVmSshAccessState -Root $Root -InstanceName $InstanceName -Access $Access
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    if ($DeadlineUtc -ne [DateTime]::MinValue) {
+        if ($DeadlineUtc.Kind -ne [DateTimeKind]::Utc) { throw 'SSH readiness DeadlineUtc must use UTC.' }
+        if ($DeadlineUtc -lt $deadline) { $deadline = $DeadlineUtc }
+    }
     $candidate = $null
     $candidateAcceptNew = $false
     $lastError = 'forwarded SSH port has not become reachable'
@@ -836,14 +969,14 @@ function Wait-EzVmSshReady {
                 }
             }
 
-            # TCG guests can take materially longer than five seconds for the
-            # SSH key exchange plus a remote shell invocation even after TCP 22
-            # is reachable. Keep each attempt bounded, but give a healthy slow
-            # guest enough budget to prove identity instead of repeatedly killing
-            # the client and consuming the entire outer readiness deadline.
-            $remainingSeconds = [Math]::Max(1, [Math]::Min(30, [int][Math]::Ceiling(($deadline - [DateTime]::UtcNow).TotalSeconds)))
+            # Completed coding profiles perform a real, bounded venv check.
+            # Its budget and SSH negotiation share the original total deadline.
+            $remainingSeconds = [int][Math]::Floor(($deadline - [DateTime]::UtcNow).TotalSeconds)
+            if ($remainingSeconds -lt 1) { break }
+            $remainingSeconds = [Math]::Min(120, $remainingSeconds)
             $connectTimeoutSeconds = [Math]::Max(1, [Math]::Min(15, $remainingSeconds))
-            $arguments = New-EzVmSshCommandArguments -PrivateKey $Identity.PrivateKey -KnownHosts $candidate.Candidate -Port ([int]$Access.sshPort) -User ([string]$Access.sshUser) -Batch -RemoteCommand @('sh', '-lc', (Get-EzVmReadinessRemoteScript)) -AcceptNewHostKey:$candidateAcceptNew -ConnectTimeoutSeconds $connectTimeoutSeconds
+            $arguments = New-EzVmSshCommandArguments -PrivateKey $Identity.PrivateKey -KnownHosts $candidate.Candidate -Port ([int]$Access.sshPort) -User ([string]$Access.sshUser) -Batch -RemoteCommand @('sh', '-lc', (Get-EzVmReadinessRemoteScript -ProvisioningDigest $codingProfile.Digest)) -AcceptNewHostKey:$candidateAcceptNew -ConnectTimeoutSeconds $connectTimeoutSeconds
+            $authenticated = $false
             try {
                 $result = if ($null -ne $SshRunner) {
                     & $SshRunner $Tooling.Ssh $arguments $remainingSeconds
@@ -854,15 +987,16 @@ function Wait-EzVmSshReady {
                 if ([int]$result.ExitCode -eq 0) {
                     $null = Assert-EzVmCandidateKnownHostsEntry -Path $candidate.Candidate -Port ([int]$Access.sshPort)
                     $authenticated = $true
-                    $probe = ConvertFrom-EzVmReadinessProbe -StdOut ([string]$result.StdOut) -ExpectedInstanceName $InstanceName -ExpectedBaseId ([string]$Intent.baseId) -ExpectedProfile ([string]$Access.profile) -ExpectedCloudInstanceId ([string]$Access.cloudInstanceId)
+                    $probe = ConvertFrom-EzVmReadinessProbe -StdOut ([string]$result.StdOut) -ExpectedInstanceName $InstanceName -ExpectedBaseId ([string]$Intent.baseId) -ExpectedProfile ([string]$Access.profile) -ExpectedCloudInstanceId ([string]$Access.cloudInstanceId) -ExpectedProvisioningProfile $codingProfile.Name -ExpectedProvisioningVersion $codingProfile.Version -ExpectedProvisioningDigest $codingProfile.Digest
                     if ($probe.Ready) {
+                        if ([DateTime]::UtcNow -ge $deadline) { throw "Coding readiness proof exceeded the $TimeoutSeconds second deadline. Refusing READY." }
                         Write-EzVmSshTextAtomically -Path $candidate.Managed -Content ([IO.File]::ReadAllText($candidate.Candidate))
                         $Access.state = 'READY'
                         $Access.readyAt = [DateTime]::UtcNow.ToString('o')
                         Write-EzVmSshAccessState -Root $Root -InstanceName $InstanceName -Access $Access
                         return $Access
                     }
-                    $lastError = "authenticated SSH succeeded but cloud-init/identity marker is not READY (cloud='$($probe.CloudStatus)', marker=$($probe.MarkerReady))."
+                    $lastError = "authenticated SSH succeeded but coding readiness is incomplete (cloud='$($probe.CloudStatus)', marker=$($probe.MarkerReady), profile=$($probe.ProfileReady))."
                 }
                 elseif ([int]$result.ExitCode -eq 255) {
                     $lastError = "SSH authentication/transport is not ready: $([string]$result.StdErr)"
@@ -918,11 +1052,13 @@ function Start-EzVmReadyInstance {
     )
 
     Assert-EzVmStorageInstanceName -Name $InstanceName
+    $intent = Get-EzVmInstanceIntent -Root $Root -InstanceName $InstanceName
+    # Refuse unsupported legacy intent before key creation or any guest launch.
+    $null = Get-EzVmCodingProfile -Root $Root -Name ([string]$intent.provisioningProfile) -Version ([int]$intent.provisioningVersion)
     $Tooling = Assert-EzVmOpenSshTools -Tooling $Tooling
     if ($null -eq $ControllerIdentity) {
         $ControllerIdentity = Get-EzVmControllerSshIdentity -Root $Root -Tooling $Tooling
     }
-    $intent = Get-EzVmInstanceIntent -Root $Root -InstanceName $InstanceName
     $profile = Get-EzVmIntentProfileName -Root $Root -Intent $intent
     $seed = New-EzVmInstanceSeedData -Root $Root -InstanceName $InstanceName -Intent $intent -ControllerPublicKey $ControllerIdentity.PublicKeyText -Profile $profile
     $deadline = [DateTime]::UtcNow.AddSeconds($ReadyTimeoutSeconds)
@@ -939,8 +1075,9 @@ function Start-EzVmReadyInstance {
 
         $runtime = Get-EzVmRuntimeStateFile -Root $Root -InstanceName $InstanceName
         $access = [pscustomobject][ordered]@{
-            schemaVersion = 1
+            schemaVersion = 2
             instanceName = $InstanceName
+            baseId = [string]$intent.baseId
             launchId = [string]$runtime.launchId
             sshHost = '127.0.0.1'
             sshPort = [int]$sshPort
@@ -948,6 +1085,9 @@ function Start-EzVmReadyInstance {
             state = 'PROVISIONING'
             cloudInstanceId = $seed.CloudInstanceId
             profile = $profile
+            provisioningProfile = [string]$seed.CodingProfile.Name
+            provisioningVersion = [int]$seed.CodingProfile.Version
+            provisioningDigest = [string]$seed.CodingProfile.Digest
             readyAt = ''
         }
         Write-EzVmSshAccessState -Root $Root -InstanceName $InstanceName -Access $access
@@ -955,7 +1095,7 @@ function Start-EzVmReadyInstance {
         if ($remaining -lt 1) {
             throw "Instance '$InstanceName' reached QEMU RUNNING but exhausted its $ReadyTimeoutSeconds second total readiness timeout before SSH qualification."
         }
-        $ready = Wait-EzVmSshReady -Root $Root -InstanceName $InstanceName -Intent $intent -Access $access -Identity $ControllerIdentity -Tooling $Tooling -SeedServer $seedServer -TimeoutSeconds $remaining -PortProbe $PortProbe -HostKeyScanner $HostKeyScanner -SshRunner $SshRunner -SleepProvider $SleepProvider
+        $ready = Wait-EzVmSshReady -Root $Root -InstanceName $InstanceName -Intent $intent -Access $access -Identity $ControllerIdentity -Tooling $Tooling -SeedServer $seedServer -TimeoutSeconds $remaining -DeadlineUtc $deadline -PortProbe $PortProbe -HostKeyScanner $HostKeyScanner -SshRunner $SshRunner -SleepProvider $SleepProvider
         return [pscustomobject][ordered]@{
             name = $InstanceName
             state = 'READY'
@@ -964,6 +1104,10 @@ function Start-EzVmReadyInstance {
             sshHost = '127.0.0.1'
             sshPort = [int]$ready.sshPort
             sshUser = [string]$ready.sshUser
+            provisioningProfile = [string]$ready.provisioningProfile
+            provisioningVersion = [int]$ready.provisioningVersion
+            provisioningDigest = [string]$ready.provisioningDigest
+            workspace = [string]$seed.CodingProfile.Manifest.workspace
             readyAt = [string]$ready.readyAt
             serialLog = [string]$started.serialLog
             qemuLog = [string]$started.qemuLog

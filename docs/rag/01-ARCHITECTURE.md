@@ -25,7 +25,10 @@ ezvm/
 │   └── ubuntu-noble-amd64.json
 ├── guest/
 │   ├── base-cloud-init/
-│   └── instance-cloud-init/
+│   └── profiles/
+│       └── coding-default/v1/
+│           ├── profile.json
+│           └── provision.sh
 ├── tests/
 ├── docs/
 ├── runtime/                       # gitignored
@@ -118,7 +121,8 @@ instance.json contains durable instance intent such as:
 - memory;
 - assigned SSH port;
 - creation timestamp;
-- optional profile name.
+- resource profile name;
+- coding provisioning profile and version.
 
 runtime.json is replaceable process state such as:
 
@@ -249,3 +253,34 @@ process identity, storage and localhost SSH resources. Malformed/incomplete
 instance directories, case-insensitive name collisions and directory/intent
 identity disagreement fail registry reconstruction clearly rather than being
 ignored.
+
+## Implemented coding profile and readiness (EZVM-009)
+
+The stable base-tool recipe and per-instance coding profile have separate
+identities. `guest/base-cloud-init/` installs shared development prerequisites
+while building a new immutable base. `guest/profiles/coding-default/v1/` defines
+the reviewed version 1 instance policy and validates those installed tools,
+the locked-password `coder` account and its writable workspace. It does not
+reinstall baseline packages or fetch vendor-agent installers on instance boot.
+
+`instance.json` retains schema version 1 and separately records the resource
+profile (`profile`) and coding identity (`provisioningProfile`,
+`provisioningVersion`). New instances select `coding-default`/`1`. The resolver
+validates the repository profile schema and supported identity, then computes a
+digest of the normalized manifest and recipe before seed generation. Existing
+`ezvm-core`/`1` intent remains readable for
+inspection and graceful stop; start refuses it with recreation guidance rather
+than rewriting the old overlay or metadata.
+
+Guest `/etc/ezvm/identity.json` and host per-launch `access.json` use schema
+version 2, including the base, resource profile, cloud instance ID and coding
+profile name/version/digest. After successful provisioning, the guest publishes
+`/var/lib/ezvm/ready.json` with the same identity and
+`provisioningState: complete`. Authenticated readiness validates the complete
+document and fresh tool/account/workspace checks. A stale file's existence alone
+cannot authorize READY or host-key trust promotion.
+
+Profile changes require reviewed source changes and an explicit version path.
+New baseline dependencies require a new prepared base identity; neither profile
+updates nor user-installed agent software may modify an existing immutable base.
+Agent software and authentication belong to the mutable instance overlay.

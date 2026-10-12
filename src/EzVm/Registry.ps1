@@ -193,6 +193,7 @@ function New-EzVmManagedInstance {
     $paths = Get-EzVmPaths -Root $Root
     $runtimePaths = Get-EzVmInstanceRuntimePaths -Root $Root -InstanceName $InstanceName
     $resources = Resolve-EzVmInstanceResources -Root $Root -Profile $Profile -Cpus $Cpus -MemoryMiB $MemoryMiB
+    $codingProfile = Get-EzVmCodingProfile -Root $Root
     $base = Get-EzVmPreparedBaseSelection -Root $Root -BaseId $BaseId -QemuImgRunner $QemuImgRunner
 
     [void][IO.Directory]::CreateDirectory($paths.Instances)
@@ -219,7 +220,7 @@ function New-EzVmManagedInstance {
         $createdDirectory = $true
         $null = Assert-EzVmStorageManagedPath -Path $runtimePaths.Directory -ContainmentRoot $paths.Instances -SafetyRoot $paths.Root -Description 'Instance directory' -RequireDirectory
 
-        $intent = New-EzVmInstanceIntent -Root $Root -InstanceName $InstanceName -BaseId $base.BaseId -Profile $resources.profile -Cpus $resources.cpus -MemoryMiB $resources.memoryMiB -SshPort $sshPort -ProvisioningProfile 'ezvm-core' -ProvisioningVersion 1 -QemuImgRunner $QemuImgRunner
+        $intent = New-EzVmInstanceIntent -Root $Root -InstanceName $InstanceName -BaseId $base.BaseId -Profile $resources.profile -Cpus $resources.cpus -MemoryMiB $resources.memoryMiB -SshPort $sshPort -ProvisioningProfile $codingProfile.Name -ProvisioningVersion $codingProfile.Version -QemuImgRunner $QemuImgRunner
         $guard = New-EzVmStorageLifecycleGuard -State 'proven-safe' -Source 'new EZVM-008 instance has no QEMU owner'
         $overlay = New-EzVmInstanceOverlay -Root $Root -InstanceName $InstanceName -BaseId $base.BaseId -LifecycleGuard $guard -QemuImgRunner $QemuImgRunner
 

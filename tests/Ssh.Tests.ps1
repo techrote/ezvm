@@ -14,7 +14,7 @@ function New-EzVmSshTestIntent {
         memoryMiB = $MemoryMiB
         sshPort = 22001
         createdAt = '2026-10-12T00:00:00.0000000Z'
-        provisioningProfile = 'ezvm-core'
+        provisioningProfile = 'coding-default'
         provisioningVersion = 1
     }
 }
@@ -22,6 +22,79 @@ function New-EzVmSshTestIntent {
 function ConvertTo-EzVmSshTestBase64 {
     param([AllowEmptyString()][string]$Text = '')
     return [Convert]::ToBase64String((New-Object Text.UTF8Encoding($false)).GetBytes($Text))
+}
+
+
+function Get-EzVmSshTestCloudId {
+    param([object]$Intent)
+    $module = Get-Module EzVm
+    return & $module { param($i) Get-EzVmGuestCloudInstanceId -Intent $i } $Intent
+}
+
+function New-EzVmSshTestAccess {
+    param([string]$Root, [object]$Intent, [int]$Port = 22001, [string]$LaunchId = ('a' * 32))
+    $coding = Get-EzVmCodingProfile -Root $Root
+    $Intent.sshPort = $Port
+    $path = (Get-EzVmSshPaths -Root $Root -InstanceName $Intent.name).AccessState
+    [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))
+    return [pscustomobject][ordered]@{
+        schemaVersion = 2
+        instanceName = $Intent.name
+        baseId = $Intent.baseId
+        launchId = $LaunchId
+        sshHost = '127.0.0.1'
+        sshPort = $Port
+        sshUser = 'coder'
+        state = 'PROVISIONING'
+        cloudInstanceId = Get-EzVmSshTestCloudId -Intent $Intent
+        profile = $Intent.profile
+        provisioningProfile = $coding.Name
+        provisioningVersion = $coding.Version
+        provisioningDigest = $coding.Digest
+        readyAt = ''
+    }
+}
+
+function New-EzVmSshTestIdentityJson {
+    param([object]$Intent, [string]$InstanceName = '')
+    $coding = Get-EzVmCodingProfile -Root $script:EzVmRepositoryRoot
+    if ($InstanceName.Length -eq 0) { $InstanceName = $Intent.name }
+    return [pscustomobject][ordered]@{
+        schemaVersion = 2
+        instanceName = $InstanceName
+        baseId = $Intent.baseId
+        profile = $Intent.profile
+        cloudInstanceId = Get-EzVmSshTestCloudId -Intent $Intent
+        provisioningProfile = $coding.Name
+        provisioningVersion = $coding.Version
+        provisioningDigest = $coding.Digest
+    } | ConvertTo-Json -Compress
+}
+
+function New-EzVmSshTestProbe {
+    param(
+        [string]$IdentityBase64,
+        [string]$CloudStatus = 'status: done',
+        [string]$CloudExit = '0',
+        [bool]$Ready = $true,
+        [string]$ProfileCheck = '',
+        [string]$ProfileError = ''
+    )
+    $marker = ''
+    if ($Ready) {
+        $decoded = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($IdentityBase64)) | ConvertFrom-Json
+        $decoded | Add-Member -NotePropertyName provisioningState -NotePropertyValue 'complete'
+        $marker = ConvertTo-EzVmSshTestBase64 ($decoded | ConvertTo-Json -Compress)
+    }
+    if ($ProfileCheck.Length -eq 0) { $ProfileCheck = if ($Ready) { 'pass' } else { 'pending' } }
+    return [string]::Join([Environment]::NewLine, @(
+        ('EZVM_IDENTITY_B64=' + $IdentityBase64),
+        ('EZVM_CLOUD_B64=' + (ConvertTo-EzVmSshTestBase64 $CloudStatus)),
+        ('EZVM_CLOUD_EXIT=' + $CloudExit),
+        ('EZVM_READY_B64=' + $marker),
+        ('EZVM_PROFILE_CHECK=' + $ProfileCheck),
+        ('EZVM_PROFILE_ERROR_B64=' + (ConvertTo-EzVmSshTestBase64 $ProfileError))
+    )) + [Environment]::NewLine
 }
 
 Add-EzVmTest -Name 'SSH: QEMU networking binds hostfwd to loopback and constructs guestfwd NoCloud endpoint' -ScriptBlock {
@@ -51,7 +124,7 @@ Add-EzVmTest -Name 'SSH: instance NoCloud seed contains public authorization and
         $publicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEzvmFixturePublicKey0123456789= ezvm-controller'
         $seed = New-EzVmInstanceSeedData -Root $root -InstanceName $intent.name -Intent $intent -ControllerPublicKey $publicKey
         Assert-EzVmEqual -Actual $seed.Profile -Expected 'normal'
-        Assert-EzVmTrue -Condition ($seed.UserData -match [regex]::Escape($publicKey))
+        Assert-EzVmTrue -Condition ($seed.UserData -match [regex]::Escape(($publicKey -split ' ')[1]))
         Assert-EzVmTrue -Condition ($seed.UserData -match '"instanceName":"ssh-agent"')
         Assert-EzVmTrue -Condition ($seed.UserData -match [regex]::Escape($intent.baseId))
         Assert-EzVmTrue -Condition ($seed.UserData -match '"profile":"normal"')
@@ -139,29 +212,12 @@ Add-EzVmTest -Name 'SSH: readiness bootstraps trust through ssh accept-new only 
         $paths = Get-EzVmSshPaths -Root $root -InstanceName 'ssh-agent'
         [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($paths.AccessState))
         $intent = New-EzVmSshTestIntent
-        $access = [pscustomobject][ordered]@{
-            schemaVersion = 1
-            instanceName = 'ssh-agent'
-            launchId = ('d' * 32)
-            sshHost = '127.0.0.1'
-            sshPort = 22079
-            sshUser = 'coder'
-            state = 'PROVISIONING'
-            cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
-            profile = 'normal'
-            readyAt = ''
-        }
+        $access = New-EzVmSshTestAccess -Root $root -Intent $intent -Port 22079 -LaunchId ('d' * 32)
         $identity = [pscustomobject]@{ PrivateKey = (Join-Path $root 'unused-key') }
         $tooling = [pscustomobject]@{ Ssh = 'unused-ssh' }
-        $identityJson = [pscustomobject][ordered]@{
-            schemaVersion = 1
-            instanceName = 'ssh-agent'
-            baseId = $intent.baseId
-            profile = 'normal'
-            cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
-        } | ConvertTo-Json -Compress
+        $identityJson = New-EzVmSshTestIdentityJson -Intent $intent -InstanceName 'ssh-agent'
         $nl = [Environment]::NewLine
-        $readyOutput = 'EZVM_IDENTITY_B64=' + (ConvertTo-EzVmSshTestBase64 $identityJson) + $nl + 'EZVM_CLOUD_B64=' + (ConvertTo-EzVmSshTestBase64 'status: done') + $nl + 'EZVM_READY=1' + $nl
+        $readyOutput = New-EzVmSshTestProbe -IdentityBase64 (ConvertTo-EzVmSshTestBase64 $identityJson) -CloudStatus 'status: done' -Ready:$true
         $module = Get-Module EzVm
         $observed = & $module {
             param($r, $i, $a, $id, $tools, $output)
@@ -203,29 +259,12 @@ Add-EzVmTest -Name 'SSH: changed host key remains staged until authenticated ide
         [IO.File]::WriteAllText($paths.InstanceKnownHosts, ($oldLine + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
 
         $intent = New-EzVmSshTestIntent
-        $access = [pscustomobject][ordered]@{
-            schemaVersion = 1
-            instanceName = 'ssh-agent'
-            launchId = ('a' * 32)
-            sshHost = '127.0.0.1'
-            sshPort = 22077
-            sshUser = 'coder'
-            state = 'PROVISIONING'
-            cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
-            profile = 'normal'
-            readyAt = ''
-        }
+        $access = New-EzVmSshTestAccess -Root $root -Intent $intent -Port 22077 -LaunchId ('a' * 32)
         $identity = [pscustomobject]@{ PrivateKey = (Join-Path $root 'unused-key') }
         $tooling = [pscustomobject]@{ Ssh = 'unused-ssh'; Keyscan = 'unused-keyscan' }
-        $identityJson = [pscustomobject][ordered]@{
-            schemaVersion = 1
-            instanceName = 'ssh-agent'
-            baseId = $intent.baseId
-            profile = 'normal'
-            cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
-        } | ConvertTo-Json -Compress
+        $identityJson = New-EzVmSshTestIdentityJson -Intent $intent -InstanceName 'ssh-agent'
         $nl = [Environment]::NewLine
-        $readyOutput = 'EZVM_IDENTITY_B64=' + (ConvertTo-EzVmSshTestBase64 $identityJson) + $nl + 'EZVM_CLOUD_B64=' + (ConvertTo-EzVmSshTestBase64 'status: done') + $nl + 'EZVM_READY=1' + $nl
+        $readyOutput = New-EzVmSshTestProbe -IdentityBase64 (ConvertTo-EzVmSshTestBase64 $identityJson) -CloudStatus 'status: done' -Ready:$true
 
         $module = Get-Module EzVm
         $candidate = & $module {
@@ -261,27 +300,10 @@ Add-EzVmTest -Name 'SSH: failed identity proof cannot promote a changed host key
         [void][IO.Directory]::CreateDirectory($paths.KnownHostsDirectory)
         [IO.File]::WriteAllText($paths.InstanceKnownHosts, ('[127.0.0.1]:22001 ssh-ed25519 AAAA' + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
         $intent = New-EzVmSshTestIntent
-        $access = [pscustomobject][ordered]@{
-            schemaVersion = 1
-            instanceName = 'ssh-agent'
-            launchId = ('c' * 32)
-            sshHost = '127.0.0.1'
-            sshPort = 22078
-            sshUser = 'coder'
-            state = 'PROVISIONING'
-            cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
-            profile = 'normal'
-            readyAt = ''
-        }
-        $wrong = [pscustomobject][ordered]@{
-            schemaVersion = 1
-            instanceName = 'wrong-agent'
-            baseId = $intent.baseId
-            profile = 'normal'
-            cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
-        } | ConvertTo-Json -Compress
+        $access = New-EzVmSshTestAccess -Root $root -Intent $intent -Port 22078 -LaunchId ('c' * 32)
+        $wrong = New-EzVmSshTestIdentityJson -Intent $intent -InstanceName 'wrong-agent'
         $nl = [Environment]::NewLine
-        $wrongOutput = 'EZVM_IDENTITY_B64=' + (ConvertTo-EzVmSshTestBase64 $wrong) + $nl + 'EZVM_CLOUD_B64=' + (ConvertTo-EzVmSshTestBase64 'status: done') + $nl + 'EZVM_READY=1' + $nl
+        $wrongOutput = New-EzVmSshTestProbe -IdentityBase64 (ConvertTo-EzVmSshTestBase64 $wrong) -CloudStatus 'status: done' -Ready:$true
         $module = Get-Module EzVm
         Assert-EzVmThrows -ScriptBlock {
             & $module {
@@ -302,44 +324,32 @@ Add-EzVmTest -Name 'SSH: failed identity proof cannot promote a changed host key
 
 Add-EzVmTest -Name 'SSH: readiness rejects authenticated identity mismatch' -ScriptBlock {
     $expected = New-EzVmSshTestIntent
-    $wrong = [pscustomobject][ordered]@{
-        schemaVersion = 1
-        instanceName = 'other-agent'
-        baseId = $expected.baseId
-        profile = 'normal'
-        cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
-    } | ConvertTo-Json -Compress
+    $wrong = New-EzVmSshTestIdentityJson -Intent $expected -InstanceName 'other-agent'
     $nl = [Environment]::NewLine
-    $output = 'EZVM_IDENTITY_B64=' + (ConvertTo-EzVmSshTestBase64 $wrong) + $nl + 'EZVM_CLOUD_B64=' + (ConvertTo-EzVmSshTestBase64 'status: done') + $nl + 'EZVM_READY=1' + $nl
+    $output = New-EzVmSshTestProbe -IdentityBase64 (ConvertTo-EzVmSshTestBase64 $wrong) -CloudStatus 'status: done' -Ready:$true
     Assert-EzVmThrows -ScriptBlock {
-        ConvertFrom-EzVmReadinessProbe -StdOut $output -ExpectedInstanceName 'ssh-agent' -ExpectedBaseId $expected.baseId -ExpectedProfile 'normal' -ExpectedCloudInstanceId 'ezvm-ssh-agent-123456789abc'
+        ConvertFrom-EzVmReadinessProbe -StdOut $output -ExpectedInstanceName 'ssh-agent' -ExpectedBaseId $expected.baseId -ExpectedProfile 'normal' -ExpectedCloudInstanceId (Get-EzVmSshTestCloudId -Intent $expected) -ExpectedProvisioningProfile 'coding-default' -ExpectedProvisioningVersion 1 -ExpectedProvisioningDigest (Get-EzVmCodingProfile).Digest
     } -MessagePattern 'identity mismatch' | Out-Null
 }
 
 Add-EzVmTest -Name 'SSH: readiness distinguishes cloud-init incomplete and failed states from READY' -ScriptBlock {
     $intent = New-EzVmSshTestIntent
-    $identity = [pscustomobject][ordered]@{
-        schemaVersion = 1
-        instanceName = 'ssh-agent'
-        baseId = $intent.baseId
-        profile = 'normal'
-        cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
-    } | ConvertTo-Json -Compress
+    $identity = New-EzVmSshTestIdentityJson -Intent $intent -InstanceName 'ssh-agent'
     $identity64 = ConvertTo-EzVmSshTestBase64 $identity
     $nl = [Environment]::NewLine
 
-    $runningOutput = 'EZVM_IDENTITY_B64=' + $identity64 + $nl + 'EZVM_CLOUD_B64=' + (ConvertTo-EzVmSshTestBase64 'status: running') + $nl + 'EZVM_READY=0' + $nl
-    $running = ConvertFrom-EzVmReadinessProbe -StdOut $runningOutput -ExpectedInstanceName 'ssh-agent' -ExpectedBaseId $intent.baseId -ExpectedProfile 'normal' -ExpectedCloudInstanceId 'ezvm-ssh-agent-123456789abc'
+    $runningOutput = New-EzVmSshTestProbe -IdentityBase64 $identity64 -CloudStatus 'status: running' -Ready:$false
+    $running = ConvertFrom-EzVmReadinessProbe -StdOut $runningOutput -ExpectedInstanceName 'ssh-agent' -ExpectedBaseId $intent.baseId -ExpectedProfile 'normal' -ExpectedCloudInstanceId (Get-EzVmSshTestCloudId -Intent $intent) -ExpectedProvisioningProfile 'coding-default' -ExpectedProvisioningVersion 1 -ExpectedProvisioningDigest (Get-EzVmCodingProfile).Digest
     Assert-EzVmEqual -Actual $running.Ready -Expected $false
     Assert-EzVmEqual -Actual $running.CloudDone -Expected $false
 
-    $failedOutput = 'EZVM_IDENTITY_B64=' + $identity64 + $nl + 'EZVM_CLOUD_B64=' + (ConvertTo-EzVmSshTestBase64 'status: error') + $nl + 'EZVM_READY=0' + $nl
+    $failedOutput = New-EzVmSshTestProbe -IdentityBase64 $identity64 -CloudStatus 'status: error' -Ready:$false
     Assert-EzVmThrows -ScriptBlock {
-        ConvertFrom-EzVmReadinessProbe -StdOut $failedOutput -ExpectedInstanceName 'ssh-agent' -ExpectedBaseId $intent.baseId -ExpectedProfile 'normal' -ExpectedCloudInstanceId 'ezvm-ssh-agent-123456789abc'
+        ConvertFrom-EzVmReadinessProbe -StdOut $failedOutput -ExpectedInstanceName 'ssh-agent' -ExpectedBaseId $intent.baseId -ExpectedProfile 'normal' -ExpectedCloudInstanceId (Get-EzVmSshTestCloudId -Intent $intent) -ExpectedProvisioningProfile 'coding-default' -ExpectedProvisioningVersion 1 -ExpectedProvisioningDigest (Get-EzVmCodingProfile).Digest
     } -MessagePattern 'cloud-init reports failed' | Out-Null
 
-    $readyOutput = 'EZVM_IDENTITY_B64=' + $identity64 + $nl + 'EZVM_CLOUD_B64=' + (ConvertTo-EzVmSshTestBase64 'status: done') + $nl + 'EZVM_READY=1' + $nl
-    $ready = ConvertFrom-EzVmReadinessProbe -StdOut $readyOutput -ExpectedInstanceName 'ssh-agent' -ExpectedBaseId $intent.baseId -ExpectedProfile 'normal' -ExpectedCloudInstanceId 'ezvm-ssh-agent-123456789abc'
+    $readyOutput = New-EzVmSshTestProbe -IdentityBase64 $identity64 -CloudStatus 'status: done' -Ready:$true
+    $ready = ConvertFrom-EzVmReadinessProbe -StdOut $readyOutput -ExpectedInstanceName 'ssh-agent' -ExpectedBaseId $intent.baseId -ExpectedProfile 'normal' -ExpectedCloudInstanceId (Get-EzVmSshTestCloudId -Intent $intent) -ExpectedProvisioningProfile 'coding-default' -ExpectedProvisioningVersion 1 -ExpectedProvisioningDigest (Get-EzVmCodingProfile).Digest
     Assert-EzVmEqual -Actual $ready.Ready -Expected $true
 }
 
@@ -347,18 +357,7 @@ Add-EzVmTest -Name 'SSH: readiness wait has a bounded total timeout when TCP nev
     $root = New-EzVmCheckoutFixture -Prefix 'ssh readiness timeout'
     try {
         $intent = New-EzVmSshTestIntent
-        $access = [pscustomobject][ordered]@{
-            schemaVersion = 1
-            instanceName = 'ssh-agent'
-            launchId = ('a' * 32)
-            sshHost = '127.0.0.1'
-            sshPort = 22001
-            sshUser = 'coder'
-            state = 'PROVISIONING'
-            cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
-            profile = 'normal'
-            readyAt = ''
-        }
+        $access = New-EzVmSshTestAccess -Root $root -Intent $intent -Port 22001 -LaunchId ('a' * 32)
         $identity = [pscustomobject]@{ PrivateKey = (Join-Path $root 'unused-key') }
         $tooling = [pscustomobject]@{ Ssh = 'unused-ssh'; Keyscan = 'unused-keyscan' }
         $clock = [Diagnostics.Stopwatch]::StartNew()
@@ -480,29 +479,12 @@ Add-EzVmTest -Name 'SSH: readiness grants slow TCG SSH probes a bounded per-atte
         $paths = Get-EzVmSshPaths -Root $root -InstanceName 'ssh-agent'
         [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($paths.AccessState))
         $intent = New-EzVmSshTestIntent
-        $access = [pscustomobject][ordered]@{
-            schemaVersion = 1
-            instanceName = 'ssh-agent'
-            launchId = ('d' * 32)
-            sshHost = '127.0.0.1'
-            sshPort = 22080
-            sshUser = 'coder'
-            state = 'PROVISIONING'
-            cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
-            profile = 'normal'
-            readyAt = ''
-        }
+        $access = New-EzVmSshTestAccess -Root $root -Intent $intent -Port 22080 -LaunchId ('d' * 32)
         $identity = [pscustomobject]@{ PrivateKey = (Join-Path $root 'unused-key') }
         $tooling = [pscustomobject]@{ Ssh = 'unused-ssh' }
-        $identityJson = [pscustomobject][ordered]@{
-            schemaVersion = 1
-            instanceName = 'ssh-agent'
-            baseId = $intent.baseId
-            profile = 'normal'
-            cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
-        } | ConvertTo-Json -Compress
+        $identityJson = New-EzVmSshTestIdentityJson -Intent $intent -InstanceName 'ssh-agent'
         $nl = [Environment]::NewLine
-        $readyOutput = 'EZVM_IDENTITY_B64=' + (ConvertTo-EzVmSshTestBase64 $identityJson) + $nl + 'EZVM_CLOUD_B64=' + (ConvertTo-EzVmSshTestBase64 'status: done') + $nl + 'EZVM_READY=1' + $nl
+        $readyOutput = New-EzVmSshTestProbe -IdentityBase64 (ConvertTo-EzVmSshTestBase64 $identityJson) -CloudStatus 'status: done' -Ready:$true
         $module = Get-Module EzVm
         $observed = & $module {
             param($r, $i, $a, $id, $tools, $output)
@@ -523,7 +505,7 @@ Add-EzVmTest -Name 'SSH: readiness grants slow TCG SSH probes a bounded per-atte
         } $root $intent $access $identity $tooling $readyOutput
 
         Assert-EzVmEqual -Actual $observed.Ready.state -Expected 'READY'
-        Assert-EzVmEqual -Actual $observed.ProcessTimeout -Expected 30
+        Assert-EzVmTrue -Condition ($observed.ProcessTimeout -ge 118 -and $observed.ProcessTimeout -le 120) -Message 'The live profile check must fit within the caller total deadline.'
         Assert-EzVmEqual -Actual $observed.ConnectTimeout -Expected 'ConnectTimeout=15'
         Assert-EzVmTrue -Condition ([IO.File]::ReadAllText($paths.InstanceKnownHosts).Contains('[127.0.0.1]:22080 ssh-ed25519 DDDD'))
     }

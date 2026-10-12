@@ -1,6 +1,6 @@
 Add-EzVmTest -Name 'Base recipe: reviewed baseline contains the stable coding prerequisites' -ScriptBlock {
     $recipe = Get-EzVmBaseRecipe -Root $script:EzVmRepositoryRoot
-    Assert-EzVmEqual -Actual $recipe.recipeVersion -Expected '1'
+    Assert-EzVmEqual -Actual $recipe.recipeVersion -Expected '2'
     Assert-EzVmEqual -Actual $recipe.machine -Expected 'q35'
     Assert-EzVmEqual -Actual $recipe.seedGuestAddress -Expected '10.0.2.100'
     Assert-EzVmEqual -Actual $recipe.seedGuestPort -Expected 8000

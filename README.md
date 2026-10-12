@@ -10,7 +10,9 @@ acquisition, EZVM-004 adds reproducible prepared-base construction, EZVM-005
 adds validated thin-overlay storage primitives, EZVM-006 adds headless
 start/status/stop lifecycle control, EZVM-007 adds localhost-only managed SSH,
 authenticated readiness, exec and file transfer, and EZVM-008 adds durable named
-instances, resource profiles and concurrent SSH-port allocation; the project
+instances, resource profiles and concurrent SSH-port allocation. EZVM-009 adds
+the versioned `coding-default` guest profile and verifies that the guest's coding
+tools, account and workspace are usable before reporting READY; the project
 remains version `0.0.0-dev`.**
 The checkout has reviewed QEMU/7-Zip manifests, repository-local verified runtime
 bootstrap, `doctor`, and automated tests under Windows PowerShell 5.1 and
@@ -87,10 +89,11 @@ content-addressed prepared base, complete chains are validated with machine-read
 and reset storage is replaced only after a candidate overlay validates. No public
 instance-create/start command is introduced by EZVM-005.
 
-EZVM-007 makes the existing lifecycle start path wait beyond QEMU RUNNING until
+The SSH start path waits beyond QEMU RUNNING until
 the forwarded localhost SSH endpoint authenticates with the ezvm controller key,
-the guest proves its requested instance/base/profile identity, cloud-init reports
-completion, and the readiness marker exists. The controller private key and
+the guest proves its requested instance/base/resource and coding-profile identity,
+cloud-init reports completion, and the versioned readiness document and live
+coding-environment checks pass. The controller private key and
 per-instance known-hosts trust remain under ignored `runtime/keys`; only the
 public key enters the instance NoCloud seed. SSH forwarding is explicitly bound
 to `127.0.0.1`; no TAP, bridge or LAN listener is configured.
@@ -108,6 +111,34 @@ trusting a separate opaque index. Starts reuse the persisted SSH reservation and
 fail if another instance or unrelated listener conflicts with it. QMP and seed
 ports remain ephemeral bound resources. Version `0.0.0-dev` is not the v0.1
 release.
+
+## Default coding guest
+
+New instances use `coding-default` version `1`, independently of the
+`light`/`normal`/`heavy` CPU and RAM resource profile. The prepared base supplies
+Git, GCC/G++ and Make, CMake, Ninja, Python 3 with pip and venv, curl/wget, jq,
+ripgrep, zip/unzip, rsync, tmux and OpenSSH. First-boot provisioning validates
+these tools without reinstalling them.
+
+SSH logs in as `coder`, with home `/home/coder` and a writable workspace at
+`/home/coder/workspace`. The password is locked and SSH password authentication
+is disabled. `coder` has unrestricted passwordless sudo **inside the guest**,
+so coding agents can install dependencies in their disposable VM. Commands run
+through sudo can alter all guest state, including any credentials in its overlay.
+
+Install and authenticate your preferred coding agent inside that mutable overlay.
+Node, Rust, uv and commercial agent CLIs are not preinstalled. Use reviewed,
+version-pinned acquisition instructions; the default profile has no remote
+`curl | shell` installer. Guest login state survives stop/restart and is lost
+when the overlay is reset; an intentional stateful clone or export can preserve
+it and must be treated as sensitive. Public reset/clone/export/import commands
+remain EZVM-010 work.
+
+See [Using the coding guest](docs/CODING-GUEST.md) for setup, credential
+persistence, readiness diagnosis and future-profile guidance. Existing
+`ezvm-core` version `1` instances remain visible to `list`, `status` and
+`stop`, but cannot start under the new coding-ready contract. Create a new named
+instance; the old overlay is retained without silent migration.
 
 ## Planned target experience
 
@@ -224,14 +255,16 @@ candidate known-hosts file, with `UpdateHostKeys=no` and Ed25519 host keys.
 Normal SSH/scp uses `StrictHostKeyChecking=yes` against the managed per-instance
 file. The temporary candidate becomes durable trust only after managed-key SSH
 succeeds and the guest proves the exact requested ezvm identity, completed
-cloud-init and READY marker. A changed key therefore never overwrites existing
+cloud-init, validated coding-ready document and live guest checks. A changed key
+therefore never overwrites existing
 trust merely because a new SSH endpoint was observed. Failed or mismatched
 identity proof leaves the previous trust entry untouched. `ssh-keyscan` is not
 used: affected Windows OpenSSH builds can fail its KEX negotiation against modern
 Ubuntu OpenSSH even when `ssh.exe` itself is compatible.
 
-EZVM-007 stores launch SSH metadata in per-instance `access.json`, separately
-from EZVM-006's durable instance intent and process-lifecycle schema. It contains
-no relocatable absolute path and is valid only while its launch ID matches the
-current RUNNING QEMU process. EZVM-008 will add durable instance port/profile
-allocation and registry semantics.
+Launch SSH metadata lives in per-instance `access.json`, separately from durable
+instance intent and process-lifecycle state. Its version 2 schema records base,
+resource-profile and coding-profile identity, including the provisioning version
+and digest. It contains no relocatable absolute path and is valid only while its
+launch ID matches the current RUNNING QEMU process. Durable SSH reservations and
+resource profiles are reconstructed from `instance.json` by the EZVM-008 registry.

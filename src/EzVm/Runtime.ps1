@@ -79,7 +79,7 @@ function Assert-EzVmInstanceIntent {
         'schemaVersion', 'name', 'baseId', 'profile', 'cpus', 'memoryMiB',
         'sshPort', 'createdAt', 'provisioningProfile', 'provisioningVersion'
     ) -Description 'Instance intent'
-    if ($Intent.schemaVersion -ne 1) { throw 'Instance intent schemaVersion must be integer 1.' }
+    Assert-EzVmRuntimeInteger -Value $Intent.schemaVersion -Description 'Instance intent schemaVersion' -Minimum 1 -Maximum 1
     Assert-EzVmStorageInstanceName -Name ([string]$Intent.name)
     if ($Intent.name -cne $ExpectedName) {
         throw "Instance intent name '$($Intent.name)' does not match managed instance '$ExpectedName'."
@@ -110,11 +110,12 @@ function New-EzVmInstanceIntent {
         [ValidateRange(1, 256)][int]$Cpus = 4,
         [ValidateRange(512, 1048576)][int]$MemoryMiB = 8192,
         [ValidateRange(1024, 65535)][int]$SshPort = 22000,
-        [ValidatePattern('^[a-z0-9][a-z0-9._-]{0,63}$')][string]$ProvisioningProfile = 'ezvm-core',
+        [ValidatePattern('^[a-z0-9][a-z0-9._-]{0,63}$')][string]$ProvisioningProfile = 'coding-default',
         [ValidateRange(1, 2147483647)][int]$ProvisioningVersion = 1,
         [scriptblock]$QemuImgRunner
     )
 
+    $null = Get-EzVmCodingProfile -Root $Root -Name $ProvisioningProfile -Version $ProvisioningVersion
     $paths = Get-EzVmPaths -Root $Root
     $runtimePaths = Get-EzVmInstanceRuntimePaths -Root $Root -InstanceName $InstanceName
     $null = Test-EzVmPreparedBase -Root $Root -BaseId $BaseId -QemuImgRunner $QemuImgRunner
