@@ -101,6 +101,7 @@ function Get-EzVmInstanceRegistry {
 
     $instances = New-Object 'System.Collections.Generic.List[object]'
     $portableNames = @{}
+    $portOwners = @{}
     foreach ($directory in @(Get-ChildItem -LiteralPath $paths.Instances -Directory -Force -ErrorAction Stop | Sort-Object Name)) {
         try { Assert-EzVmStorageInstanceName -Name $directory.Name }
         catch {
@@ -118,6 +119,11 @@ function Get-EzVmInstanceRegistry {
             throw "Managed instance directory '$($directory.Name)' has no durable instance.json. Reconcile or remove the incomplete directory before registry operations."
         }
         $intent = Get-EzVmInstanceIntent -Root $Root -InstanceName $directory.Name
+        $portKey = [string][int]$intent.sshPort
+        if ($portOwners.ContainsKey($portKey)) {
+            throw "Managed instances '$($portOwners[$portKey])' and '$($intent.name)' both reserve SSH port $portKey. Reconcile the conflicting instance.json files before registry operations."
+        }
+        $portOwners[$portKey] = [string]$intent.name
         $instances.Add($intent)
     }
     return @($instances.ToArray())
