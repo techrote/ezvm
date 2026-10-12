@@ -160,3 +160,13 @@ public status/start/stop parsing and absent/error behavior.
 The `EZVM-006 real QMP qualification` workflow bootstraps the reviewed Windows
 QEMU runtime and exercises the actual host management/process-observation boundary
 under explicit TCG. It does not claim WHPX execution on a hosted runner.
+
+
+### EZVM-007 SSH/network tests
+
+`Ssh.Tests.ps1` owns localhost-only SSH/NoCloud QEMU argv, controller public-key
+seed generation, scoped host trust, remote argv/scp path construction, readiness
+identity/cloud-init/marker validation, bounded timeout, remote exit-code
+propagation, configured-range collision handling and missing OpenSSH diagnostics.
+The existing `SeedServer.Tests.ps1` remains authoritative for loopback binding,
+method/path rejection and bounded NoCloud HTTP behavior.
