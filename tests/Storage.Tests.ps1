@@ -59,7 +59,7 @@ function New-EzVmStorageFixture {
                     ($stateForRunner.Mode -ceq 'wrong-replacement-format' -and [int]$payload.generation -gt 1)) { 'raw' } else { 'qcow2' }
                 $top = [pscustomobject][ordered]@{
                     filename = $path
-                    format = 'qcow2'
+                    format = $(if ($stateForRunner.Mode -ceq 'wrong-overlay-format') { 'raw' } else { 'qcow2' })
                     'virtual-size' = [long]17179869184
                     'backing-filename' = $backing
                     'backing-filename-format' = $format
@@ -215,6 +215,22 @@ Add-EzVmTest -Name 'Storage: rejects missing backing base and base digest mismat
         Assert-EzVmThrows -ScriptBlock {
             Test-EzVmInstanceStorage -Root $fixture.Root -InstanceName 'missing-base' -BaseId $fixture.BaseId -QemuImgRunner $fixture.Runner
         } -MessagePattern 'incomplete|missing' | Out-Null
+    }
+    finally { Remove-EzVmStorageFixture $fixture }
+}
+
+Add-EzVmTest -Name 'Storage: missing overlay and unexpected overlay format fail closed' -ScriptBlock {
+    $fixture = New-EzVmStorageFixture
+    try {
+        Assert-EzVmThrows -ScriptBlock {
+            Test-EzVmInstanceStorage -Root $fixture.Root -InstanceName 'absent' -BaseId $fixture.BaseId -QemuImgRunner $fixture.Runner
+        } -MessagePattern 'Instance overlay.*missing' | Out-Null
+
+        $null = New-EzVmInstanceOverlay -Root $fixture.Root -InstanceName 'wrong-format' -BaseId $fixture.BaseId -LifecycleGuard $fixture.SafeGuard -QemuImgRunner $fixture.Runner
+        $fixture.State.Mode = 'wrong-overlay-format'
+        Assert-EzVmThrows -ScriptBlock {
+            Test-EzVmInstanceStorage -Root $fixture.Root -InstanceName 'wrong-format' -BaseId $fixture.BaseId -QemuImgRunner $fixture.Runner
+        } -MessagePattern 'overlay format must be qcow2' | Out-Null
     }
     finally { Remove-EzVmStorageFixture $fixture }
 }
