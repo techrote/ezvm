@@ -170,3 +170,29 @@ identity/cloud-init/marker validation, bounded timeout, remote exit-code
 propagation, configured-range collision handling and missing OpenSSH diagnostics.
 The existing `SeedServer.Tests.ps1` remains authoritative for loopback binding,
 method/path rejection and bounded NoCloud HTTP behavior.
+
+## EZVM-009 coding-profile tests
+
+`Profiles.Tests.ps1` covers the strict `coding-default` version 1 manifest,
+required commands, manifest/recipe source digest, normalized line endings,
+credential/placeholder rejection and generated coding-profile seed content.
+`CodingReadiness.Tests.ps1` exercises complete version 2 identity/ready evidence,
+completion state, unsupported/mismatched profiles and versions, missing required
+tools and stale READY/trust refusal. Existing SSH, registry and runtime suites
+also exercise the updated state and legacy-profile boundaries.
+
+The `EZVM-009 real coding-profile qualification` workflow runs the reviewed
+Windows QEMU under explicit TCG. Its
+`Real coding-default profile (Windows TCG; WHPX SKIP)` job uses
+`scripts/Invoke-EzVm009RealProfile.ps1` to exercise actual Ubuntu first boot,
+versioned coding readiness, coder/password/sudo/SSH policy, workspace ownership,
+Python venv/pip and compiler use. Repeated provisioning and stop/restart must
+preserve a synthetic workspace sentinel. Temporarily removing ripgrep must
+invalidate readiness without changing managed SSH trust; restoration must
+allow verified recovery and graceful stop.
+
+This lane keeps the accepted 2400-second base-build and 900-second per-launch
+readiness bounds, within a 90-minute workflow limit for the full scenario. It
+does not claim WHPX execution or commercial-agent authentication. Its result and
+tested commit must be recorded as separate acceptance evidence; source fixtures
+and workflow configuration alone are not a guest integration PASS.

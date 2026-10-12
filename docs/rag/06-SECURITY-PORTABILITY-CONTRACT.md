@@ -39,7 +39,12 @@ Never commit:
 
 Prepared bases must not contain user authentication tokens.
 
-Per-instance agent credentials may live in that instance overlay if the user chooses to authenticate there, but reset/export behavior must make that persistence clear.
+Per-instance agent credentials may live in that instance overlay if the user
+chooses to authenticate there. They survive normal stop/restart and are lost when
+reset replaces the overlay. An intentional stateful clone/export can preserve
+them along with other guest data, so that copy is sensitive. Public
+reset/clone/export/import commands remain EZVM-010 work; documenting their
+contract does not make those commands available yet.
 
 ## Default host exposure
 
@@ -192,3 +197,38 @@ lifecycle surface exports graceful start/status/stop, not a generic QMP `quit`
 shortcut. Normal stop requests guest powerdown and never converts its timeout
 into an implicit process kill. A force-stop feature, if introduced later, must be
 separate, explicit and identity-validated.
+
+## Coding-profile privilege and credential boundary (EZVM-009)
+
+The `coding-default`/`1` guest identity is `coder`, with home `/home/coder`
+and workspace `/home/coder/workspace`. Its password is locked, SSH password
+authentication is disabled and the accepted instance seed carries only the
+controller public key. No user token, agent login state or private key belongs
+in the profile source, build seed, prepared base or readiness marker.
+
+`coder` deliberately receives `ALL=(ALL:ALL) NOPASSWD:ALL` within the disposable
+guest. An agent can therefore install development packages and alter the whole
+guest without an interactive password prompt. This is not a privilege boundary
+between coder and guest root: software run as coder can reach other credentials
+stored in that VM. Keep unrelated trust domains in separate instances. This
+guest privilege does not change Windows elevation, host sharing or networking.
+
+The profile validates the existing baseline toolset; it neither downloads
+additional ecosystems nor executes vendor-agent installers. A future automatic
+installer must be version-pinned, reviewable and verify downloaded artifacts
+before execution. User-selected agent installation and vendor authentication
+take place within the mutable overlay using the vendor's reviewed instructions.
+Do not inject credentials through committed configuration or log them in
+readiness/qualification evidence.
+
+Guest identity and readiness documents carry schema version 2, base/resource
+and coding-profile name/version/digest. A completed marker is accepted only with
+fresh authenticated tool/account/workspace checks. This prevents accidental
+false readiness from stale or mismatched guest state; it is not tamper-resistant
+attestation against guest root, which can modify guest state and responses.
+
+Profile provisioning preserves workspace contents and avoids recursive ownership
+changes. Profile upgrades use new reviewed version paths; baseline changes use
+new immutable base identities. Legacy `ezvm-core`/`1` overlays are left intact
+for inspection/stop or a future explicit migration, and cannot silently acquire
+the `coding-default` identity.

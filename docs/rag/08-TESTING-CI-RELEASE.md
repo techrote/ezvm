@@ -305,3 +305,50 @@ Fast control-plane coverage now includes:
 These tests exercise concurrency/state construction without claiming WHPX
 execution. Real guest/network qualification remains owned by the relevant
 bounded QEMU workflows.
+
+## EZVM-009 coding-profile coverage
+
+Fast Windows PowerShell 5.1 and PowerShell 7 coverage includes:
+
+- strict profile schema, supported name/version and complete required-command
+  validation;
+- deterministic manifest/recipe source digesting across CRLF and LF checkouts;
+- generated public-key-only NoCloud content, locked coder password, guest sudo
+  policy and predictable home/workspace paths;
+- source rejection for private-key/token-like material and unresolved
+  placeholders;
+- separate resource and coding-profile identities in durable intent and
+  version 2 guest/access state;
+- full ready-document completion and identity validation, including mismatched
+  instance/base/profile/version/digest and malformed evidence;
+- missing-tool and failed live-profile refusal without retaining stale READY or
+  promoting SSH trust;
+- non-zero cloud-init status and late-success refusal within the unchanged
+  total readiness deadline;
+- legacy `ezvm-core` intent remaining inspectable/stoppable while unsupported
+  starts fail without rewriting that intent or its overlay.
+
+`Profiles.Tests.ps1` owns profile source and seed contracts;
+`CodingReadiness.Tests.ps1` owns the additional readiness/parser adversarial
+cases. The existing SSH, runtime and registry suites cover their updated
+boundaries. Static or mocked guest checks alone cannot prove real provisioning
+idempotence, effective privilege policy or usable Python venv support.
+
+The separate `EZVM-009 real coding-profile qualification` workflow runs
+`scripts/Invoke-EzVm009RealProfile.ps1` on Windows using the reviewed managed
+QEMU runtime and explicit TCG. Its job is labelled
+`Real coding-default profile (Windows TCG; WHPX SKIP)`. It builds the accepted
+base, creates a normal coding-default instance, validates versioned READY and
+account/workspace/SSH/sudo policy, creates a real Python venv and compiles small
+C/C++ programs. It repeats provisioning while preserving a workspace sentinel,
+stops/restarts the guest, and removes a required tool temporarily to prove stale
+readiness cannot pass. The qualification restores that tool, verifies recovery
+and shuts the guest down cleanly.
+
+The existing base-build bound remains 2400 seconds and each launch-readiness
+bound remains 900 seconds. The enclosing workflow is bounded at 90 minutes to
+include provisioning, restart and negative/recovery checks. A failure stays a
+failure; only the unavailable WHPX execution capability is an explicit SKIP.
+The workflow's existence is not acceptance evidence: retain the successful run
+URL and exact tested commit in the PR/issue before claiming EZVM-009 qualified.
+No live vendor account or credential is used as a persistence test fixture.

@@ -98,9 +98,10 @@ After QEMU starts:
 
 1. wait for the host-forwarded SSH port;
 2. attempt authenticated SSH with bounded timeout;
-3. verify requested instance identity;
+3. verify requested instance, base, resource and coding-profile identity;
 4. wait for cloud-init completion;
-5. verify ezvm readiness marker.
+5. validate the complete versioned coding-ready document and its completion state;
+6. run fresh tool/account/workspace checks through the authenticated session.
 
 All loops require a total timeout and useful progress/error output.
 
@@ -202,18 +203,20 @@ candidate exists, subsequent connections must match it.
 
 The candidate is promoted to managed trust **after** controller-key
 authentication and the authenticated guest proves the requested ezvm identity,
-completed cloud-init and readiness marker. Existing managed trust remains
+completed cloud-init, the coding-ready document and live environment checks.
+Existing managed trust remains
 untouched until that proof succeeds; failure or identity mismatch leaves it
 intact. This is the controlled reset/rebuild re-key path.
 
 The configured 22000-22999 range is scanned under a bundle allocation lock and
-must also be bindable on loopback. This is sufficient for the EZVM-007 launch
-path; EZVM-008 owns durable per-instance allocation, persisted collision
-accounting and full concurrent multi-instance resource management.
+must also be bindable on loopback. EZVM-008 persists the selected port in each
+instance's durable intent and enforces collision accounting across named
+instances, as described below.
 
-Per-launch `access.json` records only instance/launch identity, localhost SSH
-endpoint, user/profile, provisioning state and READY timestamp. It is accepted
-only when its launch ID matches a safely RUNNING EZVM-006 runtime state.
+Per-launch `access.json` schema version 2 records instance/launch/base identity,
+localhost SSH endpoint, coder user, resource profile, cloud instance ID, coding
+profile name/version/digest, provisioning state and READY timestamp. It is
+accepted only when its launch ID matches a safely RUNNING runtime state.
 
 ## Durable SSH allocation (EZVM-008)
 
@@ -234,3 +237,29 @@ managed endpoint.
 The temporary NoCloud listener remains an already-bound ephemeral loopback port,
 and QMP continues to use an independently locked ephemeral port. Neither is
 persisted as portable instance intent.
+
+## Coding readiness and fresh checks (EZVM-009)
+
+SSH authentication authorizes the readiness probe; it does not by itself prove
+the guest is ready for coding. The probe returns the complete
+`/etc/ezvm/identity.json` and `/var/lib/ezvm/ready.json` documents. Both must use
+the expected schema version 2 and match the requested instance, base, resource
+profile, cloud instance ID and supported coding profile name/version/digest.
+The ready document must also contain `provisioningState: complete`.
+`cloud-init status` must both return exit code 0 and report exactly `done`.
+
+The same authenticated attempt checks required commands, Python venv support,
+the locked-password coder account, SSH password policy, guest sudo policy and
+workspace ownership/writeability. A missing tool or broken account/workspace
+cannot be hidden by an old readiness file. Mismatched identity, malformed state
+or completed-but-invalid provisioning fails instead of promoting trust or
+recording READY. Missing/incomplete startup evidence can be polled only within
+the existing total readiness deadline. Live checks consume that same deadline:
+a late successful proof is rejected. An individual authenticated probe is capped
+at 120 seconds, the guest validator at 110 seconds and its Python venv check at
+90 seconds; none extends the total launch budget.
+
+These checks describe readiness at the successful launch probe. Agent activity
+can subsequently change the guest; READY is not continuous enforcement or
+remote attestation against a guest controlled by root. Each later start requires
+the authenticated live checks again.

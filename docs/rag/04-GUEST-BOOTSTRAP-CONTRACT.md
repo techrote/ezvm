@@ -111,9 +111,12 @@ Base provisioning should contain stable, generally useful development prerequisi
 - unzip/zip;
 - rsync;
 - tmux;
-- openssh-server.
+- openssh-server and the OpenSSH client tools required by guest control.
 
-Language/toolchain ecosystems that change rapidly should be controlled by the guest coding profile rather than silently drifting in the base.
+The `coding-default` version 1 profile validates the accepted stable baseline
+without installing it again. Node, Rust, uv and vendor-specific agent CLIs are
+outside this profile. Adding one requires an explicit reviewed acquisition and
+version policy; an unpinned remote shell installer is not an accepted extension.
 
 ## Instance first boot
 
@@ -138,9 +141,12 @@ Readiness requires:
 
 - SSH authentication works;
 - cloud-init reports completion;
-- the expected ezvm instance marker exists;
-- instance identity matches the requested instance;
-- optional coding profile readiness marker is valid.
+- the complete versioned ezvm identity matches the requested instance, base,
+  resource profile and coding profile name/version/digest;
+- the coding readiness document matches that identity and records completed
+  provisioning;
+- fresh guest checks prove the required tools, account policy and writable
+  workspace are usable.
 
 ## Failure behavior
 
@@ -206,20 +212,22 @@ The host accepts no base unless the serial evidence proves:
 This avoids treating a mere QEMU exit as provisioning success.
 
 
-## Implemented instance first boot and readiness (EZVM-007)
+## Implemented instance first boot and readiness (EZVM-007 / EZVM-009)
 
 An instance launch derives a stable cloud instance ID from the durable instance
 name, prepared-base ID and creation timestamp. Its NoCloud data supplies a
 deterministic hostname, creates the locked-password `coder` account with the
 ezvm controller **public** Ed25519 key, and writes
-`/etc/ezvm/identity.json` containing schema, instance, base, profile and cloud
-instance identities. Controller private-key bytes never enter user-data,
-meta-data or the prepared base.
+`/etc/ezvm/identity.json`. Schema version 2 contains instance, base, resource
+profile and cloud instance identities plus `provisioningProfile`,
+`provisioningVersion` and `provisioningDigest`. Controller private-key bytes
+never enter user-data, meta-data or the prepared base.
 
 A non-blocking transient systemd finalizer waits for
-`cloud-init status --wait`. Successful completion copies the same identity
-document to `/var/lib/ezvm/ready.json`; failure leaves an explicit provisioning
-failure marker and no READY marker.
+`cloud-init status --wait`, then applies and validates the repository-controlled
+coding profile. Successful completion publishes `/var/lib/ezvm/ready.json` with
+the same versioned identity and `provisioningState: complete`. Failure leaves an
+explicit provisioning failure marker and no accepted READY document.
 
 The host does not classify the guest READY from TCP reachability. It requires,
 within one bounded launch-readiness deadline:
@@ -228,9 +236,53 @@ within one bounded launch-readiness deadline:
 2. authentication with the managed controller private key under scoped host-key
    verification;
 3. the authenticated guest identity document to match the requested
-   instance/base/profile/cloud instance ID exactly;
-4. `cloud-init status` to report `done` and not `error`;
-5. the readiness marker to exist.
+   instance/base/resource profile/cloud instance ID and coding profile
+   name/version/digest exactly;
+4. `cloud-init status` to return exit code 0 and report exactly `done`;
+5. the complete ready document to match the same identity and record completed
+   provisioning;
+6. live required-tool, coder-account and workspace validation to succeed.
 
-Identity mismatch or cloud-init failure is a hard failure rather than a retryable
-READY state.
+Identity mismatch, missing required tools or invalid account/workspace policy
+cannot produce READY even if an older readiness file remains. Cloud-init or
+profile failure is a hard failure. Transient startup waits and live profile
+validation share one launch-readiness deadline. A successful proof returned
+after that deadline is rejected.
+
+## Versioned coding-default policy (EZVM-009)
+
+Repository authority is `guest/profiles/coding-default/v1/profile.json` and
+`provision.sh`. The host resolves an explicitly supported name/version and
+rejects unknown schema fields and unsupported versions. It computes a SHA-256
+over the normalized UTF-8 contents of both files, with filenames and NUL
+delimiters separating them. CRLF and LF checkouts produce the same digest.
+This provisioning-source identity is carried through guest identity, ready and
+host access state; it is not a separately downloaded checksum. The host checks
+that the guest's installed sources match the expected recipe before accepting
+live validation. `light`/`normal`/`heavy` remain resource profiles with separate
+meaning.
+
+The policy requires `coder` with home `/home/coder`, Bash, a locked password and
+public-key SSH. SSH password authentication is disabled. Its workspace is
+`/home/coder/workspace`, owned by `coder` and writable by that account. Repeated
+provisioning preserves workspace contents and does not recursively change
+ownership of user files. Unsafe account/workspace state fails clearly.
+
+The disposable guest deliberately grants `coder` unrestricted passwordless
+sudo, `ALL=(ALL:ALL) NOPASSWD:ALL`. This grants root within the guest; it neither
+requires Windows elevation nor grants host administrator rights. Treat every
+agent running as coder as capable of modifying the whole guest and reading
+other credentials stored there.
+
+The profile checks the stable command set, Python venv support and the accepted
+OpenSSH server/client configuration. It performs no package download or install
+on instance first boot. User-selected agent software and authentication are
+installed later into the writable overlay, as described in
+[the guest guide](../CODING-GUEST.md).
+
+Future profiles require a new reviewed version directory and explicit resolver,
+schema and test support. Reuse an existing immutable base only when its baseline
+already satisfies the new profile; otherwise build a new base. Existing
+`ezvm-core`/`1` instances are retained for list/status/stop but start refuses
+their unqualified provisioning identity. Create a new named instance instead of
+silently relabelling the old overlay or changing its backing base.

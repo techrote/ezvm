@@ -1,0 +1,40 @@
+name: EZVM-009 real coding-profile qualification
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ezvm-009-coding-profile
+    paths:
+      - .github/workflows/ezvm-009-real-profile.yml
+      - scripts/Invoke-EzVm009RealProfile.ps1
+      - src/EzVm/**
+      - guest/**
+      - manifests/qemu-windows.json
+      - manifests/ubuntu-noble-amd64.json
+
+concurrency:
+  group: ezvm-009-real-profile-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  real-profile:
+    name: Real coding-default profile (Windows TCG; WHPX SKIP)
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Qualify real profile, idempotence, restart and missing-tool refusal
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\scripts\Invoke-EzVm009RealProfile.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

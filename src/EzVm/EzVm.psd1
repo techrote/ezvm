@@ -64,6 +64,7 @@
         'Get-EzVmSshPaths',
         'Get-EzVmControllerSshIdentity',
         'Get-EzVmAvailableSshPort',
+        'Get-EzVmCodingProfile',
         'New-EzVmInstanceSeedData',
         'New-EzVmSshCommandArguments',
         'New-EzVmScpCommandArguments',

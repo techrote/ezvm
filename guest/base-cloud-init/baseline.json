@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "recipeVersion": "1",
+  "recipeVersion": "2",
   "virtualSizeGiB": 16,
   "cpus": 2,
   "memoryMiB": 4096,
@@ -10,6 +10,8 @@
   "packages": [
     "ca-certificates",
     "openssh-server",
+    "openssh-client",
+    "sudo",
     "git",
     "build-essential",
     "cmake",
@@ -28,6 +30,10 @@
   ],
   "requiredCommands": [
     "sshd",
+    "ssh",
+    "scp",
+    "sudo",
+    "cloud-init",
     "git",
     "gcc",
     "g++",

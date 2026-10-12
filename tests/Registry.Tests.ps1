@@ -113,7 +113,7 @@ Add-EzVmTest -Name 'Registry: managed create persists complete relocatable inten
         $intent = Get-EzVmInstanceIntent -Root $fixture.Root -InstanceName 'agent-one'
         Assert-EzVmEqual -Actual $intent.profile -Expected 'light'
         Assert-EzVmEqual -Actual $intent.sshPort -Expected 22000
-        Assert-EzVmEqual -Actual $intent.provisioningProfile -Expected 'ezvm-core'
+        Assert-EzVmEqual -Actual $intent.provisioningProfile -Expected 'coding-default'
         Assert-EzVmEqual -Actual $intent.provisioningVersion -Expected 1
         $intentPath = (Get-EzVmInstanceRuntimePaths -Root $fixture.Root -InstanceName 'agent-one').Intent
         $json = [IO.File]::ReadAllText($intentPath)
