@@ -189,7 +189,8 @@ Add-EzVmTest -Name 'Storage: relative backing survives complete cold root reloca
         Assert-EzVmEqual -Actual $validated.BackingReference -Expected $referenceBefore
         Assert-EzVmTrue -Condition ($validated.OverlayPath.StartsWith([IO.Path]::GetFullPath($target), [StringComparison]::OrdinalIgnoreCase))
         Assert-EzVmTrue -Condition ($validated.BasePath.StartsWith([IO.Path]::GetFullPath($target), [StringComparison]::OrdinalIgnoreCase))
-        Assert-EzVmTrue -Condition (($fixture.State.Calls | ForEach-Object { $_ -join ' ' }) -notmatch '(?i)\brebase\b') -Message 'Relocation must not rebase a valid normal instance.'
+        $allCalls = [string]::Join([Environment]::NewLine, [string[]]@($fixture.State.Calls | ForEach-Object { $_ -join ' ' }))
+        Assert-EzVmTrue -Condition ($allCalls -notmatch '(?i)\brebase\b') -Message 'Relocation must not rebase a valid normal instance.'
     }
     finally {
         if ($null -ne $target) { Remove-EzVmTestDirectory -Path $target }
