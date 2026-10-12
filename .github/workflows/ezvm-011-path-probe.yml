@@ -21,7 +21,8 @@ jobs:
           $link = Join-Path $root 'junction [link]'
           $target = Join-Path $root 'target'
           [void][IO.Directory]::CreateDirectory($target)
-          New-Item -ItemType Junction -Path $link -Target $target | Out-Null
+          & $env:ComSpec /d /c mklink /J $link $target
+          if ($LASTEXITCODE -ne 0) { throw 'Native fixture setup failed.' }
           foreach ($path in @($root, (Join-Path $root 'present.txt'), (Join-Path $root 'missing'), (Join-Path $root 'missing/deeper'), $link, (Join-Path $link 'missing'))) {
             Write-Host ('PATH=' + $path)
             try {
