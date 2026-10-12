@@ -8,9 +8,10 @@ Portable, disposable QEMU + QCOW2 coding-agent environments for Windows hosts.
 bootstrap plus Windows host preflight, EZVM-003 adds verified Ubuntu source
 acquisition, EZVM-004 adds reproducible prepared-base construction, EZVM-005
 adds validated thin-overlay storage primitives, EZVM-006 adds headless
-start/status/stop lifecycle control, and EZVM-007 adds localhost-only managed
-SSH, authenticated readiness, exec and file transfer; the project remains
-version `0.0.0-dev`.**
+start/status/stop lifecycle control, EZVM-007 adds localhost-only managed SSH,
+authenticated readiness, exec and file transfer, and EZVM-008 adds durable named
+instances, resource profiles and concurrent SSH-port allocation; the project
+remains version `0.0.0-dev`.**
 The checkout has reviewed QEMU/7-Zip manifests, repository-local verified runtime
 bootstrap, `doctor`, and automated tests under Windows PowerShell 5.1 and
 PowerShell 7.
@@ -24,6 +25,8 @@ The commands available on this branch are:
 .\ezvm.ps1 bootstrap
 .\ezvm.ps1 base acquire
 .\ezvm.ps1 base build
+.\ezvm.ps1 create <name> [-Profile light|normal|heavy] [-BaseId <base-id>] [-Cpus <n>] [-MemoryMiB <n>]
+.\ezvm.ps1 list
 .\ezvm.ps1 status <name>
 .\ezvm.ps1 start <name>
 .\ezvm.ps1 stop <name>
@@ -94,9 +97,17 @@ to `127.0.0.1`; no TAP, bridge or LAN listener is configured.
 
 `exec` preserves the remote program's exit status and captured stdout/stderr.
 The directional `copy-to` and `copy-from` commands use the same scoped key and
-host-key policy. Instance creation, durable profile/port allocation and the
-multi-instance registry remain EZVM-008 work. Version `0.0.0-dev` is not the
-v0.1 release.
+host-key policy.
+
+EZVM-008 makes `runtime/instances/<name>/instance.json` the durable recoverable
+instance authority. `create` resolves a named resource profile plus optional
+CPU/RAM overrides, validates the prepared base, allocates a unique localhost SSH
+port while holding the bundle allocation lock, and publishes the one-level QCOW2
+overlay. `list` reconstructs the registry from instance directories instead of
+trusting a separate opaque index. Starts reuse the persisted SSH reservation and
+fail if another instance or unrelated listener conflicts with it. QMP and seed
+ports remain ephemeral bound resources. Version `0.0.0-dev` is not the v0.1
+release.
 
 ## Planned target experience
 
