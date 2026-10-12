@@ -204,3 +204,33 @@ The host accepts no base unless the serial evidence proves:
 - guest OS and cloud-init version facts were returned.
 
 This avoids treating a mere QEMU exit as provisioning success.
+
+
+## Implemented instance first boot and readiness (EZVM-007)
+
+An instance launch derives a stable cloud instance ID from the durable instance
+name, prepared-base ID and creation timestamp. Its NoCloud data supplies a
+deterministic hostname, creates the locked-password `coder` account with the
+ezvm controller **public** Ed25519 key, and writes
+`/etc/ezvm/identity.json` containing schema, instance, base, profile and cloud
+instance identities. Controller private-key bytes never enter user-data,
+meta-data or the prepared base.
+
+A non-blocking transient systemd finalizer waits for
+`cloud-init status --wait`. Successful completion copies the same identity
+document to `/var/lib/ezvm/ready.json`; failure leaves an explicit provisioning
+failure marker and no READY marker.
+
+The host does not classify the guest READY from TCP reachability. It requires,
+within one bounded launch-readiness deadline:
+
+1. the localhost forwarded SSH port to accept connections;
+2. authentication with the managed controller private key under scoped host-key
+   verification;
+3. the authenticated guest identity document to match the requested
+   instance/base/profile/cloud instance ID exactly;
+4. `cloud-init status` to report `done` and not `error`;
+5. the readiness marker to exist.
+
+Identity mismatch or cloud-init failure is a hard failure rather than a retryable
+READY state.
