@@ -254,6 +254,81 @@ Add-EzVmTest -Name 'Runtime: graceful stop sends system_powerdown and records ST
     finally { Remove-EzVmRuntimeFixture $fixture }
 }
 
+Add-EzVmTest -Name 'Runtime: graceful stop tolerates terminating PID observation races without weakening ownership' -ScriptBlock {
+    $fixture = New-EzVmRuntimeFixture
+    try {
+        $null = Start-EzVmRuntimeFixtureInstance -Fixture $fixture
+        $shutdown = [pscustomobject]@{ AfterPowerdown = $false; Polls = 0 }
+        $baseProvider = $fixture.ProcessProvider
+        $baseQmp = $fixture.QmpInvoker
+        $state = $fixture.State
+
+        $provider = {
+            param($processId)
+            if ($shutdown.AfterPowerdown -and $null -ne $processId) {
+                $shutdown.Polls++
+                if ($shutdown.Polls -eq 1) {
+                    throw 'Windows process identity could not be queried safely: Observed process has no readable command line; process identity is ambiguous.'
+                }
+                if ($shutdown.Polls -eq 3) {
+                    $state.Processes.Clear()
+                    return @()
+                }
+            }
+            return @(& $baseProvider $processId)
+        }.GetNewClosure()
+
+        $qmp = {
+            param($hostAddress, $port, $command, $timeoutMilliseconds)
+            if ($command -ceq 'system_powerdown') {
+                $shutdown.AfterPowerdown = $true
+                return [pscustomobject]@{}
+            }
+            return & $baseQmp $hostAddress $port $command $timeoutMilliseconds
+        }.GetNewClosure()
+
+        $stopped = Stop-EzVmInstance -Root $fixture.Root -InstanceName $fixture.InstanceName -ShutdownTimeoutSeconds 3 -ProcessProvider $provider -QmpInvoker $qmp
+        Assert-EzVmEqual -Actual $stopped.state -Expected 'STOPPED'
+        Assert-EzVmTrue -Condition ($shutdown.Polls -ge 3) -Message 'Fixture must exercise unreadable-command-line retry and disappearance between identity observations.'
+        Assert-EzVmEqual -Actual (Get-EzVmRuntimeFixtureState -Fixture $fixture).state -Expected 'STOPPED'
+    }
+    finally { Remove-EzVmRuntimeFixture $fixture }
+}
+
+Add-EzVmTest -Name 'Runtime: persistent shutdown identity-query ambiguity remains bounded and fail-closed' -ScriptBlock {
+    $fixture = New-EzVmRuntimeFixture
+    try {
+        $null = Start-EzVmRuntimeFixtureInstance -Fixture $fixture
+        $shutdown = [pscustomobject]@{ AfterPowerdown = $false }
+        $baseProvider = $fixture.ProcessProvider
+        $baseQmp = $fixture.QmpInvoker
+
+        $provider = {
+            param($processId)
+            if ($shutdown.AfterPowerdown -and $null -ne $processId) {
+                throw 'Windows process identity could not be queried safely: persistent fixture ambiguity.'
+            }
+            return @(& $baseProvider $processId)
+        }.GetNewClosure()
+
+        $qmp = {
+            param($hostAddress, $port, $command, $timeoutMilliseconds)
+            if ($command -ceq 'system_powerdown') {
+                $shutdown.AfterPowerdown = $true
+                return [pscustomobject]@{}
+            }
+            return & $baseQmp $hostAddress $port $command $timeoutMilliseconds
+        }.GetNewClosure()
+
+        Assert-EzVmThrows -ScriptBlock {
+            Stop-EzVmInstance -Root $fixture.Root -InstanceName $fixture.InstanceName -ShutdownTimeoutSeconds 1 -ProcessProvider $provider -QmpInvoker $qmp
+        } -MessagePattern 'was not killed.*STOPPING.*Last process-identity observation error.*persistent fixture ambiguity' | Out-Null
+        Assert-EzVmEqual -Actual (Get-EzVmRuntimeFixtureState -Fixture $fixture).state -Expected 'STOPPING'
+        Assert-EzVmEqual -Actual $fixture.State.Processes.Count -Expected 1
+    }
+    finally { Remove-EzVmRuntimeFixture $fixture }
+}
+
 Add-EzVmTest -Name 'Runtime: stop timeout never silently kills QEMU' -ScriptBlock {
     $fixture = New-EzVmRuntimeFixture
     try {
