@@ -110,28 +110,103 @@ Add-EzVmTest -Name 'SSH: known-hosts state is bundle-scoped and one file per man
     finally { Remove-EzVmTestDirectory -Path $root }
 }
 
-Add-EzVmTest -Name 'SSH: host-key continuity accepts a port change but rejects unexpected key replacement' -ScriptBlock {
-    $root = New-EzVmCheckoutFixture -Prefix 'host key continuity'
+Add-EzVmTest -Name 'SSH: changed host key remains staged until authenticated identity proof then replaces only scoped trust' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'host key rotation'
     try {
-        $paths = Get-EzVmSshPaths -Root $root -InstanceName 'agent-one'
+        $paths = Get-EzVmSshPaths -Root $root -InstanceName 'ssh-agent'
         [void][IO.Directory]::CreateDirectory($paths.KnownHostsDirectory)
-        [IO.File]::WriteAllText($paths.InstanceKnownHosts, ('[127.0.0.1]:22001 ssh-ed25519 AAAA' + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
+        $oldLine = '[127.0.0.1]:22001 ssh-ed25519 AAAA'
+        $newLine = '[127.0.0.1]:22077 ssh-ed25519 BBBB'
+        [IO.File]::WriteAllText($paths.InstanceKnownHosts, ($oldLine + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
+
+        $intent = New-EzVmSshTestIntent
+        $access = [pscustomobject][ordered]@{
+            schemaVersion = 1
+            instanceName = 'ssh-agent'
+            launchId = ('a' * 32)
+            sshHost = '127.0.0.1'
+            sshPort = 22077
+            sshUser = 'coder'
+            state = 'PROVISIONING'
+            cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
+            profile = 'normal'
+            readyAt = ''
+        }
+        $identity = [pscustomobject]@{ PrivateKey = (Join-Path $root 'unused-key') }
+        $tooling = [pscustomobject]@{ Ssh = 'unused-ssh'; Keyscan = 'unused-keyscan' }
+        $identityJson = [pscustomobject][ordered]@{
+            schemaVersion = 1
+            instanceName = 'ssh-agent'
+            baseId = $intent.baseId
+            profile = 'normal'
+            cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
+        } | ConvertTo-Json -Compress
+        $nl = [Environment]::NewLine
+        $readyOutput = 'EZVM_IDENTITY_B64=' + (ConvertTo-EzVmSshTestBase64 $identityJson) + $nl + 'EZVM_CLOUD_B64=' + (ConvertTo-EzVmSshTestBase64 'status: done') + $nl + 'EZVM_READY=1' + $nl
+
         $module = Get-Module EzVm
         $candidate = & $module {
-            param($r)
-            New-EzVmCandidateKnownHosts -Root $r -InstanceName 'agent-one' -LaunchId ('a' * 32) -Port 22077 -ScannedLine '[127.0.0.1]:22077 ssh-ed25519 AAAA'
-        } $root
+            param($r, $line)
+            New-EzVmCandidateKnownHosts -Root $r -InstanceName 'ssh-agent' -LaunchId ('b' * 32) -Port 22077 -ScannedLine $line
+        } $root $newLine
         try {
-            Assert-EzVmTrue -Condition (Test-Path -LiteralPath $candidate.Candidate -PathType Leaf)
+            Assert-EzVmEqual -Actual $candidate.Changed -Expected $true
+            Assert-EzVmTrue -Condition ([IO.File]::ReadAllText($paths.InstanceKnownHosts).Contains('ssh-ed25519 AAAA')) -Message 'Observed key rotation must not overwrite existing trust before identity proof.'
         }
         finally { Remove-Item -LiteralPath $candidate.Candidate -Force -ErrorAction SilentlyContinue }
 
+        $ready = & $module {
+            param($r, $i, $a, $id, $tools, $line, $output)
+            Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 2 -PortProbe { param($hostAddress, $port) return $true } -HostKeyScanner { param($port, $timeout) return $line }.GetNewClosure() -SshRunner { param($exe, $arguments, $timeout) return [pscustomobject]@{ ExitCode = 0; StdOut = $output; StdErr = '' } }.GetNewClosure()
+        } $root $intent $access $identity $tooling $newLine $readyOutput
+        Assert-EzVmEqual -Actual $ready.state -Expected 'READY'
+        $managed = [IO.File]::ReadAllText($paths.InstanceKnownHosts)
+        Assert-EzVmTrue -Condition ($managed.Contains('ssh-ed25519 BBBB'))
+        Assert-EzVmTrue -Condition (-not $managed.Contains('ssh-ed25519 AAAA'))
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'SSH: failed identity proof cannot promote a changed host key' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'host key failed proof'
+    try {
+        $paths = Get-EzVmSshPaths -Root $root -InstanceName 'ssh-agent'
+        [void][IO.Directory]::CreateDirectory($paths.KnownHostsDirectory)
+        [IO.File]::WriteAllText($paths.InstanceKnownHosts, ('[127.0.0.1]:22001 ssh-ed25519 AAAA' + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
+        $intent = New-EzVmSshTestIntent
+        $access = [pscustomobject][ordered]@{
+            schemaVersion = 1
+            instanceName = 'ssh-agent'
+            launchId = ('c' * 32)
+            sshHost = '127.0.0.1'
+            sshPort = 22078
+            sshUser = 'coder'
+            state = 'PROVISIONING'
+            cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
+            profile = 'normal'
+            readyAt = ''
+        }
+        $wrong = [pscustomobject][ordered]@{
+            schemaVersion = 1
+            instanceName = 'wrong-agent'
+            baseId = $intent.baseId
+            profile = 'normal'
+            cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
+        } | ConvertTo-Json -Compress
+        $nl = [Environment]::NewLine
+        $wrongOutput = 'EZVM_IDENTITY_B64=' + (ConvertTo-EzVmSshTestBase64 $wrong) + $nl + 'EZVM_CLOUD_B64=' + (ConvertTo-EzVmSshTestBase64 'status: done') + $nl + 'EZVM_READY=1' + $nl
+        $module = Get-Module EzVm
         Assert-EzVmThrows -ScriptBlock {
             & $module {
-                param($r)
-                New-EzVmCandidateKnownHosts -Root $r -InstanceName 'agent-one' -LaunchId ('b' * 32) -Port 22078 -ScannedLine '[127.0.0.1]:22078 ssh-ed25519 BBBB'
-            } $root
-        } -MessagePattern 'host key changed unexpectedly' | Out-Null
+                param($r, $i, $a, $output)
+                $id = [pscustomobject]@{ PrivateKey = (Join-Path $r 'unused-key') }
+                $tools = [pscustomobject]@{ Ssh = 'unused-ssh'; Keyscan = 'unused-keyscan' }
+                Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 2 -PortProbe { param($hostAddress, $port) return $true } -HostKeyScanner { param($port, $timeout) return '[127.0.0.1]:22078 ssh-ed25519 BBBB' } -SshRunner { param($exe, $arguments, $timeout) return [pscustomobject]@{ ExitCode = 0; StdOut = $output; StdErr = '' } }.GetNewClosure()
+            } $root $intent $access $wrongOutput
+        } -MessagePattern 'identity mismatch' | Out-Null
+        $managed = [IO.File]::ReadAllText($paths.InstanceKnownHosts)
+        Assert-EzVmTrue -Condition ($managed.Contains('ssh-ed25519 AAAA'))
+        Assert-EzVmTrue -Condition (-not $managed.Contains('ssh-ed25519 BBBB'))
     }
     finally { Remove-EzVmTestDirectory -Path $root }
 }
