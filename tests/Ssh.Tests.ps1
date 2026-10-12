@@ -157,7 +157,11 @@ Add-EzVmTest -Name 'SSH: changed host key remains staged until authenticated ide
 
         $ready = & $module {
             param($r, $i, $a, $id, $tools, $line, $output)
-            Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 2 -PortProbe { param($hostAddress, $port) return $true } -HostKeyScanner { param($port, $timeout) return $line }.GetNewClosure() -SshRunner { param($exe, $arguments, $timeout) return [pscustomobject]@{ ExitCode = 0; StdOut = $output; StdErr = '' } }.GetNewClosure()
+            $scanLine = $line
+            $sshOutput = $output
+            $scanner = { param($port, $timeout) return $scanLine }.GetNewClosure()
+            $runner = { param($exe, $arguments, $timeout) return [pscustomobject]@{ ExitCode = 0; StdOut = $sshOutput; StdErr = '' } }.GetNewClosure()
+            Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 2 -PortProbe { param($hostAddress, $port) return $true } -HostKeyScanner $scanner -SshRunner $runner
         } $root $intent $access $identity $tooling $newLine $readyOutput
         Assert-EzVmEqual -Actual $ready.state -Expected 'READY'
         $managed = [IO.File]::ReadAllText($paths.InstanceKnownHosts)
@@ -201,7 +205,9 @@ Add-EzVmTest -Name 'SSH: failed identity proof cannot promote a changed host key
                 param($r, $i, $a, $output)
                 $id = [pscustomobject]@{ PrivateKey = (Join-Path $r 'unused-key') }
                 $tools = [pscustomobject]@{ Ssh = 'unused-ssh'; Keyscan = 'unused-keyscan' }
-                Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 2 -PortProbe { param($hostAddress, $port) return $true } -HostKeyScanner { param($port, $timeout) return '[127.0.0.1]:22078 ssh-ed25519 BBBB' } -SshRunner { param($exe, $arguments, $timeout) return [pscustomobject]@{ ExitCode = 0; StdOut = $output; StdErr = '' } }.GetNewClosure()
+                $sshOutput = $output
+                $runner = { param($exe, $arguments, $timeout) return [pscustomobject]@{ ExitCode = 0; StdOut = $sshOutput; StdErr = '' } }.GetNewClosure()
+                Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 2 -PortProbe { param($hostAddress, $port) return $true } -HostKeyScanner { param($port, $timeout) return '[127.0.0.1]:22078 ssh-ed25519 BBBB' } -SshRunner $runner
             } $root $intent $access $wrongOutput
         } -MessagePattern 'identity mismatch' | Out-Null
         $managed = [IO.File]::ReadAllText($paths.InstanceKnownHosts)
