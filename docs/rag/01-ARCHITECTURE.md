@@ -249,4 +249,3 @@ process identity, storage and localhost SSH resources. Malformed/incomplete
 instance directories, case-insensitive name collisions and directory/intent
 identity disagreement fail registry reconstruction clearly rather than being
 ignored.
-
