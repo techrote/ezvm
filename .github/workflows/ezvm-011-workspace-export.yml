@@ -1,0 +1,47 @@
+name: EZVM-011 temporary offline workspace export
+
+on:
+  push:
+    branches: [ezvm-011-workspace-export]
+    paths: [.github/workflows/ezvm-011-workspace-export.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 35c6e7408b1a96bd872fac584e43117aea3ea4c6
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Export exact public source and runner-provided test engine only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 35c6e7408b1a96bd872fac584e43117aea3ea4c6
+          mkdir "$RUNNER_TEMP/ezvm-offline-source" "$RUNNER_TEMP/ezvm-offline-tool"
+          git bundle create "$RUNNER_TEMP/ezvm-offline-source/source.bundle" HEAD
+          git rev-parse HEAD HEAD^{tree} > "$RUNNER_TEMP/ezvm-offline-source/source-identity.txt"
+          pwsh -NoLogo -NoProfile -Command '$PSVersionTable | ConvertTo-Json' > "$RUNNER_TEMP/ezvm-offline-tool/engine.json"
+          ps_home="$(pwsh -NoLogo -NoProfile -Command '$PSHOME')"
+          test "$ps_home" = /opt/microsoft/powershell/7
+          tar -czf "$RUNNER_TEMP/ezvm-offline-tool/powershell.tar.gz" -C "$ps_home" .
+          cd "$RUNNER_TEMP/ezvm-offline-tool"
+          sha256sum powershell.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ezvm-011-offline-source
+          path: ${{ runner.temp }}/ezvm-offline-source/
+          retention-days: 1
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ezvm-011-offline-test-engine
+          path: ${{ runner.temp }}/ezvm-offline-tool/
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0
