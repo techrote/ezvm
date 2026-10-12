@@ -257,6 +257,16 @@ Add-EzVmTest -Name 'Security: unsafe transfer destinations and controller-key so
 }
 
 $securityWindowsSkip = if ($script:EzVmIsWindowsHost) { '' } else { 'Windows-specific ACL, hard-link and device-path checks execute in both required Windows lanes.' }
+Add-EzVmTest -Name 'Security: Windows path validation reaches the drive root under both PowerShell runtimes' -SkipReason $securityWindowsSkip -ScriptBlock {
+    $root = New-EzVmTestDirectory -Prefix 'drive root ancestor'
+    try {
+        $candidate = Join-Path $root 'nested/path.txt'
+        $validated = & (Get-Module EzVm) { param($p) Assert-EzVmSafePath -Path $p } $candidate
+        Assert-EzVmEqual $validated ([IO.Path]::GetFullPath($candidate))
+    }
+    finally { Remove-EzVmTestDirectory $root }
+}
+
 Add-EzVmTest -Name 'Security: Windows private ACL removes pre-existing broad explicit ACEs' -SkipReason $securityWindowsSkip -ScriptBlock {
     $root = New-EzVmTestDirectory -Prefix 'explicit ACL'
     try {
