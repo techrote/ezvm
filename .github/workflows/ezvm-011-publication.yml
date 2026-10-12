@@ -1,0 +1,80 @@
+name: EZVM-011 temporary exact-tree publication
+
+on:
+  push:
+    branches: [ezvm-011-publication]
+
+permissions:
+  contents: write
+
+jobs:
+  publish-reviewed-source:
+    if: github.repository == 'techrote/ezvm'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Reconstruct hashed source as data without executing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/ezvm-publication"
+          cp publication/part-*.b64 "$RUNNER_TEMP/ezvm-publication/"
+          git checkout --detach 35c6e7408b1a96bd872fac584e43117aea3ea4c6
+          python3 - <<'PY'
+          import base64, hashlib, json, lzma, os
+          from pathlib import Path, PurePosixPath
+          parts = Path(os.environ['RUNNER_TEMP']) / 'ezvm-publication'
+          encoded = ''.join((parts / ('part-%s.b64' % i)).read_text(encoding='ascii') for i in range(4))
+          assert len(encoded) == 43932
+          decoder = lzma.LZMADecompressor()
+          payload = decoder.decompress(base64.b64decode(encoded, validate=True), max_length=2097152)
+          assert decoder.eof and not decoder.unused_data
+          assert hashlib.sha256(payload).hexdigest() == '246650560032583d2ccd9f011a048c24dba99b14077a36c033974384067cccc3'
+          records = json.loads(payload)
+          assert len(records) == 38
+          seen = set()
+          for record in records:
+              name = record['path']
+              path = PurePosixPath(name)
+              assert not path.is_absolute() and all(p not in ('..', '.', '.git', '.github') for p in path.parts)
+              assert str(path) == name and name not in seen
+              assert path.parts[0] in ('README.md', 'ezvm.ps1', 'docs', 'scripts', 'src', 'tests')
+              seen.add(name)
+              target = Path(name)
+              assert target.exists() == record['exists']
+              old = target.read_bytes() if record['exists'] else b''
+              assert hashlib.sha256(old).hexdigest() == record['old'], name
+              lines = old.decode('utf-8').splitlines(keepends=True)
+              previous = len(lines)
+              for start, end, replacement in reversed(record['edits']):
+                  assert type(start) is int and type(end) is int and 0 <= start <= end <= previous
+                  previous = start
+                  lines[start:end] = [replacement]
+              updated = ''.join(lines).encode('utf-8')
+              assert hashlib.sha256(updated).hexdigest() == record['new'], name
+              target.parent.mkdir(parents=True, exist_ok=True)
+              target.write_bytes(updated)
+          print('Verified all 38 reconstructed first-party source files.')
+          PY
+          git add --all
+          git diff --cached --check
+          test "$(git write-tree)" = 757061676bd96d7d2db9d46df8bfb2e323a2b81c
+          git -c core.hooksPath=/dev/null -c user.name='techrote' -c user.email='261801702+techrote@users.noreply.github.com' commit -m 'EZVM-011: harden host boundaries and add evidence-preserving diagnosis'
+          git rev-parse HEAD 'HEAD^{tree}'
+      - name: Publish only the new security feature branch without force
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
+          repo=https://github.com/techrote/ezvm.git
+          test "$(git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" ls-remote "$repo" refs/heads/main | cut -f1)" = 35c6e7408b1a96bd872fac584e43117aea3ea4c6
+          test -z "$(git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" ls-remote "$repo" refs/heads/ezvm-011-security-recovery)"
+          test "$(git rev-parse 'HEAD^{tree}')" = 757061676bd96d7d2db9d46df8bfb2e323a2b81c
+          git -c core.hooksPath=/dev/null -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push "$repo" HEAD:refs/heads/ezvm-011-security-recovery
