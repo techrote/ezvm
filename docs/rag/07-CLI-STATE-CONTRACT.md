@@ -427,3 +427,52 @@ child owns the console streams.
 The copy commands are intentionally directional and transfer one file in
 EZVM-007. All SSH/scp commands use the managed controller key and scoped
 known-hosts state.
+
+## Named instances and registry (EZVM-008)
+
+The implemented public additions are:
+
+~~~text
+ezvm create <name> [-Profile light|normal|heavy] [-BaseId <base-id>] [-Cpus <n>] [-MemoryMiB <n>]
+ezvm list
+~~~
+
+If `-Profile` is omitted, `defaultProfile` is used. CPU/RAM command-line
+overrides replace the selected profile defaults while the selected profile name
+remains durable provenance. If `-BaseId` is omitted, create selects the valid
+prepared base with the newest manifest `builtAt` timestamp. Explicit base IDs
+are validated before use.
+
+The EZVM-008 `instance.json` schema remains version 1 during the pre-v0.1
+development line but now requires the complete durable intent:
+
+~~~json
+{
+  "schemaVersion": 1,
+  "name": "example",
+  "baseId": "base-<sha256>",
+  "profile": "normal",
+  "cpus": 4,
+  "memoryMiB": 8192,
+  "sshPort": 22001,
+  "createdAt": "<ISO timestamp>",
+  "provisioningProfile": "ezvm-core",
+  "provisioningVersion": 1
+}
+~~~
+
+Legacy EZVM-006 intent containing only name/base/resources/time is explicitly
+refused with migration/recreation guidance rather than silently assigning new
+durable resources during a read.
+
+`list` reconstructs registry state directly from instance directories. A
+missing or malformed `instance.json`, unsafe directory name, case-insensitive
+portable name collision, or directory/intent name disagreement is an error; no
+separate global index is trusted over the recoverable instance authority.
+Structured output returns one stable command envelope with `count` and
+`instances`.
+
+Named-resource creation and start operations use the bounded SSH allocation lock.
+A stale lock file without a live handle is reusable; an active competing holder
+causes a bounded failure instead of an unbounded wait.
+
