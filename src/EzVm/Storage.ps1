@@ -432,7 +432,7 @@ function New-EzVmInstanceOverlay {
         [string]$Root = $script:EzVmDefaultRoot,
         [Parameter(Mandatory = $true)][string]$InstanceName,
         [Parameter(Mandatory = $true)][string]$BaseId,
-        [Parameter(Mandatory = $true)][object]$LifecycleGuard,
+        [Parameter(Mandatory = $true)][AllowNull()][object]$LifecycleGuard,
         [scriptblock]$QemuImgRunner
     )
 
@@ -482,7 +482,7 @@ function Test-EzVmStoppedImageIntegrity {
         [string]$Root = $script:EzVmDefaultRoot,
         [Parameter(Mandatory = $true)][string]$InstanceName,
         [Parameter(Mandatory = $true)][string]$BaseId,
-        [Parameter(Mandatory = $true)][object]$LifecycleGuard,
+        [Parameter(Mandatory = $true)][AllowNull()][object]$LifecycleGuard,
         [scriptblock]$QemuImgRunner
     )
 
@@ -517,7 +517,7 @@ function Reset-EzVmInstanceOverlayStorage {
         [string]$Root = $script:EzVmDefaultRoot,
         [Parameter(Mandatory = $true)][string]$InstanceName,
         [Parameter(Mandatory = $true)][string]$BaseId,
-        [Parameter(Mandatory = $true)][object]$LifecycleGuard,
+        [Parameter(Mandatory = $true)][AllowNull()][object]$LifecycleGuard,
         [scriptblock]$QemuImgRunner,
         [scriptblock]$FileMover
     )
