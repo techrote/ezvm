@@ -170,7 +170,8 @@ function Assert-EzVmStorageLifecycleGuard {
     if ($null -eq $LifecycleGuard) {
         throw "$Operation requires explicit positive lifecycle evidence. Missing runtime state is not proof that storage is stopped."
     }
-    if ((Get-EzVmStorageProperty $LifecycleGuard 'schemaVersion') -ne 1) {
+    try { Assert-EzVmRuntimeInteger -Value (Get-EzVmStorageProperty $LifecycleGuard 'schemaVersion') -Description 'Lifecycle guard schemaVersion' -Minimum 1 -Maximum 1 }
+    catch {
         throw "$Operation received an unsupported lifecycle-guard schema. Reconcile instance process state before touching storage."
     }
     $state = [string](Get-EzVmStorageProperty $LifecycleGuard 'state')
@@ -519,7 +520,9 @@ function Reset-EzVmInstanceOverlayStorage {
         [Parameter(Mandatory = $true)][string]$BaseId,
         [Parameter(Mandatory = $true)][AllowNull()][object]$LifecycleGuard,
         [scriptblock]$QemuImgRunner,
-        [scriptblock]$FileMover
+        [scriptblock]$FileMover,
+        [switch]$PreserveBackup,
+        [AllowEmptyString()][string]$RecoveryPath = ''
     )
 
     Assert-EzVmStorageLifecycleGuard -LifecycleGuard $LifecycleGuard -Operation 'Instance overlay replacement'
@@ -530,6 +533,14 @@ function Reset-EzVmInstanceOverlayStorage {
 
     $candidate = Join-Path $storage.Directory ('.disk-replacement-' + [Guid]::NewGuid().ToString('N') + '.qcow2')
     $backup = Join-Path $storage.Directory ('.disk-backup-' + [Guid]::NewGuid().ToString('N') + '.qcow2')
+    if (-not [string]::IsNullOrWhiteSpace($RecoveryPath)) {
+        $backup = Assert-EzVmStorageManagedPath -Path $RecoveryPath -ContainmentRoot $storage.Directory -SafetyRoot $paths.Root -Description 'Reset recovery disk'
+        if (-not (Test-EzVmStorageSamePath -Left ([IO.Path]::GetDirectoryName($backup)) -Right $storage.Directory) -or
+            [IO.Path]::GetFileName($backup) -cnotmatch '^\.disk-backup-[a-f0-9]{32}\.qcow2$') {
+            throw 'Reset recovery disk must use an explicit unique backup name in the instance directory.'
+        }
+    }
+    if (Test-Path -LiteralPath $backup) { throw "Reset recovery artifact already exists at '$backup'. Refusing replacement." }
     $originalMoved = $false
     $replacementCommitted = $false
 
@@ -561,7 +572,7 @@ function Reset-EzVmInstanceOverlayStorage {
             throw
         }
 
-        if (Test-Path -LiteralPath $backup -PathType Leaf) {
+        if (-not $PreserveBackup -and (Test-Path -LiteralPath $backup -PathType Leaf)) {
             try { Remove-Item -LiteralPath $backup -Force } catch { }
         }
         return [pscustomobject][ordered]@{

@@ -298,6 +298,11 @@ function Invoke-EzVmBaseProvisioningVm {
 function Assert-EzVmPreparedBaseManifest {
     param([object]$Manifest)
 
+    if ((Get-EzVmObjectProperty $Manifest 'schemaVersion') -eq 2) {
+        Assert-EzVmSnapshotBaseManifest -Manifest $Manifest
+        return
+    }
+    Assert-EzVmJsonSchema -Value $Manifest -SchemaVersion 1 -Description 'Prepared-base manifest'
     Assert-EzVmBaseRecipeFields -Value $Manifest -Expected @(
         'schemaVersion', 'baseId', 'baseSha256', 'virtualSizeBytes', 'builtAt',
         'source', 'provisioning', 'qemu', 'guest', 'build'
@@ -347,6 +352,21 @@ function Assert-EzVmPreparedBaseManifest {
     }
 }
 
+function Read-EzVmPreparedBaseManifest {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if ((Get-Item -LiteralPath $Path -Force -ErrorAction Stop).Length -gt 65536) {
+        throw 'Base provenance manifest exceeds the supported 64-KiB bound.'
+    }
+    $text = [IO.File]::ReadAllText($Path, (New-Object Text.UTF8Encoding($false, $true)))
+    try { $probe = $text | ConvertFrom-Json -ErrorAction Stop }
+    catch { throw "Base provenance manifest is malformed JSON: $($_.Exception.Message)" }
+    $version = Get-EzVmObjectProperty $probe 'schemaVersion'
+    Assert-EzVmRuntimeInteger -Value $version -Description 'Base manifest schemaVersion' -Minimum 1 -Maximum 2
+    $manifest = ConvertFrom-EzVmJsonText -Text $text -SchemaVersion ([int]$version) -Description "Base provenance '$Path'"
+    Assert-EzVmPreparedBaseManifest -Manifest $manifest
+    return $manifest
+}
+
 function Test-EzVmPreparedBaseDirectory {
     param(
         [string]$Root,
@@ -371,9 +391,7 @@ function Test-EzVmPreparedBaseDirectory {
     if (-not (Test-Path -LiteralPath $directoryPath -PathType Container)) {
         throw "Prepared-base candidate directory does not exist: '$directoryPath'."
     }
-    if ((Get-Item -LiteralPath $directoryPath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
-        throw 'Prepared-base candidate directory must not be a reparse point.'
-    }
+    $null = Assert-EzVmStorageManagedPath -Path $directoryPath -ContainmentRoot $paths.Bases -SafetyRoot $paths.Root -Description 'Prepared-base candidate directory' -RequireDirectory
 
     $image = Join-Path $directoryPath 'base.qcow2'
     $manifestPath = Join-Path $directoryPath 'manifest.json'
@@ -386,12 +404,17 @@ function Test-EzVmPreparedBaseDirectory {
         }
     }
 
-    $manifest = Read-EzVmJson -Path $manifestPath -SchemaVersion 1
-    Assert-EzVmPreparedBaseManifest -Manifest $manifest
+    $manifest = Read-EzVmPreparedBaseManifest -Path $manifestPath
     if ($manifest.baseId -cne $BaseId) { throw 'Prepared-base directory identity does not match its manifest.' }
     $observed = Get-EzVmFileDigest -Path $image -Algorithm SHA256
     if ($observed -cne $manifest.baseSha256) { throw 'Prepared-base content digest does not match its manifest.' }
 
+    if ($manifest.schemaVersion -eq 2) {
+        $null = Test-EzVmQcow2Header -Path $image
+        if (((Get-Item -LiteralPath $manifestPath -Force).Attributes -band [IO.FileAttributes]::ReadOnly) -eq 0) {
+            throw 'Snapshot-base provenance manifest is not marked read-only.'
+        }
+    }
     $info = Get-EzVmQemuImageInfo -Root $Root -Path $image -Runner $QemuImgRunner
     Assert-EzVmStandaloneQcow2 -Info $info -Description "Prepared base '$BaseId'"
     if ([long](Get-EzVmObjectProperty $info 'virtual-size') -ne [long]$manifest.virtualSizeBytes) {

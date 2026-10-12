@@ -22,7 +22,9 @@ Mutable/untrusted or semi-trusted material:
 - downloaded source repositories inside guests;
 - package-manager content;
 - agent-generated files;
-- guest network traffic.
+- guest network traffic;
+- explicit derived/imported guest snapshots, which can retain user data and
+  authentication even though their stored bytes are immutable.
 
 ## Secrets
 
@@ -37,14 +39,18 @@ Never commit:
 - generated cloud-init containing secrets;
 - full runtime directories.
 
-Prepared bases must not contain user authentication tokens.
+Clean prepared bases built by ezvm must not contain user authentication tokens.
+Derived/imported snapshot bases are explicitly sensitive state with distinct
+schema/kind provenance; they are never presented as clean prepared images.
 
 Per-instance agent credentials may live in that instance overlay if the user
-chooses to authenticate there. They survive normal stop/restart and are lost when
-reset replaces the overlay. An intentional stateful clone/export can preserve
-them along with other guest data, so that copy is sensitive. Public
-reset/clone/export/import commands remain EZVM-010 work; documenting their
-contract does not make those commands available yet.
+chooses to authenticate there. They survive normal stop/restart. Reset returns
+to the instance's chosen base: credentials written only into the overlay are
+discarded, while credentials already saved in a snapshot baseline can return.
+An intentional stateful clone/export/import can preserve authentication along
+with other guest data. Snapshot manifests explicitly record sensitive state;
+they do not contain credential bytes themselves. No command uploads or shares
+these images automatically.
 
 ## Default host exposure
 
@@ -113,6 +119,10 @@ At minimum, automated tests simulate:
 An exported standalone instance may contain credentials and source code from inside the guest.
 
 The export command must warn/document that fact and never upload/share automatically.
+
+The same sensitivity applies to immutable derived/imported bases, fresh clones
+from them, and failed snapshot staging. A file being read-only, standalone or
+digest-verified says nothing about whether its guest contents are safe to share.
 
 ## Supply chain
 
@@ -232,3 +242,31 @@ changes. Profile upgrades use new reviewed version paths; baseline changes use
 new immutable base identities. Legacy `ezvm-core`/`1` overlays are left intact
 for inspection/stop or a future explicit migration, and cannot silently acquire
 the `coding-default` identity.
+
+## Offline transformations and copied identities (EZVM-010)
+
+Reset, both clone modes and export prove stopped source ownership under the
+lifecycle lock. Import requires a new destination and rejects sources inside
+managed runtime, preventing an active managed disk from being reinterpreted as
+an unrelated input. Exclusive Windows file access protects the caller's import
+while ezvm takes and hashes its private copy. The importer checks QCOW2 headers
+before QEMU processing so external backing or data-file metadata cannot cause
+unrequested host-file traversal.
+
+Import validates a storage format, not guest trustworthiness. A user-supplied
+guest can run arbitrary software when deliberately started, and an unrelated OS
+may never satisfy coding READY. The supported round trip is a stopped ezvm
+coding guest exported and imported with its provenance manifest.
+
+New/reset instances have an explicit identity generation. Clone/import boots
+must replace copied inbound controller authorization and regenerate guest
+machine/SSH host identity before destination READY. Outgoing SSH keys, project
+files and vendor-agent authentication are preserved state, not automatically
+removed credentials. The host never trusts a copied source READY marker as
+destination proof.
+
+Cold portability preserves bundle keys only when those files are included in
+the user's copy. It revalidates stopped ownership and regenerates launch paths,
+without weakening the existing stale/unknown process refusal. Copying a complete
+bundle does not give its instances new names or reservations; keep the original
+copy stopped while using the moved copy on the same host.

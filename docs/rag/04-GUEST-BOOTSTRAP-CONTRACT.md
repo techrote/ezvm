@@ -120,7 +120,9 @@ version policy; an unpinned remote shell installer is not an accepted extension.
 
 ## Instance first boot
 
-Each instance overlay starts from a cloud-init-clean prepared base.
+Ordinary instance overlays start from a cloud-init-clean prepared base. Explicit
+stateful clones/imports can start from an immutable snapshot with existing guest
+state; EZVM-010 initializes their destination identity as specified below.
 
 Instance-specific cloud-init supplies:
 
@@ -214,8 +216,10 @@ This avoids treating a mere QEMU exit as provisioning success.
 
 ## Implemented instance first boot and readiness (EZVM-007 / EZVM-009)
 
-An instance launch derives a stable cloud instance ID from the durable instance
-name, prepared-base ID and creation timestamp. Its NoCloud data supplies a
+For complete schema version 1 intent, an instance launch derives a stable cloud
+instance ID from the durable instance name, base ID and creation timestamp. New
+schema version 2 intent additionally binds its explicit identity generation.
+Its NoCloud data supplies a
 deterministic hostname, creates the locked-password `coder` account with the
 ezvm controller **public** Ed25519 key, and writes
 `/etc/ezvm/identity.json`. Schema version 2 contains instance, base, resource
@@ -223,7 +227,7 @@ profile and cloud instance identities plus `provisioningProfile`,
 `provisioningVersion` and `provisioningDigest`. Controller private-key bytes
 never enter user-data, meta-data or the prepared base.
 
-A non-blocking transient systemd finalizer waits for
+For schema version 1 intent, a non-blocking transient systemd finalizer waits for
 `cloud-init status --wait`, then applies and validates the repository-controlled
 coding profile. Successful completion publishes `/var/lib/ezvm/ready.json` with
 the same versioned identity and `provisioningState: complete`. Failure leaves an
@@ -239,9 +243,11 @@ within one bounded launch-readiness deadline:
    instance/base/resource profile/cloud instance ID and coding profile
    name/version/digest exactly;
 4. `cloud-init status` to return exit code 0 and report exactly `done`;
-5. the complete ready document to match the same identity and record completed
+5. for schema version 2 intent, successful finalizer completion in the current
+   guest boot;
+6. the complete ready document to match the same identity and record completed
    provisioning;
-6. live required-tool, coder-account and workspace validation to succeed.
+7. live required-tool, coder-account and workspace validation to succeed.
 
 Identity mismatch, missing required tools or invalid account/workspace policy
 cannot produce READY even if an older readiness file remains. Cloud-init or
@@ -286,3 +292,42 @@ already satisfies the new profile; otherwise build a new base. Existing
 `ezvm-core`/`1` instances are retained for list/status/stop but start refuses
 their unqualified provisioning identity. Create a new named instance instead of
 silently relabelling the old overlay or changing its backing base.
+
+## Snapshot identity initialization (EZVM-010)
+
+New version 2 durable intent records a random `identityGeneration`. The host
+derives a stable cloud instance ID and DMI UUID from that generation. Clone and
+import allocate new generations; reset replaces the previous generation. Normal
+stop/restart and a complete cold-root move preserve it.
+
+Version 2 provisioning installs a persistent guest finalizer after cloud-final.
+For a new generation it replaces only the managed inbound coder authorization,
+generates the guest's own Ed25519 host key, writes the generation's machine/DBus
+identity and performs one guest reboot so the running OS adopts that identity.
+This initialization and reboot consume the existing launch-readiness deadline;
+they are not a retry of a failed qualification. Later boots validate the stable
+identity and key and rerun coding-profile validation without repeating the
+identity reset. Complete older version 1 intent keeps its accepted bootstrap
+behavior and original identity derivation.
+
+Every version 2 launch requires the finalizer to finish successfully in the
+current boot. Its service retains that completion state for the rest of the
+boot. A previous boot's READY document cannot authorize early READY on normal
+restart or cold relocation, even when the durable generation and guest identity
+are unchanged. Waiting for current-boot completion shares the original absolute
+launch-readiness deadline with cloud-init, identity and live profile checks.
+
+The copied image's source identity, cloud-init cache and old READY marker never
+qualify the destination. Before the normal strict readiness parser, a read-only
+host-selected check verifies the expected DMI identity and completed adoption
+of the destination generation, together with successful finalizer completion in
+the current boot. Its narrowly defined pending result allows initialization and
+finalization to finish within the existing bound. An unpromoted SSH
+candidate learned during that transition is discarded; only final exact
+identity/profile and live checks can establish managed trust and READY.
+
+Workspace files, installed agent software and outgoing credentials are copied
+state and remain intact. Identity initialization does not scrub vendor login
+state. An imported guest whose cloud-init is disabled, or which trusts a manual
+cache instead of consuming the destination NoCloud seed, cannot reach READY;
+structural QCOW2 acceptance is separate from supported coding-guest bootstrap.

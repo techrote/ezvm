@@ -166,6 +166,7 @@ Add-EzVmTest -Name 'Coding readiness: failed live proof clears cached host READY
     try {
         $intent = New-EzVmSshTestIntent
         $access = New-EzVmSshTestAccess -Root $root -Intent $intent
+        $launch = New-EzVmSshTestLaunch -Root $root -Intent $intent -Access $access
         $access.state = 'READY'
         $access.readyAt = [DateTime]::UtcNow.ToString('o')
         $paths = Get-EzVmSshPaths -Root $root -InstanceName $intent.name
@@ -176,10 +177,10 @@ Add-EzVmTest -Name 'Coding readiness: failed live proof clears cached host READY
         $module = Get-Module EzVm
         Assert-EzVmThrows -ScriptBlock {
             & $module {
-                param($r, $i, $a, $output)
+                param($r, $i, $a, $output, $processProvider)
                 $runner = { param($exe, $arguments, $timeout) [pscustomobject]@{ ExitCode = 0; StdOut = $output; StdErr = '' } }.GetNewClosure()
-                Wait-EzVmSshReady -Root $r -InstanceName $i.name -Intent $i -Access $a -Identity ([pscustomobject]@{PrivateKey = 'unused'}) -Tooling ([pscustomobject]@{Ssh = 'unused'}) -TimeoutSeconds 3 -PortProbe { $true } -HostKeyScanner { '[127.0.0.1]:22001 ssh-ed25519 BBBB' } -SshRunner $runner
-            } $root $intent $access $probe
+                Wait-EzVmSshReady -Root $r -InstanceName $i.name -Intent $i -Access $a -Identity ([pscustomobject]@{PrivateKey = 'unused'}) -Tooling ([pscustomobject]@{Ssh = 'unused'}) -TimeoutSeconds 3 -PortProbe { $true } -HostKeyScanner { '[127.0.0.1]:22001 ssh-ed25519 BBBB' } -SshRunner $runner -ProcessProvider $processProvider
+            } $root $intent $access $probe $launch.ProcessProvider
         } -MessagePattern 'Coding profile validation failed.*missing required command: rg' | Out-Null
         $after = Read-EzVmJson -Path $paths.AccessState -SchemaVersion 2
         Assert-EzVmEqual -Actual $after.state -Expected 'PROVISIONING'
@@ -195,19 +196,20 @@ Add-EzVmTest -Name 'Coding readiness: parent deadline prevents a fresh child bud
     try {
         $intent = New-EzVmSshTestIntent
         $access = New-EzVmSshTestAccess -Root $root -Intent $intent
+        $launch = New-EzVmSshTestLaunch -Root $root -Intent $intent -Access $access
         $paths = Get-EzVmSshPaths -Root $root -InstanceName $intent.name
         $probe = New-EzVmSshTestProbe -IdentityBase64 (ConvertTo-EzVmSshTestBase64 (New-EzVmSshTestIdentityJson -Intent $intent))
         $module = Get-Module EzVm
         Assert-EzVmThrows -ScriptBlock {
             & $module {
-                param($r, $i, $a, $output)
+                param($r, $i, $a, $output, $processProvider)
                 $runner = {
                     param($exe, $arguments, $timeout)
                     Start-Sleep -Milliseconds 2200
                     [pscustomobject]@{ ExitCode = 0; StdOut = $output; StdErr = '' }
                 }.GetNewClosure()
-                Wait-EzVmSshReady -Root $r -InstanceName $i.name -Intent $i -Access $a -Identity ([pscustomobject]@{PrivateKey = 'unused'}) -Tooling ([pscustomobject]@{Ssh = 'unused'}) -TimeoutSeconds 5 -DeadlineUtc ([DateTime]::UtcNow.AddSeconds(2)) -PortProbe { $true } -HostKeyScanner { '[127.0.0.1]:22001 ssh-ed25519 BBBB' } -SshRunner $runner
-            } $root $intent $access $probe
+                Wait-EzVmSshReady -Root $r -InstanceName $i.name -Intent $i -Access $a -Identity ([pscustomobject]@{PrivateKey = 'unused'}) -Tooling ([pscustomobject]@{Ssh = 'unused'}) -TimeoutSeconds 5 -DeadlineUtc ([DateTime]::UtcNow.AddSeconds(2)) -PortProbe { $true } -HostKeyScanner { '[127.0.0.1]:22001 ssh-ed25519 BBBB' } -SshRunner $runner -ProcessProvider $processProvider
+            } $root $intent $access $probe $launch.ProcessProvider
         } -MessagePattern 'exceeded.*deadline' | Out-Null
         Assert-EzVmTrue -Condition (-not (Test-Path -LiteralPath $paths.InstanceKnownHosts)) -Message 'Late evidence must not become managed host-key trust.'
         Assert-EzVmEqual -Actual (Read-EzVmJson -Path $paths.AccessState -SchemaVersion 2).state -Expected 'PROVISIONING'

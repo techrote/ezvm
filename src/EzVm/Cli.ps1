@@ -81,6 +81,9 @@ function Invoke-EzVmCommand {
     $createBaseId = ''
     $createCpus = $null
     $createMemoryMiB = $null
+    $destinationName = $null
+    $cloneMode = $null
+    $manifestPath = ''
     if ($tokens.Count -gt 0) {
         $verb = $tokens[0].ToLowerInvariant()
         switch ($verb) {
@@ -106,53 +109,91 @@ function Invoke-EzVmCommand {
                 }
                 $command = 'list'
             }
-            'create' {
-                if ($tokens.Count -lt 2) {
-                    return New-EzVmCliArgumentError -Command 'create' -Message "Command 'create' requires an instance name."
+            { $_ -in @('create', 'import') } {
+                $minimumTokens = if ($verb -ceq 'import') { 3 } else { 2 }
+                if ($tokens.Count -lt $minimumTokens) {
+                    return New-EzVmCliArgumentError -Command $verb -Message "Command '$verb' requires an instance name$(if ($verb -ceq 'import') { ' and QCOW2 image path' })."
                 }
                 $instanceName = $tokens[1]
                 try { Assert-EzVmStorageInstanceName -Name $instanceName }
-                catch { return New-EzVmCliArgumentError -Command 'create' -Message $_.Exception.Message }
+                catch { return New-EzVmCliArgumentError -Command $verb -Message $_.Exception.Message }
+                if ($verb -ceq 'import') {
+                    $hostPath = $tokens[2]
+                    if ([string]::IsNullOrWhiteSpace($hostPath)) { return New-EzVmCliArgumentError -Command $verb -Message 'Import image path must not be empty.' }
+                }
 
                 $seen = @{}
-                $index = 2
+                $index = $minimumTokens
+                $allowedOptions = @('-profile', '-cpus', '-memorymib') + $(if ($verb -ceq 'import') { @('-manifestpath') } else { @('-baseid') })
                 while ($index -lt $tokens.Count) {
                     $option = [string]$tokens[$index]
                     $key = $option.ToLowerInvariant()
-                    if (@('-profile', '-baseid', '-cpus', '-memorymib') -cnotcontains $key) {
-                        return New-EzVmCliArgumentError -Command 'create' -Message "Unknown create option '$option'. Use -Profile, -BaseId, -Cpus or -MemoryMiB."
+                    if ($allowedOptions -cnotcontains $key) {
+                        return New-EzVmCliArgumentError -Command $verb -Message "Unknown $verb option '$option'. Supported options: $($allowedOptions -join ', ')."
                     }
                     if ($seen.ContainsKey($key)) {
-                        return New-EzVmCliArgumentError -Command 'create' -Message "Create option '$option' may be supplied at most once."
+                        return New-EzVmCliArgumentError -Command $verb -Message "$verb option '$option' may be supplied at most once."
                     }
                     if ($index + 1 -ge $tokens.Count) {
-                        return New-EzVmCliArgumentError -Command 'create' -Message "Create option '$option' requires a value."
+                        return New-EzVmCliArgumentError -Command $verb -Message "$verb option '$option' requires a value."
                     }
                     $seen[$key] = $true
                     $value = [string]$tokens[$index + 1]
+                    if ([string]::IsNullOrWhiteSpace($value)) { return New-EzVmCliArgumentError -Command $verb -Message "Option '$option' requires a nonempty value." }
                     switch ($key) {
                         '-profile' { $createProfile = $value }
                         '-baseid' { $createBaseId = $value }
+                        '-manifestpath' { $manifestPath = $value }
                         '-cpus' {
                             if ($value -cnotmatch '^[0-9]+$') {
-                                return New-EzVmCliArgumentError -Command 'create' -Message '-Cpus requires a positive integer.'
+                                return New-EzVmCliArgumentError -Command $verb -Message '-Cpus requires a positive integer.'
                             }
                             try { $createCpus = [int]$value }
-                            catch { return New-EzVmCliArgumentError -Command 'create' -Message '-Cpus is outside the supported integer range.' }
+                            catch { return New-EzVmCliArgumentError -Command $verb -Message '-Cpus is outside the supported integer range.' }
                         }
                         '-memorymib' {
                             if ($value -cnotmatch '^[0-9]+$') {
-                                return New-EzVmCliArgumentError -Command 'create' -Message '-MemoryMiB requires a positive integer.'
+                                return New-EzVmCliArgumentError -Command $verb -Message '-MemoryMiB requires a positive integer.'
                             }
                             try { $createMemoryMiB = [int]$value }
-                            catch { return New-EzVmCliArgumentError -Command 'create' -Message '-MemoryMiB is outside the supported integer range.' }
+                            catch { return New-EzVmCliArgumentError -Command $verb -Message '-MemoryMiB is outside the supported integer range.' }
                         }
                     }
                     $index += 2
                 }
-                $command = 'create'
+                $command = $verb
             }
-            { $_ -in @('start', 'status', 'stop', 'ssh') } {
+            'clone' {
+                if ($tokens.Count -ne 5 -or $tokens[3] -ine '-Mode' -or $tokens[4].ToLowerInvariant() -cnotin @('fresh', 'stateful')) {
+                    return New-EzVmCliArgumentError -Command 'clone' -Message 'Clone requires: clone <source> <destination> -Mode fresh|stateful. Choose the mode explicitly.'
+                }
+                $instanceName = $tokens[1]
+                $destinationName = $tokens[2]
+                try {
+                    Assert-EzVmStorageInstanceName -Name $instanceName
+                    Assert-EzVmStorageInstanceName -Name $destinationName
+                }
+                catch { return New-EzVmCliArgumentError -Command 'clone' -Message $_.Exception.Message }
+                $cloneMode = $tokens[4].ToLowerInvariant()
+                $command = 'clone'
+            }
+            'export' {
+                if ($tokens.Count -ne 3 -or [string]::IsNullOrWhiteSpace($tokens[2])) {
+                    return New-EzVmCliArgumentError -Command 'export' -Message 'Export requires: export <instance> <new-directory>.'
+                }
+                $instanceName = $tokens[1]
+                try { Assert-EzVmStorageInstanceName -Name $instanceName }
+                catch { return New-EzVmCliArgumentError -Command 'export' -Message $_.Exception.Message }
+                $hostPath = $tokens[2]
+                $command = 'export'
+            }
+            'portability' {
+                if ($tokens.Count -ne 2 -or $tokens[1] -ine 'check') {
+                    return New-EzVmCliArgumentError -Command 'portability' -Message 'Portability requires exactly one subcommand: check.'
+                }
+                $command = 'portability check'
+            }
+            { $_ -in @('start', 'status', 'stop', 'ssh', 'reset') } {
                 if ($tokens.Count -ne 2) {
                     return New-EzVmCliArgumentError -Command $verb -Message "Command '$verb' requires exactly one instance name."
                 }
@@ -219,6 +260,21 @@ function Invoke-EzVmCommand {
         'create' {
             $data = New-EzVmManagedInstance -Root $Root -InstanceName $instanceName -BaseId $createBaseId -Profile $createProfile -Cpus $createCpus -MemoryMiB $createMemoryMiB
         }
+        'clone' {
+            $data = Copy-EzVmManagedInstance -Root $Root -SourceInstanceName $instanceName -DestinationInstanceName $destinationName -Mode $cloneMode
+        }
+        'reset' {
+            $data = Reset-EzVmManagedInstance -Root $Root -InstanceName $instanceName
+        }
+        'export' {
+            $data = Export-EzVmManagedInstance -Root $Root -InstanceName $instanceName -DestinationDirectory $hostPath
+        }
+        'import' {
+            $data = Import-EzVmManagedInstance -Root $Root -InstanceName $instanceName -ImagePath $hostPath -ManifestPath $manifestPath -Profile $createProfile -Cpus $createCpus -MemoryMiB $createMemoryMiB
+        }
+        'portability check' {
+            $data = Test-EzVmPortableBundle -Root $Root
+        }
         'list' {
             $items = @(Get-EzVmManagedInstanceList -Root $Root)
             $data = [pscustomobject][ordered]@{ count = $items.Count; instances = $items }
@@ -272,12 +328,17 @@ function Invoke-EzVmCommand {
                     [pscustomobject]@{ name = 'status <name>'; description = 'Reconcile durable configuration, runtime and process evidence for one instance.' }
                     [pscustomobject]@{ name = 'start <name>'; description = 'Start with WHPX, provision instance identity and wait for authenticated localhost SSH READY.' }
                     [pscustomobject]@{ name = 'stop <name>'; description = 'Request graceful guest powerdown over host-local QMP and wait for exit.' }
+                    [pscustomobject]@{ name = 'reset <name>'; description = 'Replace a stopped instance overlay from its own immutable baseline and initialize a new guest identity.' }
+                    [pscustomobject]@{ name = 'clone <source> <destination> -Mode fresh|stateful'; description = 'Clone a stopped instance explicitly: same baseline with a fresh overlay, or an independent sensitive stateful snapshot.' }
+                    [pscustomobject]@{ name = 'export <name> <new-directory>'; description = 'Export a stopped instance as standalone disk.qcow2 and a provenance manifest. Treat the bundle as sensitive.' }
+                    [pscustomobject]@{ name = 'import <name> <image> [options]'; description = 'Validate a standalone QCOW2 and create a new instance on an immutable imported baseline. Options: -ManifestPath, -Profile, -Cpus, -MemoryMiB.' }
+                    [pscustomobject]@{ name = 'portability check'; description = 'Prove managed guests stopped and validate storage before or after copying the complete ezvm root.' }
                     [pscustomobject]@{ name = 'ssh <name>'; description = 'Open an interactive managed-key SSH session over the localhost forward.' }
                     [pscustomobject]@{ name = 'exec <name> -- <command>'; description = 'Run an argv-preserving non-interactive command over managed SSH and return its exit status.' }
                     [pscustomobject]@{ name = 'copy-to <name> <host> <guest>'; description = 'Copy one host file into the guest using managed scp trust.' }
                     [pscustomobject]@{ name = 'copy-from <name> <guest> <host>'; description = 'Copy one guest file to a host path using managed scp trust.' }
                 )
-                stage = 'Portable QEMU, prepared bases, thin storage, lifecycle control, authenticated SSH and concurrent named-instance allocation are implemented; guest coding-agent provisioning follows.'
+                stage = 'Prepared coding bases, authenticated guest readiness, named instances, reset, explicit clones, standalone export/import and cold relocation are implemented. See docs/PORTABILITY.md for baseline and sensitive-state behavior.'
             }
         }
     }
@@ -330,12 +391,31 @@ function Write-EzVmResult {
             Write-Output ("  SHA-256 $($Result.data.sha256)")
             Write-Output ("  accelerator: $($Result.data.accelerator)")
         }
-        'create' {
+        { $_ -in @('create', 'clone', 'import') } {
             Write-Output ("Created $($Result.data.name)")
             Write-Output ("  profile: $($Result.data.profile) ($($Result.data.cpus) vCPU, $($Result.data.memoryMiB) MiB)")
             Write-Output ("  base: $($Result.data.baseId) ($($Result.data.baseSelection))")
             Write-Output ("  SSH reservation: 127.0.0.1:$($Result.data.sshPort)")
             foreach ($warning in @($Result.data.warnings)) { Write-Output ("  warning: $warning") }
+            if ($Result.command -ceq 'clone') { Write-Output ("  clone mode: $($Result.data.mode); source: $($Result.data.sourceName)") }
+            if ($Result.command -cne 'create' -and $Result.data.sensitiveState) { Write-Output '  sensitive state: this immutable baseline may contain credentials and private guest data.' }
+        }
+        'reset' {
+            Write-Output ("Reset $($Result.data.name): CREATED")
+            Write-Output ("  baseline: $($Result.data.baseId) ($($Result.data.resetBaseline))")
+            if ($Result.data.sensitiveState) { Write-Output '  sensitive state: reset restores this snapshot baseline, including any credentials it already contains.' }
+            foreach ($artifact in @($Result.data.recoveryArtifact)) { Write-Output ("  retained cleanup artifact: $artifact") }
+        }
+        'export' {
+            Write-Output ("Exported standalone image: $($Result.data.Image)")
+            Write-Output ("  manifest: $($Result.data.ManifestPath)")
+            Write-Output ("  SHA-256 $($Result.data.Manifest.imageSha256)")
+            Write-Output '  sensitive state: bundle may contain credentials, tokens, source code and private guest data.'
+        }
+        'portability check' {
+            Write-Output ("Cold portability validated: $($Result.data.InstanceCount) stopped instances")
+            Write-Output ("  root: $($Result.data.Root)")
+            Write-Output '  Copy the complete root while all guests remain stopped; run portability check again at the destination.'
         }
         'list' {
             if ([int]$Result.data.count -eq 0) {

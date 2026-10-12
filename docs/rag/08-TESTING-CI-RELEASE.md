@@ -352,3 +352,54 @@ failure; only the unavailable WHPX execution capability is an explicit SKIP.
 The workflow's existence is not acceptance evidence: retain the successful run
 URL and exact tested commit in the PR/issue before claiming EZVM-009 qualified.
 No live vendor account or credential is used as a persistence test fixture.
+
+## EZVM-010 portability coverage
+
+Fast control-plane coverage owns public reset/clone/export/import/portability
+parsing, lifecycle locks and running/unknown refusal, transaction rollback,
+immutable snapshot provenance, standalone QCOW2 header boundaries, optional
+export-manifest validation, relocation of stopped runtime evidence and explicit
+identity generations. The copied-guest readiness tests keep source identities
+unacceptable, distinguish narrowly valid initialization-pending evidence from
+malformed proofs, preserve managed trust on failure and enforce the shared
+absolute launch deadline through identity adoption.
+
+The separate `EZVM-010 real portability qualification` workflow runs
+`scripts/Invoke-EzVm010RealPortability.ps1` on Windows with the reviewed managed
+QEMU runtime. Its job is named
+`Real QCOW2 and Ubuntu portability (Windows TCG; WHPX SKIP)`. It first uses tiny
+real QCOW2 images to prove reset/fresh/stateful content semantics, source
+independence, no backing file after export, matching manifest digest/size,
+standalone import, malformed/external-backing refusal and data preservation
+after a refused export. It also proves that fresh/reset on a sensitive snapshot
+returns to that snapshot's saved baseline.
+
+The same isolated root, whose path contains spaces, builds one real Ubuntu base
+and executes five sequential guest starts: source, reset source, stateful clone,
+imported export, and relocated clone. The scenario verifies:
+
+- live running-source transformation/portability refusal;
+- absence of the source workspace, synthetic auth and outbound SSH fixtures
+  after reset to the clean base;
+- copied workspace preservation after source reset;
+- byte preservation of clearly synthetic auth and outbound SSH fixtures across
+  clone, import and relocation, independently checked using SHA-256;
+- exact destination controller public key in managed inbound `authorized_keys`;
+- distinct cloud/machine/SSH host identity for reset, clone and import;
+- an imported copy independent of later clone-only changes;
+- complete stopped source/runtime copy to a different root with spaces,
+  preserving relative chains and durable intent without metadata deletion or
+  rebase;
+- successful relocated READY with regenerated executable paths and unchanged
+  guest identity, original sentinel and independent clone sentinel;
+- clean final shutdown and whole-bundle validation.
+
+The accepted base-build bound remains 2400 seconds and each launch-readiness
+bound remains 900 seconds, including any required first-generation reboot.
+The enclosing workflow has a 150-minute limit for one build, five starts,
+storage transformations and cleanup. There is no automatic qualification retry
+or conversion of failures into skips. WHPX execution alone is explicitly SKIP;
+TCG proves orchestration and correctness, not WHPX performance. Source tests and
+the presence of this workflow are not acceptance evidence: retain the actual
+successful run URL and exact tested commit before claiming the real scenario
+passed. Only synthetic content is used; no vendor credentials are involved.

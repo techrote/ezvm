@@ -47,7 +47,7 @@ Add-EzVmTest -Name 'CLI: help and empty input provide human usage' -ScriptBlock 
         Assert-EzVmTrue -Condition ($result.StandardOutput -match 'status <name>' -and $result.StandardOutput -match 'start <name>' -and $result.StandardOutput -match 'stop <name>') -Message 'Help must list implemented lifecycle commands.'
         Assert-EzVmTrue -Condition ($result.StandardOutput -match 'ssh <name>' -and $result.StandardOutput -match 'exec <name> -- <command>' -and $result.StandardOutput -match 'copy-to <name>' -and $result.StandardOutput -match 'copy-from <name>') -Message 'Help must list implemented SSH control commands.'
         Assert-EzVmTrue -Condition ($result.StandardOutput -match 'create <name>' -and $result.StandardOutput -match '(?m)^\s+list\s') -Message 'Help must list the EZVM-008 create and list commands.'
-        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'concurrent named-instance allocation are implemented' -and $result.StandardOutput -match 'guest coding-agent provisioning follows') -Message 'Help must distinguish implemented EZVM-008 instance management from later guest provisioning work.'
+        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'authenticated guest readiness' -and $result.StandardOutput -match 'named instances' -and $result.StandardOutput -match 'cold relocation are implemented') -Message 'Help must describe implemented coding readiness, named instances and portability.'
     }
 }
 

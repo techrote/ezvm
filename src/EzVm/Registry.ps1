@@ -13,11 +13,13 @@ function Resolve-EzVmInstanceResources {
     } else {
         $Profile.ToLowerInvariant()
     }
-    if (@('light', 'normal', 'heavy') -cnotcontains $profileName) {
-        throw "Resource profile '$Profile' is invalid. Use light, normal or heavy."
+    if (@('light', 'normal', 'heavy', 'custom') -cnotcontains $profileName) {
+        throw "Resource profile '$Profile' is invalid. Use light, normal, heavy or custom with explicit CPU and memory values."
     }
-
-    $profileValue = $configuration.profiles.$profileName
+    if ($profileName -ceq 'custom' -and ($null -eq $Cpus -or $null -eq $MemoryMiB)) {
+        throw 'The custom resource profile requires both -Cpus and -MemoryMiB.'
+    }
+    $profileValue = if ($profileName -ceq 'custom') { $configuration.profiles.normal } else { $configuration.profiles.$profileName }
     $resolvedCpus = if ($null -ne $Cpus) { [int]$Cpus } else { [int]$profileValue.cpus }
     $resolvedMemory = if ($null -ne $MemoryMiB) { [int]$MemoryMiB } else { [int]$profileValue.memoryMiB }
     Assert-EzVmRuntimeInteger -Value $resolvedCpus -Description 'Instance CPU count' -Minimum 1 -Maximum 256
@@ -65,7 +67,14 @@ function Get-EzVmPreparedBaseSelection {
         if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
             throw "Prepared-base directory '$($directory.Name)' has no manifest.json. Repair or remove the incomplete managed base before relying on implicit base selection."
         }
-        $manifest = Read-EzVmJson -Path $manifestPath -SchemaVersion 1
+        $null = Assert-EzVmStorageManagedPath -Path $manifestPath -ContainmentRoot $paths.Bases -SafetyRoot $paths.Root -Description 'Base selection manifest' -RequireFile
+        $manifest = Read-EzVmPreparedBaseManifest -Path $manifestPath
+        if ([string]$manifest.baseId -cne $directory.Name) { throw 'Base directory disagrees with its manifest identity.' }
+        if ($manifest.schemaVersion -eq 2) {
+            # Sensitive snapshots are selected explicitly by ID or lifecycle
+            # operations; never make an ordinary create inherit authentication.
+            continue
+        }
         Assert-EzVmPreparedBaseManifest -Manifest $manifest
         if ([string]$manifest.baseId -cne $directory.Name) {
             throw "Prepared-base directory '$($directory.Name)' disagrees with its manifest identity '$($manifest.baseId)'. Repair the managed base before creating instances."
@@ -97,6 +106,7 @@ function Get-EzVmInstanceRegistry {
     param([string]$Root = $script:EzVmDefaultRoot)
 
     $paths = Get-EzVmPaths -Root $Root
+    $null = Assert-EzVmStorageManagedPath -Path $paths.Instances -ContainmentRoot $paths.Runtime -SafetyRoot $paths.Root -Description 'Managed instance registry'
     if (-not (Test-Path -LiteralPath $paths.Instances -PathType Container)) { return @() }
 
     $instances = New-Object 'System.Collections.Generic.List[object]'
@@ -185,6 +195,7 @@ function New-EzVmManagedInstance {
         [AllowEmptyString()][string]$Profile = '',
         [AllowNull()][Nullable[int]]$Cpus = $null,
         [AllowNull()][Nullable[int]]$MemoryMiB = $null,
+        [AllowNull()][object]$Origin = $null,
         [scriptblock]$QemuImgRunner,
         [scriptblock]$PortProbe
     )
@@ -195,9 +206,12 @@ function New-EzVmManagedInstance {
     $resources = Resolve-EzVmInstanceResources -Root $Root -Profile $Profile -Cpus $Cpus -MemoryMiB $MemoryMiB
     $codingProfile = Get-EzVmCodingProfile -Root $Root
     $base = Get-EzVmPreparedBaseSelection -Root $Root -BaseId $BaseId -QemuImgRunner $QemuImgRunner
+    if ($null -ne $Origin) { Assert-EzVmInstanceOrigin -Origin $Origin -ExpectedBaseId $base.BaseId }
 
+    $null = Assert-EzVmStorageManagedPath -Path $paths.Instances -ContainmentRoot $paths.Runtime -SafetyRoot $paths.Root -Description 'Managed instance root'
     [void][IO.Directory]::CreateDirectory($paths.Instances)
     $lock = Enter-EzVmSshAllocationLock -Root $Root
+    $instanceLock = $null
     $createdDirectory = $false
     try {
         # Reconstruct all allocation authority while holding the same lock used
@@ -212,6 +226,7 @@ function New-EzVmManagedInstance {
         if (Test-Path -LiteralPath $runtimePaths.Directory) {
             throw "Managed instance directory '$($runtimePaths.Directory)' already exists without a registry entry. Reconcile or remove the incomplete directory before create."
         }
+        $instanceLock = Enter-EzVmInstanceLifecycleLock -Root $Root -InstanceName $InstanceName
 
         $reserved = [int[]]@($registry | ForEach-Object { [int]$_.sshPort })
         $sshPort = Get-EzVmAvailableSshPort -Root $Root -PortProbe $PortProbe -ReservedPorts $reserved
@@ -219,6 +234,7 @@ function New-EzVmManagedInstance {
         [void][IO.Directory]::CreateDirectory($runtimePaths.Directory)
         $createdDirectory = $true
         $null = Assert-EzVmStorageManagedPath -Path $runtimePaths.Directory -ContainmentRoot $paths.Instances -SafetyRoot $paths.Root -Description 'Instance directory' -RequireDirectory
+        if ($null -ne $Origin) { Write-EzVmJson -Path $runtimePaths.Origin -Value $Origin -SchemaVersion 1 }
 
         $intent = New-EzVmInstanceIntent -Root $Root -InstanceName $InstanceName -BaseId $base.BaseId -Profile $resources.profile -Cpus $resources.cpus -MemoryMiB $resources.memoryMiB -SshPort $sshPort -ProvisioningProfile $codingProfile.Name -ProvisioningVersion $codingProfile.Version -QemuImgRunner $QemuImgRunner
         $guard = New-EzVmStorageLifecycleGuard -State 'proven-safe' -Source 'new EZVM-008 instance has no QEMU owner'
@@ -233,6 +249,7 @@ function New-EzVmManagedInstance {
             sshPort = [int]$intent.sshPort
             provisioningProfile = [string]$intent.provisioningProfile
             provisioningVersion = [int]$intent.provisioningVersion
+            identityGeneration = [string]$intent.identityGeneration
             createdAt = [string]$intent.createdAt
             baseSelection = [string]$base.SelectedBy
             warnings = [string[]]$resources.warnings
@@ -253,7 +270,10 @@ function New-EzVmManagedInstance {
         }
         throw
     }
-    finally { $lock.Dispose() }
+    finally {
+        if ($null -ne $instanceLock) { $instanceLock.Dispose() }
+        $lock.Dispose()
+    }
 }
 
 function Get-EzVmManagedInstanceStatus {

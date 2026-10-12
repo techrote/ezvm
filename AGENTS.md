@@ -41,12 +41,12 @@ If existing implementation already satisfies part of the issue, preserve it and 
 - WHPX is the normal accelerator. TCG may be used for diagnostic or CI fallback, but must not be presented as equivalent performance.
 - Large binaries, QEMU installers, cloud images, VM disks, private keys, tokens and other runtime artifacts must never be committed.
 - Downloaded external artifacts must be pinned and hash-verified according to repository manifests.
-- Prepared base images are immutable once any overlay depends on them.
-- v0.1 supports one backing level: prepared base -> instance overlay. Do not create arbitrary backing chains.
+- Managed base images are immutable once any overlay depends on them, including explicit derived/imported snapshots.
+- v0.1 supports one backing level: immutable managed base -> instance overlay. A managed base is either a clean prepared image or an explicit sensitive derived/imported snapshot. Do not create arbitrary backing chains.
 - Backing references must remain relocation-safe and must be validated before a VM is started.
 - Default networking is QEMU user-mode NAT. SSH forwarding binds to 127.0.0.1 only.
 - Do not introduce TAP, bridged networking, Hyper-V virtual switches, Docker, WSL or a background service into the v0.1 critical path.
-- Credentials must not be baked into source cloud images or prepared base images.
+- Credentials must not be baked into source cloud images or clean prepared base images. Explicit stateful derived/imported snapshots may preserve guest credentials; label them sensitive and never treat them as clean prepared images.
 - Destructive actions require positive instance identification and must fail closed on ambiguous state.
 - A running VM must never be copied, rebased, reset or flattened as though it were cleanly stopped.
 

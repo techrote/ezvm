@@ -12,8 +12,9 @@ start/status/stop lifecycle control, EZVM-007 adds localhost-only managed SSH,
 authenticated readiness, exec and file transfer, and EZVM-008 adds durable named
 instances, resource profiles and concurrent SSH-port allocation. EZVM-009 adds
 the versioned `coding-default` guest profile and verifies that the guest's coding
-tools, account and workspace are usable before reporting READY; the project
-remains version `0.0.0-dev`.**
+tools, account and workspace are usable before reporting READY. EZVM-010 adds
+reset, explicit fresh/stateful cloning, standalone export/import and cold-bundle
+portability validation. The project remains version `0.0.0-dev`.**
 The checkout has reviewed QEMU/7-Zip manifests, repository-local verified runtime
 bootstrap, `doctor`, and automated tests under Windows PowerShell 5.1 and
 PowerShell 7.
@@ -36,6 +37,11 @@ The commands available on this branch are:
 .\ezvm.ps1 exec <name> -- <command> [arguments]
 .\ezvm.ps1 copy-to <name> <host-file> <guest-path>
 .\ezvm.ps1 copy-from <name> <guest-path> <host-file>
+.\ezvm.ps1 reset <name>
+.\ezvm.ps1 clone <source> <destination> -Mode fresh|stateful
+.\ezvm.ps1 export <name> <new-directory>
+.\ezvm.ps1 import <name> <image-path> [-ManifestPath <manifest-path>] [-Profile light|normal|heavy] [-Cpus <n>] [-MemoryMiB <n>]
+.\ezvm.ps1 portability check
 ~~~
 
 Running with no command also shows help. Unknown commands and malformed arguments
@@ -129,16 +135,56 @@ through sudo can alter all guest state, including any credentials in its overlay
 Install and authenticate your preferred coding agent inside that mutable overlay.
 Node, Rust, uv and commercial agent CLIs are not preinstalled. Use reviewed,
 version-pinned acquisition instructions; the default profile has no remote
-`curl | shell` installer. Guest login state survives stop/restart and is lost
-when the overlay is reset; an intentional stateful clone or export can preserve
-it and must be treated as sensitive. Public reset/clone/export/import commands
-remain EZVM-010 work.
+`curl | shell` installer. Guest login state survives stop/restart. Reset returns
+to the instance's selected base: a clean prepared base discards later login
+state, while a stateful snapshot can restore authentication already saved in that
+baseline. Stateful clones, exports and imported bases can contain credentials
+and must be treated as sensitive.
 
 See [Using the coding guest](docs/CODING-GUEST.md) for setup, credential
 persistence, readiness diagnosis and future-profile guidance. Existing
 `ezvm-core` version `1` instances remain visible to `list`, `status` and
 `stop`, but cannot start under the new coding-ready contract. Create a new named
 instance; the old overlay is retained without silent migration.
+
+## Reset, clone and portability
+
+Stop an instance before reset, clone or export. Every operation proves stopped
+ownership and rejects ambiguous state. Clone mode must be explicit:
+
+~~~powershell
+.\ezvm.ps1 stop work
+.\ezvm.ps1 clone work fresh-work -Mode fresh
+.\ezvm.ps1 clone work saved-work -Mode stateful
+.\ezvm.ps1 export work 'D:\VM exports\work'
+.\ezvm.ps1 import imported-work 'D:\VM exports\work\disk.qcow2'
+.\ezvm.ps1 reset work
+~~~
+
+Fresh mode creates an empty overlay on the source's existing base. Stateful mode
+preserves its guest-visible disk in an independent immutable derived base, then
+creates a new destination overlay. Both receive distinct instance identities and
+SSH reservations. Export publishes a new directory containing a standalone
+`disk.qcow2` and a digest/provenance manifest; it never uploads the result.
+Import refuses external backing chains and normalizes the validated image into
+one immutable base plus one mutable overlay. Structural import acceptance does
+not promise an arbitrary image can satisfy the coding guest's boot/readiness
+contract.
+
+New instances and resets use version 2 durable intent with an explicit identity
+generation. A normal stop/restart or cold relocation preserves this identity;
+reset changes it, and copied guests must prove their destination identity before
+READY. Version 1 complete coding-default intent remains supported without an
+implicit rewrite during reads or ordinary starts.
+
+For a cold move, cleanly stop **every VM**, run `.\ezvm.ps1 portability check`,
+and copy the complete source/runtime folder. Run the check again from the new
+root, followed by `doctor` and `start`. Relative backing paths need no rebase;
+stopped runtime paths are revalidated and regenerated. Keep the original copy
+stopped when using the relocated bundle on the same host.
+
+See [Reset, clone and move coding environments](docs/PORTABILITY.md) for the full
+semantics, sensitive-snapshot boundary and recovery behavior.
 
 ## Planned target experience
 

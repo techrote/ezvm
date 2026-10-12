@@ -196,3 +196,43 @@ readiness bounds, within a 90-minute workflow limit for the full scenario. It
 does not claim WHPX execution or commercial-agent authentication. Its result and
 tested commit must be recorded as separate acceptance evidence; source fixtures
 and workflow configuration alone are not a guest integration PASS.
+
+## EZVM-010 portability tests
+
+`Snapshots.Tests.ps1` covers standalone QCOW2 header preflight, immutable
+derived/imported base provenance, backing-independent export, optional manifest
+verification, staging/publication failures and input preservation.
+`Portability.Tests.ps1` owns public stopped-only lifecycle orchestration,
+reset transactions, clone/import resource/identity allocation and complete-root
+validation. `PortabilityIdentity.Tests.ps1` owns new-generation DMI/NoCloud
+identity, persistent guest initialization and the exact bounded pending protocol
+used before strict copied-guest readiness. `PortabilityCli.Tests.ps1` exercises
+the actual CLI entry point, parser, operation dispatch, human results and JSON
+pipelines, including explicit clone modes and rejection before any mutation.
+Existing CLI, runtime, SSH, registry and storage suites retain their respective
+boundaries.
+
+The `EZVM-010 real portability qualification` workflow uses reviewed Windows
+QEMU. Tiny 64 MiB synthetic images exercise all disk operations with actual
+`qemu-img`, including deterministic non-zero overlay content, stateful copy
+independence, sensitive-baseline reset/fresh semantics, matching export manifests
+and malformed/external-backing refusal. These fixtures never boot as guests.
+
+The same isolated test root builds Ubuntu once and uses explicit TCG for five
+guest starts. It verifies running-source refusal, reset READY with pristine
+workspace, stateful and imported READY under distinct cloud/machine/SSH
+identities, and full cold relocation while preserving workspace content and
+stable identity. Synthetic auth and outbound SSH fixture bytes must survive
+clone, import and relocation, while managed inbound `authorized_keys` contains
+exactly the destination controller public key. Reset to the clean base removes
+those synthetic files. The complete source/runtime tree moves from one path with
+spaces to another; old stopped runtime files and lock filenames are included,
+then revalidated without manual deletion or rebase.
+
+`scripts/Invoke-EzVm010RealPortability.ps1` preserves the 2400-second base-build
+and 900-second per-launch readiness limits, including first-generation identity
+adoption. The enclosing workflow is bounded at 150 minutes. It identifies WHPX
+execution as SKIP and never silently substitutes a pass for an unavailable
+capability or failed check. Record its successful run and exact tested commit
+as acceptance evidence. No real account, token or private diagnostic artifact
+is part of the fixture or repository.

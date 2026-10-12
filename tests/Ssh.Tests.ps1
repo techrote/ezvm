@@ -55,6 +55,54 @@ function New-EzVmSshTestAccess {
     }
 }
 
+function New-EzVmSshTestLaunch {
+    param([string]$Root, [object]$Intent, [object]$Access)
+    # Readiness publication reconciles real durable launch records. Only the
+    # operating-system process observation is replaced by this test fixture.
+    $module = Get-Module EzVm
+    return & $module {
+        param($r, $i, $a)
+        $paths = Get-EzVmInstanceRuntimePaths -Root $r -InstanceName $i.name
+        Write-EzVmJson -Path $paths.Intent -Value $i -SchemaVersion ([int]$i.schemaVersion)
+        $arguments = [string[]]@('-name', ('guest=ezvm-' + $i.name))
+        $now = [DateTime]::UtcNow.ToString('o')
+        $executable = Join-Path (Get-EzVmPaths -Root $r).Qemu 'qemu-system-x86_64.exe'
+        $runtime = [pscustomobject][ordered]@{
+            schemaVersion = 1
+            instanceName = $i.name
+            state = 'RUNNING'
+            pid = 41000
+            processStartTimeUtc = $now
+            qemuExecutable = $executable
+            argumentFingerprint = Get-EzVmArgumentFingerprint -ArgumentList $arguments
+            launchId = $a.launchId
+            qmpHost = '127.0.0.1'
+            qmpPort = 32001
+            accelerator = 'tcg'
+            startedAt = $now
+            lastObservedAt = $now
+            stoppedAt = ''
+            qemuLog = Join-Path $paths.Directory 'qemu.log'
+            serialLog = Join-Path $paths.Directory 'serial.log'
+        }
+        Write-EzVmRuntimeStateFile -Root $r -InstanceName $i.name -Runtime $runtime
+        $state = [pscustomobject]@{ Processes = New-Object 'System.Collections.Generic.List[object]'; Observations = 0 }
+        $state.Processes.Add([pscustomobject]@{
+            Pid = $runtime.pid
+            ExecutablePath = $executable
+            Arguments = $arguments
+            StartTimeUtc = $now
+        })
+        $provider = {
+            param($processId)
+            $state.Observations++
+            if ($null -eq $processId) { return @($state.Processes.ToArray()) }
+            return @($state.Processes.ToArray() | Where-Object { $_.Pid -eq [int]$processId })
+        }.GetNewClosure()
+        return [pscustomobject]@{ Paths = $paths; Runtime = $runtime; State = $state; ProcessProvider = $provider }
+    } $Root $Intent $Access
+}
+
 function New-EzVmSshTestIdentityJson {
     param([object]$Intent, [string]$InstanceName = '')
     $coding = Get-EzVmCodingProfile -Root $script:EzVmRepositoryRoot
@@ -148,7 +196,10 @@ Add-EzVmTest -Name 'SSH: command argv uses scoped strict host-key checking and p
         Assert-EzVmTrue -Condition ($args -ccontains 'HostKeyAlgorithms=ssh-ed25519')
         Assert-EzVmTrue -Condition ($args -ccontains 'HashKnownHosts=no')
         Assert-EzVmTrue -Condition ($args -notcontains 'StrictHostKeyChecking=no')
-        Assert-EzVmTrue -Condition ($args -ccontains ('UserKnownHostsFile=' + $paths.InstanceKnownHosts))
+        $knownPath = $paths.InstanceKnownHosts
+        if ($script:EzVmIsWindowsHost) { $knownPath = $knownPath.Replace('\', '/') }
+        Assert-EzVmTrue -Condition ($args -ccontains ('UserKnownHostsFile="' + $knownPath + '"'))
+        Assert-EzVmEqual -Actual $args[[Array]::IndexOf($args, '-i') + 1] -Expected $paths.ControllerPrivateKey
         Assert-EzVmTrue -Condition ($args -ccontains 'BatchMode=yes')
         Assert-EzVmEqual -Actual $args[$args.Count - 2] -Expected 'coder@127.0.0.1'
         $remote = $args[$args.Count - 1]
@@ -172,7 +223,9 @@ Add-EzVmTest -Name 'SSH: launch-local candidate may accept a new key without wea
         Assert-EzVmTrue -Condition ($args -ccontains 'UpdateHostKeys=no')
         Assert-EzVmTrue -Condition ($args -ccontains 'HostKeyAlgorithms=ssh-ed25519')
         Assert-EzVmTrue -Condition ($args -ccontains 'HashKnownHosts=no')
-        Assert-EzVmTrue -Condition ($args -ccontains ('UserKnownHostsFile=' + [IO.Path]::GetFullPath($candidate)))
+        $knownPath = [IO.Path]::GetFullPath($candidate)
+        if ($script:EzVmIsWindowsHost) { $knownPath = $knownPath.Replace('\', '/') }
+        Assert-EzVmTrue -Condition ($args -ccontains ('UserKnownHostsFile="' + $knownPath + '"'))
     }
     finally { Remove-EzVmTestDirectory -Path $root }
 }
@@ -190,6 +243,7 @@ Add-EzVmTest -Name 'SSH: scp argv preserves host paths containing spaces as one 
         Assert-EzVmEqual -Actual $args[$separator + 2] -Expected $remote
         Assert-EzVmTrue -Condition ($args -ccontains 'StrictHostKeyChecking=yes')
         Assert-EzVmTrue -Condition ($args -notcontains 'StrictHostKeyChecking=no')
+        Assert-EzVmEqual -Actual $args[[Array]::IndexOf($args, '-i') + 1] -Expected $paths.ControllerPrivateKey
     }
     finally { Remove-EzVmTestDirectory -Path $root }
 }
@@ -206,6 +260,79 @@ Add-EzVmTest -Name 'SSH: known-hosts state is bundle-scoped and one file per man
     finally { Remove-EzVmTestDirectory -Path $root }
 }
 
+Add-EzVmTest -Name 'SSH: configuration path quoting preserves literal syntax and refuses hidden expansion' -ScriptBlock {
+    $module = Get-Module EzVm
+    $path = 'trust "quoted" ; StrictHostKeyChecking=no # %h'
+    $encoded = & $module { param($p) ConvertTo-EzVmOpenSshConfigPath -Path $p -ExpandTokens } $path
+    Assert-EzVmEqual -Actual $encoded -Expected '"trust \"quoted\" ; StrictHostKeyChecking=no # %%h"'
+    $slashPath = 'trust\literal'
+    $encodedSlash = & $module { param($p) ConvertTo-EzVmOpenSshConfigPath -Path $p -ExpandTokens } $slashPath
+    $expectedSlash = if ($script:EzVmIsWindowsHost) { '"trust/literal"' } else { '"trust\\literal"' }
+    Assert-EzVmEqual -Actual $encodedSlash -Expected $expectedSlash
+    foreach ($bad in @("trust`nStrictHostKeyChecking=no", "trust`rnext", ('trust' + [char]0 + 'next'), 'trust${HOME}')) {
+        Assert-EzVmThrows -ScriptBlock {
+            & $module { param($p) ConvertTo-EzVmOpenSshConfigPath -Path $p -ExpandTokens } $bad
+        } -MessagePattern 'OpenSSH.*paths' | Out-Null
+    }
+    foreach ($kind in @('ssh', 'scp')) {
+        Assert-EzVmThrows -ScriptBlock {
+            if ($kind -ceq 'ssh') { New-EzVmSshCommandArguments -PrivateKey 'unused' -KnownHosts 'trust${HOME}' -Port 22001 }
+            else { New-EzVmScpCommandArguments -PrivateKey 'unused' -KnownHosts 'trust${HOME}' -Port 22001 -Source 'source' -Destination 'destination' }
+        } -MessagePattern 'Move the bundle' | Out-Null
+    }
+}
+
+$sshParserCommand = @(Get-Command -Name 'ssh' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1)
+$sshParserSkip = if ($sshParserCommand.Count -eq 0) { 'The real OpenSSH client is unavailable; configuration-parser regression requires ssh.' } else { '' }
+$sshParserPath = if ($sshParserCommand.Count -eq 0) { '' } else { $sshParserCommand[0].Source }
+Add-EzVmTest -Name 'SSH: real OpenSSH parses SSH and SCP trust paths as one literal filename' -Data $sshParserPath -SkipReason $sshParserSkip -ScriptBlock {
+    param($sshPath)
+    $root = New-EzVmTestDirectory -Prefix 'ssh parser [spaces]'
+    $socket = [Net.Sockets.Socket]::new([Net.Sockets.AddressFamily]::InterNetwork, [Net.Sockets.SocketType]::Stream, [Net.Sockets.ProtocolType]::Tcp)
+    try {
+        # Hold a loopback port without listening. The real client expands its
+        # configuration, then receives a refusal or a bounded Windows connect
+        # timeout; no SSH server is contacted.
+        $socket.Bind([Net.IPEndPoint]::new([Net.IPAddress]::Loopback, 0))
+        $port = ([Net.IPEndPoint]$socket.LocalEndPoint).Port
+        $config = Join-Path $root 'empty config'
+        [IO.File]::WriteAllText($config, '')
+        $privateKey = Join-Path $root 'unused private key'
+        $knownHosts = Join-Path $root 'known hosts literal %h'
+        $expected = [IO.Path]::GetFullPath($knownHosts)
+        if ($script:EzVmIsWindowsHost) { $expected = $expected.Replace('\', '/') }
+        $sshArguments = New-EzVmSshCommandArguments -PrivateKey $privateKey -KnownHosts $knownHosts -Port $port -Batch -ConnectTimeoutSeconds 1
+        $scpArguments = New-EzVmScpCommandArguments -PrivateKey $privateKey -KnownHosts $knownHosts -Port $port -Source 'unused source' -Destination 'coder@127.0.0.1:/unused'
+        $scpOption = @($scpArguments | Where-Object { $_ -like 'UserKnownHostsFile=*' })
+        Assert-EzVmEqual -Actual $scpOption.Count -Expected 1
+        Assert-EzVmTrue -Condition ($sshArguments -ccontains $scpOption[0])
+        $common = @('-vvv', '-F', $config, '-p', [string]$port, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=1')
+        $injected = $expected + ' " ; StrictHostKeyChecking=no # extra %h'
+        $module = Get-Module EzVm
+        $injectedOption = 'UserKnownHostsFile=' + (& $module { param($p) ConvertTo-EzVmOpenSshConfigPath -Path $p -ExpandTokens } $injected)
+        $cases = @(
+            [pscustomobject]@{ Name = 'SSH'; Arguments = (@('-vvv', '-F', $config) + $sshArguments); Expected = $expected },
+            [pscustomobject]@{ Name = 'SCP'; Arguments = ($common + @('-o', $scpOption[0], 'coder@127.0.0.1')); Expected = $expected },
+            [pscustomobject]@{ Name = 'quoted config syntax'; Arguments = ($common + @('-o', $injectedOption, 'coder@127.0.0.1')); Expected = $injected }
+        )
+        foreach ($case in $cases) {
+            $result = Invoke-EzVmProcess -FilePath $sshPath -ArgumentList $case.Arguments -WorkingDirectory $root -TimeoutSeconds 6
+            Assert-EzVmEqual -Actual $result.ExitCode -Expected 255 -Message $case.Name
+            # ssh -G flattens multiple paths into the same displayed line. A
+            # literal percent forces this expansion diagnostic, which reveals
+            # each actual parsed filename and catches the original split path.
+            $expanded = @($result.StdErr -split '\r?\n' | Where-Object { $_ -match 'expanded UserKnownHostsFile' })
+            Assert-EzVmEqual -Actual $expanded.Count -Expected 1 -Message "$($case.Name): $($result.StdErr)"
+            Assert-EzVmTrue -Condition ($expanded[0].EndsWith((" -> '" + $case.Expected + "'"), [StringComparison]::Ordinal)) -Message "$($case.Name) did not preserve the complete literal trust path: $($expanded[0])"
+            Assert-EzVmTrue -Condition ($result.StdErr -match 'Connection (refused|timed out)') -Message "$($case.Name) must refuse or time out at the reserved, non-listening port: $($result.StdErr)"
+        }
+    }
+    finally {
+        $socket.Dispose()
+        Remove-EzVmTestDirectory -Path $root
+    }
+}
+
 Add-EzVmTest -Name 'SSH: readiness bootstraps trust through ssh accept-new only in the launch-local candidate' -ScriptBlock {
     $root = New-EzVmCheckoutFixture -Prefix 'ssh accept new readiness'
     try {
@@ -213,6 +340,7 @@ Add-EzVmTest -Name 'SSH: readiness bootstraps trust through ssh accept-new only 
         [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($paths.AccessState))
         $intent = New-EzVmSshTestIntent
         $access = New-EzVmSshTestAccess -Root $root -Intent $intent -Port 22079 -LaunchId ('d' * 32)
+        $launch = New-EzVmSshTestLaunch -Root $root -Intent $intent -Access $access
         $identity = [pscustomobject]@{ PrivateKey = (Join-Path $root 'unused-key') }
         $tooling = [pscustomobject]@{ Ssh = 'unused-ssh' }
         $identityJson = New-EzVmSshTestIdentityJson -Intent $intent -InstanceName 'ssh-agent'
@@ -220,22 +348,22 @@ Add-EzVmTest -Name 'SSH: readiness bootstraps trust through ssh accept-new only 
         $readyOutput = New-EzVmSshTestProbe -IdentityBase64 (ConvertTo-EzVmSshTestBase64 $identityJson) -CloudStatus 'status: done' -Ready:$true
         $module = Get-Module EzVm
         $observed = & $module {
-            param($r, $i, $a, $id, $tools, $output)
+            param($r, $i, $a, $id, $tools, $output, $processProvider)
             $state = [pscustomobject]@{ AcceptNew = $false; StrictBypass = $false }
             $sshOutput = $output
+            $candidatePath = Join-Path (Get-EzVmSshPaths -Root $r -InstanceName 'ssh-agent').KnownHostsDirectory ('.ssh-agent.' + $a.launchId + '.candidate')
+            $candidateOption = 'UserKnownHostsFile=' + (ConvertTo-EzVmOpenSshConfigPath -Path $candidatePath -ExpandTokens)
             $runner = {
                 param($exe, $arguments, $timeout)
                 $state.AcceptNew = $arguments -ccontains 'StrictHostKeyChecking=accept-new'
                 $state.StrictBypass = $arguments -contains 'StrictHostKeyChecking=no'
-                $knownOption = @($arguments | Where-Object { $_ -like 'UserKnownHostsFile=*' } | Select-Object -First 1)
-                if ($knownOption.Count -ne 1) { throw 'fixture did not receive one candidate known-hosts path' }
-                $candidatePath = ([string]$knownOption[0]).Substring('UserKnownHostsFile='.Length)
+                if ($arguments -cnotcontains $candidateOption) { throw 'fixture did not receive the expected candidate known-hosts path' }
                 [IO.File]::WriteAllText($candidatePath, ('[127.0.0.1]:22079 ssh-ed25519 CCCC' + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
                 return [pscustomobject]@{ ExitCode = 0; StdOut = $sshOutput; StdErr = '' }
             }.GetNewClosure()
-            $ready = Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 2 -PortProbe { param($hostAddress, $port) return $true } -SshRunner $runner
+            $ready = Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 2 -PortProbe { param($hostAddress, $port) return $true } -SshRunner $runner -ProcessProvider $processProvider
             return [pscustomobject]@{ Ready = $ready; AcceptNew = $state.AcceptNew; StrictBypass = $state.StrictBypass }
-        } $root $intent $access $identity $tooling $readyOutput
+        } $root $intent $access $identity $tooling $readyOutput $launch.ProcessProvider
 
         Assert-EzVmEqual -Actual $observed.Ready.state -Expected 'READY'
         Assert-EzVmEqual -Actual $observed.AcceptNew -Expected $true
@@ -260,6 +388,7 @@ Add-EzVmTest -Name 'SSH: changed host key remains staged until authenticated ide
 
         $intent = New-EzVmSshTestIntent
         $access = New-EzVmSshTestAccess -Root $root -Intent $intent -Port 22077 -LaunchId ('a' * 32)
+        $launch = New-EzVmSshTestLaunch -Root $root -Intent $intent -Access $access
         $identity = [pscustomobject]@{ PrivateKey = (Join-Path $root 'unused-key') }
         $tooling = [pscustomobject]@{ Ssh = 'unused-ssh'; Keyscan = 'unused-keyscan' }
         $identityJson = New-EzVmSshTestIdentityJson -Intent $intent -InstanceName 'ssh-agent'
@@ -278,13 +407,13 @@ Add-EzVmTest -Name 'SSH: changed host key remains staged until authenticated ide
         finally { Remove-Item -LiteralPath $candidate.Candidate -Force -ErrorAction SilentlyContinue }
 
         $ready = & $module {
-            param($r, $i, $a, $id, $tools, $line, $output)
+            param($r, $i, $a, $id, $tools, $line, $output, $processProvider)
             $scanLine = $line
             $sshOutput = $output
             $scanner = { param($port, $timeout) return $scanLine }.GetNewClosure()
             $runner = { param($exe, $arguments, $timeout) return [pscustomobject]@{ ExitCode = 0; StdOut = $sshOutput; StdErr = '' } }.GetNewClosure()
-            Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 2 -PortProbe { param($hostAddress, $port) return $true } -HostKeyScanner $scanner -SshRunner $runner
-        } $root $intent $access $identity $tooling $newLine $readyOutput
+            Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 2 -PortProbe { param($hostAddress, $port) return $true } -HostKeyScanner $scanner -SshRunner $runner -ProcessProvider $processProvider
+        } $root $intent $access $identity $tooling $newLine $readyOutput $launch.ProcessProvider
         Assert-EzVmEqual -Actual $ready.state -Expected 'READY'
         $managed = [IO.File]::ReadAllText($paths.InstanceKnownHosts)
         Assert-EzVmTrue -Condition ($managed.Contains('ssh-ed25519 BBBB'))
@@ -301,19 +430,20 @@ Add-EzVmTest -Name 'SSH: failed identity proof cannot promote a changed host key
         [IO.File]::WriteAllText($paths.InstanceKnownHosts, ('[127.0.0.1]:22001 ssh-ed25519 AAAA' + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
         $intent = New-EzVmSshTestIntent
         $access = New-EzVmSshTestAccess -Root $root -Intent $intent -Port 22078 -LaunchId ('c' * 32)
+        $launch = New-EzVmSshTestLaunch -Root $root -Intent $intent -Access $access
         $wrong = New-EzVmSshTestIdentityJson -Intent $intent -InstanceName 'wrong-agent'
         $nl = [Environment]::NewLine
         $wrongOutput = New-EzVmSshTestProbe -IdentityBase64 (ConvertTo-EzVmSshTestBase64 $wrong) -CloudStatus 'status: done' -Ready:$true
         $module = Get-Module EzVm
         Assert-EzVmThrows -ScriptBlock {
             & $module {
-                param($r, $i, $a, $output)
+                param($r, $i, $a, $output, $processProvider)
                 $id = [pscustomobject]@{ PrivateKey = (Join-Path $r 'unused-key') }
                 $tools = [pscustomobject]@{ Ssh = 'unused-ssh'; Keyscan = 'unused-keyscan' }
                 $sshOutput = $output
                 $runner = { param($exe, $arguments, $timeout) return [pscustomobject]@{ ExitCode = 0; StdOut = $sshOutput; StdErr = '' } }.GetNewClosure()
-                Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 2 -PortProbe { param($hostAddress, $port) return $true } -HostKeyScanner { param($port, $timeout) return '[127.0.0.1]:22078 ssh-ed25519 BBBB' } -SshRunner $runner
-            } $root $intent $access $wrongOutput
+                Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 2 -PortProbe { param($hostAddress, $port) return $true } -HostKeyScanner { param($port, $timeout) return '[127.0.0.1]:22078 ssh-ed25519 BBBB' } -SshRunner $runner -ProcessProvider $processProvider
+            } $root $intent $access $wrongOutput $launch.ProcessProvider
         } -MessagePattern 'identity mismatch' | Out-Null
         $managed = [IO.File]::ReadAllText($paths.InstanceKnownHosts)
         Assert-EzVmTrue -Condition ($managed.Contains('ssh-ed25519 AAAA'))
@@ -358,15 +488,16 @@ Add-EzVmTest -Name 'SSH: readiness wait has a bounded total timeout when TCP nev
     try {
         $intent = New-EzVmSshTestIntent
         $access = New-EzVmSshTestAccess -Root $root -Intent $intent -Port 22001 -LaunchId ('a' * 32)
+        $launch = New-EzVmSshTestLaunch -Root $root -Intent $intent -Access $access
         $identity = [pscustomobject]@{ PrivateKey = (Join-Path $root 'unused-key') }
         $tooling = [pscustomobject]@{ Ssh = 'unused-ssh'; Keyscan = 'unused-keyscan' }
         $clock = [Diagnostics.Stopwatch]::StartNew()
         $module = Get-Module EzVm
         Assert-EzVmThrows -ScriptBlock {
             & $module {
-                param($r, $i, $a, $id, $tools)
-                Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 1 -PortProbe { param($hostAddress, $port) return $false }
-            } $root $intent $access $identity $tooling
+                param($r, $i, $a, $id, $tools, $processProvider)
+                Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 1 -PortProbe { param($hostAddress, $port) return $false } -ProcessProvider $processProvider
+            } $root $intent $access $identity $tooling $launch.ProcessProvider
         } -MessagePattern 'did not reach authenticated SSH READY within 1 seconds' | Out-Null
         $clock.Stop()
         Assert-EzVmTrue -Condition ($clock.Elapsed.TotalSeconds -lt 4) -Message 'Readiness timeout must remain bounded.'
@@ -480,6 +611,7 @@ Add-EzVmTest -Name 'SSH: readiness grants slow TCG SSH probes a bounded per-atte
         [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($paths.AccessState))
         $intent = New-EzVmSshTestIntent
         $access = New-EzVmSshTestAccess -Root $root -Intent $intent -Port 22080 -LaunchId ('d' * 32)
+        $launch = New-EzVmSshTestLaunch -Root $root -Intent $intent -Access $access
         $identity = [pscustomobject]@{ PrivateKey = (Join-Path $root 'unused-key') }
         $tooling = [pscustomobject]@{ Ssh = 'unused-ssh' }
         $identityJson = New-EzVmSshTestIdentityJson -Intent $intent -InstanceName 'ssh-agent'
@@ -487,22 +619,22 @@ Add-EzVmTest -Name 'SSH: readiness grants slow TCG SSH probes a bounded per-atte
         $readyOutput = New-EzVmSshTestProbe -IdentityBase64 (ConvertTo-EzVmSshTestBase64 $identityJson) -CloudStatus 'status: done' -Ready:$true
         $module = Get-Module EzVm
         $observed = & $module {
-            param($r, $i, $a, $id, $tools, $output)
+            param($r, $i, $a, $id, $tools, $output, $processProvider)
             $state = [pscustomobject]@{ ProcessTimeout = 0; ConnectTimeout = '' }
             $sshOutput = $output
+            $candidatePath = Join-Path (Get-EzVmSshPaths -Root $r -InstanceName 'ssh-agent').KnownHostsDirectory ('.ssh-agent.' + $a.launchId + '.candidate')
+            $candidateOption = 'UserKnownHostsFile=' + (ConvertTo-EzVmOpenSshConfigPath -Path $candidatePath -ExpandTokens)
             $runner = {
                 param($exe, $arguments, $timeout)
                 $state.ProcessTimeout = $timeout
                 $state.ConnectTimeout = @($arguments | Where-Object { $_ -like 'ConnectTimeout=*' } | Select-Object -First 1)[0]
-                $knownOption = @($arguments | Where-Object { $_ -like 'UserKnownHostsFile=*' } | Select-Object -First 1)
-                if ($knownOption.Count -ne 1) { throw 'fixture did not receive one candidate known-hosts path' }
-                $candidatePath = ([string]$knownOption[0]).Substring('UserKnownHostsFile='.Length)
+                if ($arguments -cnotcontains $candidateOption) { throw 'fixture did not receive the expected candidate known-hosts path' }
                 [IO.File]::WriteAllText($candidatePath, ('[127.0.0.1]:22080 ssh-ed25519 DDDD' + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
                 return [pscustomobject]@{ ExitCode = 0; StdOut = $sshOutput; StdErr = '' }
             }.GetNewClosure()
-            $ready = Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 120 -PortProbe { param($hostAddress, $port) return $true } -SshRunner $runner
+            $ready = Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 120 -PortProbe { param($hostAddress, $port) return $true } -SshRunner $runner -ProcessProvider $processProvider
             return [pscustomobject]@{ Ready = $ready; ProcessTimeout = $state.ProcessTimeout; ConnectTimeout = $state.ConnectTimeout }
-        } $root $intent $access $identity $tooling $readyOutput
+        } $root $intent $access $identity $tooling $readyOutput $launch.ProcessProvider
 
         Assert-EzVmEqual -Actual $observed.Ready.state -Expected 'READY'
         Assert-EzVmTrue -Condition ($observed.ProcessTimeout -ge 118 -and $observed.ProcessTimeout -le 120) -Message 'The live profile check must fit within the caller total deadline.'

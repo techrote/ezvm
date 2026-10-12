@@ -281,8 +281,252 @@ function Get-EzVmGuestHostname {
 
 function Get-EzVmGuestCloudInstanceId {
     param([Parameter(Mandatory = $true)][object]$Intent)
-    $hash = Get-EzVmSshSha256Hex -Text ([string]$Intent.name + '|' + [string]$Intent.baseId + '|' + [string]$Intent.createdAt)
+    $identityText = [string]$Intent.name + '|' + [string]$Intent.baseId + '|' + [string]$Intent.createdAt
+    # Existing schema-1 guests keep their accepted cloud identity. Schema 2 has
+    # a durable generation so reset can rotate identity without changing the
+    # instance's creation time or depending on an absolute host path.
+    if ([int]$Intent.schemaVersion -eq 2) {
+        if ($Intent.identityGeneration -isnot [string] -or $Intent.identityGeneration -cnotmatch '^[a-f0-9]{32}$') {
+            throw 'Guest identity generation must contain exactly 32 lowercase hexadecimal characters.'
+        }
+        $identityText += '|' + [string]$Intent.identityGeneration
+    }
+    $hash = Get-EzVmSshSha256Hex -Text $identityText
     return 'ezvm-' + ([string]$Intent.name).ToLowerInvariant() + '-' + $hash.Substring(0, 12)
+}
+
+function Get-EzVmGuestMachineUuid {
+    param([Parameter(Mandatory = $true)][object]$Intent)
+    $identityText = 'ezvm-machine-v1|' + (Get-EzVmGuestCloudInstanceId -Intent $Intent)
+    if ([int]$Intent.schemaVersion -eq 2) { $identityText += '|' + [string]$Intent.identityGeneration }
+    $hash = Get-EzVmSshSha256Hex -Text $identityText
+    return $hash.Substring(0, 8) + '-' + $hash.Substring(8, 4) + '-' + $hash.Substring(12, 4) + '-' + $hash.Substring(16, 4) + '-' + $hash.Substring(20, 12)
+}
+
+function Get-EzVmGuestIdentityInitializer {
+    param(
+        [Parameter(Mandatory = $true)][object]$Intent,
+        [Parameter(Mandatory = $true)][string]$ControllerPublicKey
+    )
+    $machineUuid = Get-EzVmGuestMachineUuid -Intent $Intent
+    $configuration = [ordered]@{
+        cloudInstanceId = Get-EzVmGuestCloudInstanceId -Intent $Intent
+        machineUuid = $machineUuid
+        machineId = $machineUuid.Replace('-', '')
+        controllerPublicKey = $ControllerPublicKey
+    } | ConvertTo-Json -Compress
+    $script = @'
+#!/usr/bin/python3
+"""Initialize only ezvm's guest identity; preserve user workspace and login state."""
+import base64
+import hashlib
+import json
+import os
+import pwd
+import secrets
+import stat
+import subprocess
+import sys
+import tempfile
+
+EXPECTED = json.loads(base64.b64decode('__EZVM_IDENTITY_CONFIG__'))
+FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+FIELDS = {'schemaVersion', 'cloudInstanceId', 'machineUuid', 'machineId',
+          'sshHostKeySha256', 'controllerPublicKeySha256', 'initializedBootId'}
+
+def directory(path, create=False):
+    fd = os.open('/', FLAGS)
+    try:
+        for part in path.strip('/').split('/'):
+            if create:
+                try:
+                    os.mkdir(part, 0o755, dir_fd=fd)
+                except FileExistsError:
+                    pass
+            child = os.open(part, FLAGS, dir_fd=fd)
+            info = os.fstat(child)
+            if info.st_uid != 0 or info.st_mode & 0o022:
+                os.close(child)
+                raise ValueError('unsafe root-owned guest identity directory')
+            os.close(fd)
+            fd = child
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+def read_file(fd, name, limit=8192, missing=False):
+    try:
+        file_fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd)
+    except FileNotFoundError:
+        if missing:
+            return None
+        raise
+    try:
+        info = os.fstat(file_fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022 or info.st_size > limit:
+            raise ValueError('guest identity evidence is not a bounded regular file')
+        with os.fdopen(file_fd, 'rb', closefd=False) as stream:
+            data = stream.read(limit + 1)
+        if len(data) > limit:
+            raise ValueError('guest identity evidence exceeds its size bound')
+        return data
+    finally:
+        os.close(file_fd)
+
+def replace_file(fd, name, data, mode, uid=0, gid=0):
+    try:
+        existing = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        if not stat.S_ISREG(existing.st_mode):
+            raise ValueError('refusing non-regular guest identity destination')
+    except FileNotFoundError:
+        pass
+    temporary = '.ezvm-identity-' + secrets.token_hex(16)
+    created = False
+    try:
+        out = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode, dir_fd=fd)
+        created = True
+        try:
+            os.fchown(out, uid, gid)
+            os.fchmod(out, mode)
+            with os.fdopen(out, 'wb', closefd=False) as stream:
+                stream.write(data)
+                stream.flush()
+            os.fsync(out)
+        finally:
+            os.close(out)
+        os.replace(temporary, name, src_dir_fd=fd, dst_dir_fd=fd)
+        created = False
+        os.fsync(fd)
+    finally:
+        if created:
+            os.unlink(temporary, dir_fd=fd)
+
+def authorize_controller():
+    account = pwd.getpwnam('coder')
+    if account.pw_uid == 0 or account.pw_dir != '/home/coder':
+        raise ValueError('unexpected coder account identity')
+    homes = directory('/home')
+    home = ssh = None
+    try:
+        home = os.open('coder', FLAGS, dir_fd=homes)
+        if os.fstat(home).st_uid != account.pw_uid:
+            raise ValueError('coder home belongs to a different user')
+        try:
+            os.mkdir('.ssh', 0o700, dir_fd=home)
+            os.chown('.ssh', account.pw_uid, account.pw_gid, dir_fd=home, follow_symlinks=False)
+        except FileExistsError:
+            pass
+        ssh = os.open('.ssh', FLAGS, dir_fd=home)
+        if os.fstat(ssh).st_uid != account.pw_uid:
+            raise ValueError('coder SSH directory belongs to a different user')
+        os.fchmod(ssh, 0o700)
+        # Only managed inbound authorization changes. Outbound private keys,
+        # known_hosts, agent credentials and every workspace file are preserved.
+        replace_file(ssh, 'authorized_keys', (EXPECTED['controllerPublicKey'] + '\n').encode(), 0o600,
+                     account.pw_uid, account.pw_gid)
+    finally:
+        for fd in (ssh, home, homes):
+            if fd is not None:
+                os.close(fd)
+
+def initialize():
+    if os.geteuid() != 0:
+        raise ValueError('guest identity initialization requires root')
+    state = directory('/var/lib/ezvm', create=True)
+    etc = ssh = dbus = None
+    try:
+        try:
+            os.unlink('ready.json', dir_fd=state)
+        except FileNotFoundError:
+            pass
+        # A copied enabled service must not act as its source before new seed
+        # data arrives. QEMU supplies the destination's durable hardware UUID.
+        hardware_uuid = open('/sys/class/dmi/id/product_uuid', encoding='ascii').read().strip().lower()
+        if hardware_uuid != EXPECTED['machineUuid']:
+            raise ValueError('seed identity does not match destination hardware UUID; check cloud-init cache policy')
+        boot_id = open('/proc/sys/kernel/random/boot_id', encoding='ascii').read().strip()
+        etc = directory('/etc')
+        ssh = directory('/etc/ssh')
+        dbus = directory('/var/lib/dbus', create=True)
+        previous_bytes = read_file(state, 'guest-identity.json', missing=True)
+        previous = None if previous_bytes is None else json.loads(previous_bytes)
+        same_generation = isinstance(previous, dict) and previous.get('cloudInstanceId') == EXPECTED['cloudInstanceId']
+        public_hash = hashlib.sha256((EXPECTED['controllerPublicKey'] + '\n').encode()).hexdigest()
+        if same_generation:
+            if set(previous) != FIELDS or type(previous['schemaVersion']) is not int or previous['schemaVersion'] != 1:
+                raise ValueError('malformed current guest identity initialization marker')
+            if any(previous.get(key) != EXPECTED[key] for key in ('machineUuid', 'machineId')):
+                raise ValueError('current guest machine identity differs from durable intent')
+            if previous['controllerPublicKeySha256'] != public_hash:
+                raise ValueError('controller public identity changed without a new guest generation')
+            if read_file(etc, 'machine-id').decode('ascii').strip() != EXPECTED['machineId']:
+                raise ValueError('current machine-id no longer matches guest initialization')
+            if hashlib.sha256(read_file(ssh, 'ssh_host_ed25519_key.pub')).hexdigest() != previous['sshHostKeySha256']:
+                raise ValueError('current SSH host identity no longer matches guest initialization')
+        else:
+            # Keys are generated privately within the guest, never in NoCloud or
+            # host manifests. The marker is committed only after all files land.
+            with tempfile.TemporaryDirectory(prefix='.ezvm-host-identity-', dir='/etc/ssh') as temporary:
+                key = temporary + '/host_ed25519'
+                subprocess.run(['/usr/bin/ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', key],
+                               check=True, timeout=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                private_bytes = open(key, 'rb').read()
+                public_bytes = open(key + '.pub', 'rb').read()
+                replace_file(ssh, 'ssh_host_ed25519_key', private_bytes, 0o600)
+                replace_file(ssh, 'ssh_host_ed25519_key.pub', public_bytes, 0o644)
+            replace_file(etc, 'machine-id', (EXPECTED['machineId'] + '\n').encode('ascii'), 0o444)
+            try:
+                dbus_info = os.stat('machine-id', dir_fd=dbus, follow_symlinks=False)
+            except FileNotFoundError:
+                dbus_info = None
+            if dbus_info is not None and stat.S_ISLNK(dbus_info.st_mode):
+                if os.path.realpath('/var/lib/dbus/machine-id') != '/etc/machine-id':
+                    raise ValueError('DBus machine-id symlink points outside the managed machine identity')
+            else:
+                replace_file(dbus, 'machine-id', (EXPECTED['machineId'] + '\n').encode('ascii'), 0o444)
+            authorize_controller()
+            previous = dict(schemaVersion=1, cloudInstanceId=EXPECTED['cloudInstanceId'],
+                            machineUuid=EXPECTED['machineUuid'], machineId=EXPECTED['machineId'],
+                            sshHostKeySha256=hashlib.sha256(public_bytes).hexdigest(),
+                            controllerPublicKeySha256=public_hash, initializedBootId=boot_id)
+            replace_file(state, 'guest-identity.json', (json.dumps(previous, sort_keys=True) + '\n').encode(), 0o644)
+        for name in ('identity-failed.json', 'provisioning-failed'):
+            try:
+                os.unlink(name, dir_fd=state)
+            except FileNotFoundError:
+                pass
+        if previous['initializedBootId'] == boot_id:
+            # One reboot adopts the changed machine ID in all services. The
+            # persistent finalizer and marker make an interrupted attempt safe.
+            os.sync()
+            return 75
+        if open('/var/lib/dbus/machine-id', encoding='ascii').read().strip() != EXPECTED['machineId']:
+            raise ValueError('DBus machine-id no longer matches guest initialization')
+        authorize_controller()
+        return 0
+    finally:
+        for fd in (dbus, ssh, etc, state):
+            if fd is not None:
+                os.close(fd)
+
+try:
+    sys.exit(initialize())
+except Exception as error:
+    message = ('guest identity initialization failed: ' + str(error))[:1024]
+    try:
+        state_fd = directory('/var/lib/ezvm', create=True)
+        try:
+            record = {'schemaVersion': 1, 'cloudInstanceId': EXPECTED['cloudInstanceId'], 'error': message}
+            replace_file(state_fd, 'identity-failed.json', (json.dumps(record) + '\n').encode(), 0o644)
+        finally:
+            os.close(state_fd)
+    except Exception:
+        pass
+    print(message, file=sys.stderr)
+    sys.exit(1)
+'@
+    return $script.Replace('__EZVM_IDENTITY_CONFIG__', [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($configuration))).Replace("`r`n", "`n") + "`n"
 }
 
 function New-EzVmInstanceSeedData {
@@ -332,6 +576,8 @@ function New-EzVmInstanceSeedData {
         ('hostname: ' + (ConvertTo-EzVmYamlSingleQuoted $hostname)),
         'ssh_pwauth: false',
         'disable_root: true',
+        'ssh_deletekeys: true',
+        'ssh_genkeytypes: [ed25519]',
         'users:',
         '  - default',
         '  - name: coder',
@@ -344,6 +590,13 @@ function New-EzVmInstanceSeedData {
         '    ssh_authorized_keys:',
         ('      - ' + (ConvertTo-EzVmYamlSingleQuoted $ControllerPublicKey)),
         'write_files:',
+        # Cache policy belongs to system configuration, not cloud-config user
+        # data. An unknown top-level key degrades cloud-init to status exit 2.
+        '  - path: /etc/cloud/cloud.cfg.d/99-ezvm-identity.cfg',
+        '    owner: root:root',
+        "    permissions: '0644'",
+        '    encoding: b64',
+        ('    content: ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("manual_cache_clean: false`n"))),
         '  - path: /etc/ssh/sshd_config.d/00-ezvm-coding.conf',
         '    owner: root:root',
         "    permissions: '0644'",
@@ -366,7 +619,100 @@ function New-EzVmInstanceSeedData {
         '    owner: root:root',
         "    permissions: '0755'",
         '    encoding: b64',
-        ('    content: ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$codingProfile.Script))),
+        ('    content: ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$codingProfile.Script)))
+    )
+    if ([int]$Intent.schemaVersion -eq 2) {
+        $initializer = Get-EzVmGuestIdentityInitializer -Intent $Intent -ControllerPublicKey $ControllerPublicKey
+        $finalizer = @'
+#!/bin/sh
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+LC_ALL=C
+export PATH LC_ALL
+stage=cloud-init
+report_stage() {
+    printf 'EZVM_GUEST_FINALIZE_STAGE=%s\n' "$stage" || true
+}
+report_exit() {
+    result=$?
+    if test "$result" -ne 0; then
+        printf 'EZVM_GUEST_FINALIZE_FAILED=stage=%s;exit=%s\n' "$stage" "$result" >&2 || true
+    fi
+}
+trap report_exit 0
+report_stage
+if cloud-init status --wait >/var/log/ezvm-cloud-init-status.log 2>&1; then
+    :
+else
+    cloud_exit=$?
+    printf 'EZVM_GUEST_CLOUD_INIT_EXIT=%s\n' "$cloud_exit" >&2 || true
+    exit 1
+fi
+stage=identity
+report_stage
+set +e
+/usr/local/sbin/ezvm-instance-identity
+identity_exit=$?
+set -e
+if test "$identity_exit" -eq 75; then
+    stage=reboot
+    report_stage
+    systemctl reboot
+    exit 0
+fi
+if test "$identity_exit" -ne 0; then
+    exit "$identity_exit"
+fi
+stage=ssh-policy
+report_stage
+if ! /usr/sbin/sshd -t || ! systemctl reload ssh; then
+    printf '%s\n' 'SSH policy activation failed' > /var/lib/ezvm/provisioning-failed
+    exit 1
+fi
+stage=coding-profile
+report_stage
+exec /usr/local/sbin/ezvm-coding-profile provision
+'@
+        $unit = @'
+[Unit]
+Description=ezvm guest identity and coding readiness
+After=cloud-final.service
+Wants=cloud-final.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/ezvm-instance-finalize
+TimeoutStartSec=180
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=cloud-init.target
+'@
+        foreach ($file in @(
+            @('/usr/local/sbin/ezvm-instance-identity', '0755', $initializer),
+            @('/usr/local/sbin/ezvm-instance-finalize', '0755', ($finalizer.Replace("`r`n", "`n") + "`n")),
+            @('/etc/systemd/system/ezvm-instance-finalize.service', '0644', ($unit.Replace("`r`n", "`n") + "`n"))
+        )) {
+            $userDataLines += @(
+                ('  - path: ' + $file[0]),
+                '    owner: root:root',
+                ("    permissions: '" + $file[1] + "'"),
+                '    encoding: b64',
+                ('    content: ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($file[2])))
+            )
+        }
+        $userDataLines += @(
+            'runcmd:',
+            '  - [systemctl, daemon-reload]',
+            '  - [systemctl, enable, ezvm-instance-finalize.service]',
+            '  - [systemctl, start, --no-block, ezvm-instance-finalize.service]'
+        )
+    }
+    else {
+        # Schema-1 instances retain the accepted no-reboot bootstrap contract.
+        $userDataLines += @(
         '  - path: /usr/local/sbin/ezvm-instance-finalize',
         '    owner: root:root',
         "    permissions: '0755'",
@@ -388,7 +734,8 @@ function New-EzVmInstanceSeedData {
         '      fi',
         'runcmd:',
         '  - [systemd-run, --no-block, --unit=ezvm-instance-finalize, --collect, --property=Type=oneshot, /usr/local/sbin/ezvm-instance-finalize]'
-    )
+        )
+    }
     $metaDataLines = @(
         ('instance-id: ' + (ConvertTo-EzVmYamlSingleQuoted $cloudInstanceId)),
         ('local-hostname: ' + (ConvertTo-EzVmYamlSingleQuoted $hostname))
@@ -417,12 +764,14 @@ function Enter-EzVmSshAllocationLock {
     param([string]$Root, [ValidateRange(1, 30000)][int]$TimeoutMilliseconds = 5000)
 
     $paths = Get-EzVmPaths -Root $Root
+    $null = Assert-EzVmStorageManagedPath -Path $paths.Locks -ContainmentRoot $paths.Runtime -SafetyRoot $paths.Root -Description 'SSH allocation lock directory'
     [void][IO.Directory]::CreateDirectory($paths.Locks)
     $null = Assert-EzVmStorageManagedPath -Path $paths.Locks -ContainmentRoot $paths.Runtime -SafetyRoot $paths.Root -Description 'SSH allocation lock directory' -RequireDirectory
     $lockPath = Join-Path $paths.Locks 'ssh-port-allocation.lock'
     $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMilliseconds)
     while ($true) {
         try {
+            $null = Assert-EzVmStorageManagedPath -Path $lockPath -ContainmentRoot $paths.Locks -SafetyRoot $paths.Root -Description 'SSH allocation lock file'
             return New-Object IO.FileStream($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
         }
         catch [IO.IOException] {
@@ -475,6 +824,29 @@ function Get-EzVmNullKnownHostsPath {
     return '/dev/null'
 }
 
+function ConvertTo-EzVmOpenSshConfigPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [switch]$ExpandTokens
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or $Path.IndexOf([char]0) -ge 0 -or $Path -match '[\r\n]') {
+        throw 'OpenSSH configuration paths must be non-empty single-line paths without NUL characters.'
+    }
+    # OpenSSH reparses -o values using its configuration grammar, even when
+    # the native process receives one complete argv token. Quote the scalar
+    # within that token so spaces and quotes cannot name extra trust files.
+    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { $Path = $Path.Replace('\', '/') }
+    if ($ExpandTokens) {
+        # UserKnownHostsFile expands percent tokens and ${environment} after
+        # parsing quotes. Percent has a literal escape; environment syntax does
+        # not, so refuse a path that would silently redirect managed trust.
+        if ($Path.Contains('${')) { throw 'OpenSSH known-hosts paths cannot contain ''${'' because it expands environment variables. Move the bundle to a path without that syntax.' }
+        $Path = $Path.Replace('%', '%%')
+    }
+    return '"' + $Path.Replace('\', '\\').Replace('"', '\"') + '"'
+}
+
 function ConvertTo-EzVmPosixArgument {
     param([AllowEmptyString()][string]$Value = '')
     if ($Value.IndexOf([char]0) -ge 0) { throw 'Remote command arguments cannot contain NUL characters.' }
@@ -514,8 +886,8 @@ function New-EzVmSshCommandArguments {
         @('-o', 'UpdateHostKeys=no'),
         @('-o', 'HostKeyAlgorithms=ssh-ed25519'),
         @('-o', 'HashKnownHosts=no'),
-        @('-o', ('UserKnownHostsFile=' + [IO.Path]::GetFullPath($KnownHosts))),
-        @('-o', ('GlobalKnownHostsFile=' + (Get-EzVmNullKnownHostsPath))),
+        @('-o', ('UserKnownHostsFile=' + (ConvertTo-EzVmOpenSshConfigPath -Path ([IO.Path]::GetFullPath($KnownHosts)) -ExpandTokens))),
+        @('-o', ('GlobalKnownHostsFile=' + (ConvertTo-EzVmOpenSshConfigPath -Path (Get-EzVmNullKnownHostsPath)))),
         @('-o', 'PasswordAuthentication=no'),
         @('-o', 'KbdInteractiveAuthentication=no'),
         @('-o', 'PreferredAuthentications=publickey'),
@@ -561,8 +933,8 @@ function New-EzVmScpCommandArguments {
         '-o', 'UpdateHostKeys=no',
         '-o', 'HostKeyAlgorithms=ssh-ed25519',
         '-o', 'HashKnownHosts=no',
-        '-o', ('UserKnownHostsFile=' + [IO.Path]::GetFullPath($KnownHosts)),
-        '-o', ('GlobalKnownHostsFile=' + (Get-EzVmNullKnownHostsPath)),
+        '-o', ('UserKnownHostsFile=' + (ConvertTo-EzVmOpenSshConfigPath -Path ([IO.Path]::GetFullPath($KnownHosts)) -ExpandTokens)),
+        '-o', ('GlobalKnownHostsFile=' + (ConvertTo-EzVmOpenSshConfigPath -Path (Get-EzVmNullKnownHostsPath))),
         '-o', 'PasswordAuthentication=no',
         '-o', 'KbdInteractiveAuthentication=no',
         '--',
@@ -696,6 +1068,67 @@ function Write-EzVmSshAccessState {
     Assert-EzVmSshAccessState -Access $Access -ExpectedName $InstanceName
     $path = (Get-EzVmSshPaths -Root $Root -InstanceName $InstanceName).AccessState
     Write-EzVmJson -Path $path -Value $Access -SchemaVersion 2
+}
+
+function Publish-EzVmSshLaunchAccess {
+    param(
+        [string]$Root,
+        [string]$InstanceName,
+        [Parameter(Mandatory = $true)][object]$ExpectedIntent,
+        [Parameter(Mandatory = $true)][object]$Access,
+        [Parameter(Mandatory = $true)][ValidateSet('PROVISIONING', 'READY')][string]$State,
+        [AllowNull()][object]$CandidateKnownHosts = $null,
+        [DateTime]$DeadlineUtc = [DateTime]::MinValue,
+        [scriptblock]$ProcessProvider
+    )
+
+    Assert-EzVmInstanceIntent -Intent $ExpectedIntent -ExpectedName $InstanceName
+    Assert-EzVmSshAccessState -Access $Access -ExpectedName $InstanceName
+    if ($State -ceq 'READY' -and ($null -eq $CandidateKnownHosts -or $DeadlineUtc.Kind -ne [DateTimeKind]::Utc)) {
+        throw 'READY access publication requires authenticated host-key evidence and the original UTC readiness deadline.'
+    }
+
+    # SSH can finish after stop/reset/restart has replaced this launch. Only
+    # publication holds the lifecycle lock; waiting on a guest never blocks stop.
+    $lockTimeout = 5000
+    if ($State -ceq 'READY') {
+        $lockTimeout = [int][Math]::Max(1, [Math]::Min($lockTimeout, [Math]::Ceiling(($DeadlineUtc - [DateTime]::UtcNow).TotalMilliseconds)))
+    }
+    $lifecycleLock = Enter-EzVmInstanceLifecycleLock -Root $Root -InstanceName $InstanceName -TimeoutMilliseconds $lockTimeout
+    try {
+        $currentIntent = Get-EzVmInstanceIntent -Root $Root -InstanceName $InstanceName
+        if (($currentIntent | ConvertTo-Json -Depth 8 -Compress) -cne ($ExpectedIntent | ConvertTo-Json -Depth 8 -Compress)) {
+            throw "Instance '$InstanceName' durable intent changed before SSH access publication. Refusing stale readiness; retry start for the current instance generation."
+        }
+        $runtime = Get-EzVmRuntimeStateFile -Root $Root -InstanceName $InstanceName
+        if ($null -eq $runtime -or $runtime.launchId -cne $Access.launchId) {
+            throw "Instance '$InstanceName' QEMU launch changed before SSH access publication. Refusing stale readiness; retry start for the current launch."
+        }
+        $status = Get-EzVmInstanceStatus -Root $Root -InstanceName $InstanceName -ProcessProvider $ProcessProvider
+        if ($status.state -cne 'RUNNING') {
+            throw "Instance '$InstanceName' is no longer safely RUNNING before SSH access publication (state='$($status.state)'). Refusing stale readiness. $($status.reason)"
+        }
+
+        $knownHostsText = $null
+        if ($State -ceq 'READY') {
+            $null = Assert-EzVmCandidateKnownHostsEntry -Path $CandidateKnownHosts.Candidate -Port ([int]$Access.sshPort)
+            $knownHostsText = [IO.File]::ReadAllText($CandidateKnownHosts.Candidate)
+            # Lock acquisition and process reconciliation consume the same
+            # readiness budget as the live proof, before either file changes.
+            if ([DateTime]::UtcNow -ge $DeadlineUtc) {
+                throw 'Coding readiness proof exceeded the original deadline before access publication. Refusing READY.'
+            }
+        }
+        $Access.state = $State
+        $Access.readyAt = $(if ($State -ceq 'READY') { [DateTime]::UtcNow.ToString('o') } else { '' })
+        Assert-EzVmSshAccessState -Access $Access -ExpectedName $InstanceName
+        if ($State -ceq 'READY') {
+            $paths = Get-EzVmSshPaths -Root $Root -InstanceName $InstanceName
+            Write-EzVmSshTextAtomically -Path $paths.InstanceKnownHosts -Content $knownHostsText
+        }
+        Write-EzVmSshAccessState -Root $Root -InstanceName $InstanceName -Access $Access
+    }
+    finally { $lifecycleLock.Dispose() }
 }
 
 function Get-EzVmSshAccessState {
@@ -856,11 +1289,185 @@ function ConvertFrom-EzVmReadinessProbe {
 }
 
 function Get-EzVmReadinessRemoteScript {
-    param([Parameter(Mandatory = $true)][ValidatePattern('^[a-f0-9]{64}$')][string]$ProvisioningDigest)
+    param(
+        [Parameter(Mandatory = $true)][ValidatePattern('^[a-f0-9]{64}$')][string]$ProvisioningDigest,
+        [AllowEmptyString()][string]$ExpectedCloudInstanceId = '',
+        [AllowEmptyString()][string]$ExpectedMachineUuid = ''
+    )
+    $initializationGate = ''
+    $initializationPostGate = ''
+    if ($ExpectedCloudInstanceId.Length -gt 0 -or $ExpectedMachineUuid.Length -gt 0) {
+        if ($ExpectedCloudInstanceId -cnotmatch '^[a-z0-9._-]{1,128}$' -or
+            $ExpectedMachineUuid -cnotmatch '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$') {
+            throw 'Guest initialization probe requires the exact destination cloud identity and hardware UUID.'
+        }
+        $configuration = [ordered]@{
+            cloudInstanceId = $ExpectedCloudInstanceId
+            machineUuid = $ExpectedMachineUuid
+            machineId = $ExpectedMachineUuid.Replace('-', '')
+        } | ConvertTo-Json -Compress
+        # This is a host-generated, read-only preflight. The normal strict
+        # readiness parser never sees or accepts a copied source identity.
+        $gate = @'
+import base64, hashlib, json, os, re, stat, subprocess, sys
+expected = json.loads(base64.b64decode('__EZVM_GATE_CONFIG__'))
+class Pending(Exception):
+    pass
+
+def read_regular(path):
+    parts = path.strip('/').split('/')
+    fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for part in parts[:-1]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            info = os.fstat(child)
+            if info.st_uid != 0 or info.st_mode & 0o022:
+                os.close(child)
+                raise ValueError('unsafe root-owned identity evidence directory')
+            os.close(fd)
+            fd = child
+        document = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd)
+        try:
+            info = os.fstat(document)
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022 or info.st_size > 8192:
+                raise ValueError('invalid protected identity evidence')
+            data = os.read(document, 8193)
+            if len(data) > 8192:
+                raise ValueError('oversized protected identity evidence')
+            return data
+        finally:
+            os.close(document)
+    finally:
+        os.close(fd)
+
+def completed_finalizer():
+    # Unit runtime state is rebuilt each boot. A persistent ready.json alone
+    # cannot distinguish this boot from an earlier, identical guest generation.
+    fields = {'LoadState', 'ActiveState', 'SubState', 'Result', 'ExecMainCode',
+              'ExecMainStatus', 'ExecMainStartTimestampMonotonic', 'InvocationID'}
+    try:
+        result = subprocess.run(['/usr/bin/systemctl', 'show', '--no-pager', '--all',
+                                 '--property=' + ','.join(sorted(fields)),
+                                 'ezvm-instance-finalize.service'],
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                text=True, timeout=5, check=False)
+    except subprocess.TimeoutExpired:
+        raise Pending()
+    if len(result.stdout) > 8192:
+        raise ValueError('oversized guest finalizer status')
+    status = {}
+    for line in result.stdout.splitlines():
+        key, separator, value = line.partition('=')
+        if not separator or key not in fields or key in status:
+            raise ValueError('malformed guest finalizer status')
+        status[key] = value
+    if status.get('LoadState') == 'not-found' and result.returncode in (0, 4):
+        raise Pending()
+    if result.returncode != 0 or set(status) != fields or status['LoadState'] != 'loaded':
+        raise ValueError('could not inspect the current guest finalizer')
+    if status['ActiveState'] == 'failed' or status['Result'] != 'success':
+        raise ValueError('guest finalizer failed in the current boot')
+    if status['ActiveState'] != 'active' or status['SubState'] != 'exited':
+        raise Pending()
+    if status['ExecMainCode'] != '1' or status['ExecMainStatus'] != '0':
+        raise ValueError('guest finalizer did not exit successfully')
+    if not re.fullmatch('[1-9][0-9]*', status['ExecMainStartTimestampMonotonic']):
+        raise ValueError('guest finalizer lacks current-boot execution evidence')
+    if not re.fullmatch('[a-f0-9]{32}', status['InvocationID']) or status['InvocationID'] == '0' * 32:
+        raise ValueError('guest finalizer has an invalid invocation identifier')
+    try:
+        ready = read_regular('/var/lib/ezvm/ready.json')
+    except FileNotFoundError:
+        raise Pending()
+    return status['InvocationID'] + ':' + hashlib.sha256(ready).hexdigest()
+
+try:
+    if open('/sys/class/dmi/id/product_uuid', encoding='ascii').read().strip().lower() != expected['machineUuid']:
+        raise ValueError('authenticated endpoint has the wrong destination hardware UUID')
+    try:
+        failure = json.loads(read_regular('/var/lib/ezvm/identity-failed.json'))
+    except FileNotFoundError:
+        failure = None
+    if isinstance(failure, dict) and failure.get('cloudInstanceId') == expected['cloudInstanceId']:
+        raise ValueError(str(failure.get('error', 'guest identity initialization failed'))[:1024])
+    try:
+        marker = json.loads(read_regular('/var/lib/ezvm/guest-identity.json'))
+    except FileNotFoundError:
+        raise Pending()
+    if not isinstance(marker, dict):
+        raise ValueError('guest identity initialization evidence must contain a JSON object')
+    if marker.get('cloudInstanceId') != expected['cloudInstanceId']:
+        raise Pending()
+    # The initializer commits this marker after cloud-init write_files finishes.
+    # Checking it first avoids racing a source identity file being replaced.
+    try:
+        identity = json.loads(read_regular('/etc/ezvm/identity.json'))
+    except FileNotFoundError:
+        raise Pending()
+    if not isinstance(identity, dict):
+        raise ValueError('guest identity must contain a JSON object')
+    if identity.get('cloudInstanceId') != expected['cloudInstanceId']:
+        raise Pending()
+    fields = {'schemaVersion', 'cloudInstanceId', 'machineUuid', 'machineId', 'sshHostKeySha256',
+              'controllerPublicKeySha256', 'initializedBootId'}
+    if set(marker) != fields or type(marker['schemaVersion']) is not int or marker['schemaVersion'] != 1:
+        raise ValueError('malformed destination identity initialization marker')
+    if any(marker.get(key) != expected[key] for key in ('machineUuid', 'machineId')):
+        raise ValueError('destination machine identity differs from durable intent')
+    if not isinstance(marker['initializedBootId'], str) or not re.fullmatch('[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}', marker['initializedBootId']):
+        raise ValueError('invalid identity initialization boot identifier')
+    for key in ('sshHostKeySha256', 'controllerPublicKeySha256'):
+        if not isinstance(marker[key], str) or not re.fullmatch('[a-f0-9]{64}', marker[key]):
+            raise ValueError('invalid guest identity evidence digest')
+    boot_id = open('/proc/sys/kernel/random/boot_id', encoding='ascii').read().strip()
+    if marker['initializedBootId'] == boot_id:
+        raise Pending()
+    if read_regular('/etc/machine-id').decode('ascii').strip() != expected['machineId']:
+        raise ValueError('destination machine-id was not adopted')
+    dbus_path = '/var/lib/dbus/machine-id'
+    if os.path.islink(dbus_path):
+        if os.path.realpath(dbus_path) != '/etc/machine-id':
+            raise ValueError('DBus machine identity has an unexpected symlink target')
+    elif read_regular(dbus_path).decode('ascii').strip() != expected['machineId']:
+        raise ValueError('DBus machine identity was not adopted')
+    if hashlib.sha256(read_regular('/etc/ssh/ssh_host_ed25519_key.pub')).hexdigest() != marker['sshHostKeySha256']:
+        raise ValueError('destination SSH host identity differs from initialization')
+    print(boot_id + ':' + completed_finalizer())
+except Pending:
+    sys.exit(75)
+except Exception as error:
+    print(('guest identity initialization rejected: ' + str(error))[:2048], file=sys.stderr)
+    sys.exit(70)
+'@
+        $gate = $gate.Replace('__EZVM_GATE_CONFIG__', [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($configuration))).Replace("`r`n", "`n")
+        $initializationGate = 'ezvm_guest_boot_gate() {' + "`n" +
+            '    sudo -n -- python3 -c ' + (ConvertTo-EzVmPosixArgument -Value $gate) + "`n" +
+            '}' + "`n" +
+            'ezvm_boot_proof="$(ezvm_guest_boot_gate)"' + "`n" +
+            'identity_exit=$?' + "`n" +
+            'if test "$identity_exit" -eq 75; then' + "`n" +
+            "    printf '%s\n' 'EZVM_GUEST_IDENTITY_PENDING=$ExpectedCloudInstanceId'" + "`n" +
+            '    exit 75' + "`n" +
+            'fi' + "`n" +
+            'if test "$identity_exit" -ne 0; then exit "$identity_exit"; fi' + "`n"
+        # The live profile check is intentionally substantial. Pin both the
+        # completed service invocation and ready bytes across that check so a
+        # concurrent finalizer restart cannot publish old captured evidence.
+        $initializationPostGate = 'if test "$profile_check" = pass; then' + "`n" +
+            '    ezvm_boot_proof_after="$(ezvm_guest_boot_gate)"' + "`n" +
+            '    identity_exit=$?' + "`n" +
+            '    if test "$identity_exit" -eq 75 || { test "$identity_exit" -eq 0 && test "$ezvm_boot_proof_after" != "$ezvm_boot_proof"; }; then' + "`n" +
+            "        printf '%s\n' 'EZVM_GUEST_IDENTITY_PENDING=$ExpectedCloudInstanceId'" + "`n" +
+            '        exit 75' + "`n" +
+            '    fi' + "`n" +
+            '    if test "$identity_exit" -ne 0; then exit "$identity_exit"; fi' + "`n" +
+            'fi' + "`n"
+    }
     $script = @'
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 LC_ALL=C
 export PATH LC_ALL
+__EZVM_INITIALIZATION_GATE__
 identity_b64="$(head -c 8193 /etc/ezvm/identity.json 2>/dev/null | base64 -w0)"
 cloud_text="$(cloud-init status 2>/dev/null)"
 cloud_exit=$?
@@ -882,10 +1489,11 @@ elif test "$cloud_exit" -eq 0 && test "$cloud_text" = 'status: done' && test -n 
         profile_check=failed
     fi
 fi
+__EZVM_INITIALIZATION_POST_GATE__
 profile_error_b64="$(printf %s "$profile_error" | head -c 2048 | base64 -w0)"
 printf 'EZVM_IDENTITY_B64=%s\nEZVM_CLOUD_B64=%s\nEZVM_CLOUD_EXIT=%s\nEZVM_READY_B64=%s\nEZVM_PROFILE_CHECK=%s\nEZVM_PROFILE_ERROR_B64=%s\n' "$identity_b64" "$cloud_b64" "$cloud_exit" "$ready_b64" "$profile_check" "$profile_error_b64"
 '@
-    return $script.Replace('__EZVM_PROFILE_DIGEST__', $ProvisioningDigest).Replace(([string][char]13 + [char]10), [string][char]10)
+    return $script.Replace('__EZVM_INITIALIZATION_GATE__', $initializationGate).Replace('__EZVM_INITIALIZATION_POST_GATE__', $initializationPostGate).Replace('__EZVM_PROFILE_DIGEST__', $ProvisioningDigest).Replace(([string][char]13 + [char]10), [string][char]10)
 }
 
 function Wait-EzVmSshReady {
@@ -903,7 +1511,8 @@ function Wait-EzVmSshReady {
         [scriptblock]$PortProbe,
         [scriptblock]$HostKeyScanner,
         [scriptblock]$SshRunner,
-        [scriptblock]$SleepProvider
+        [scriptblock]$SleepProvider,
+        [scriptblock]$ProcessProvider
     )
 
     Assert-EzVmSshAccessState -Access $Access -ExpectedName $InstanceName
@@ -919,9 +1528,7 @@ function Wait-EzVmSshReady {
     }
     # Revalidation invalidates cached host READY before any fallible probe. A
     # missing tool or mismatched marker must never leave old access authoritative.
-    $Access.state = 'PROVISIONING'
-    $Access.readyAt = ''
-    Write-EzVmSshAccessState -Root $Root -InstanceName $InstanceName -Access $Access
+    Publish-EzVmSshLaunchAccess -Root $Root -InstanceName $InstanceName -ExpectedIntent $Intent -Access $Access -State PROVISIONING -ProcessProvider $ProcessProvider
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     if ($DeadlineUtc -ne [DateTime]::MinValue) {
         if ($DeadlineUtc.Kind -ne [DateTimeKind]::Utc) { throw 'SSH readiness DeadlineUtc must use UTC.' }
@@ -931,6 +1538,10 @@ function Wait-EzVmSshReady {
     $candidateAcceptNew = $false
     $lastError = 'forwarded SSH port has not become reachable'
     $authenticated = $false
+    $initializationEnabled = [int]$Intent.schemaVersion -eq 2
+    $remoteScript = if ($initializationEnabled) {
+        Get-EzVmReadinessRemoteScript -ProvisioningDigest $codingProfile.Digest -ExpectedCloudInstanceId ([string]$Access.cloudInstanceId) -ExpectedMachineUuid (Get-EzVmGuestMachineUuid -Intent $Intent)
+    } else { Get-EzVmReadinessRemoteScript -ProvisioningDigest $codingProfile.Digest }
     try {
         while ([DateTime]::UtcNow -lt $deadline) {
             if ($null -ne $SeedServer) {
@@ -975,7 +1586,7 @@ function Wait-EzVmSshReady {
             if ($remainingSeconds -lt 1) { break }
             $remainingSeconds = [Math]::Min(120, $remainingSeconds)
             $connectTimeoutSeconds = [Math]::Max(1, [Math]::Min(15, $remainingSeconds))
-            $arguments = New-EzVmSshCommandArguments -PrivateKey $Identity.PrivateKey -KnownHosts $candidate.Candidate -Port ([int]$Access.sshPort) -User ([string]$Access.sshUser) -Batch -RemoteCommand @('sh', '-lc', (Get-EzVmReadinessRemoteScript -ProvisioningDigest $codingProfile.Digest)) -AcceptNewHostKey:$candidateAcceptNew -ConnectTimeoutSeconds $connectTimeoutSeconds
+            $arguments = New-EzVmSshCommandArguments -PrivateKey $Identity.PrivateKey -KnownHosts $candidate.Candidate -Port ([int]$Access.sshPort) -User ([string]$Access.sshUser) -Batch -RemoteCommand @('sh', '-lc', $remoteScript) -AcceptNewHostKey:$candidateAcceptNew -ConnectTimeoutSeconds $connectTimeoutSeconds
             $authenticated = $false
             try {
                 $result = if ($null -ne $SshRunner) {
@@ -990,16 +1601,29 @@ function Wait-EzVmSshReady {
                     $probe = ConvertFrom-EzVmReadinessProbe -StdOut ([string]$result.StdOut) -ExpectedInstanceName $InstanceName -ExpectedBaseId ([string]$Intent.baseId) -ExpectedProfile ([string]$Access.profile) -ExpectedCloudInstanceId ([string]$Access.cloudInstanceId) -ExpectedProvisioningProfile $codingProfile.Name -ExpectedProvisioningVersion $codingProfile.Version -ExpectedProvisioningDigest $codingProfile.Digest
                     if ($probe.Ready) {
                         if ([DateTime]::UtcNow -ge $deadline) { throw "Coding readiness proof exceeded the $TimeoutSeconds second deadline. Refusing READY." }
-                        Write-EzVmSshTextAtomically -Path $candidate.Managed -Content ([IO.File]::ReadAllText($candidate.Candidate))
-                        $Access.state = 'READY'
-                        $Access.readyAt = [DateTime]::UtcNow.ToString('o')
-                        Write-EzVmSshAccessState -Root $Root -InstanceName $InstanceName -Access $Access
+                        Publish-EzVmSshLaunchAccess -Root $Root -InstanceName $InstanceName -ExpectedIntent $Intent -Access $Access -State READY -CandidateKnownHosts $candidate -DeadlineUtc $deadline -ProcessProvider $ProcessProvider
                         return $Access
                     }
                     $lastError = "authenticated SSH succeeded but coding readiness is incomplete (cloud='$($probe.CloudStatus)', marker=$($probe.MarkerReady), profile=$($probe.ProfileReady))."
                 }
-                elseif ([int]$result.ExitCode -eq 255) {
+                elseif ($initializationEnabled -and [int]$result.ExitCode -eq 75 -and
+                    ([string]$result.StdOut).TrimEnd([char[]]"`r`n") -ceq ('EZVM_GUEST_IDENTITY_PENDING=' + [string]$Access.cloudInstanceId)) {
+                    $lastError = 'destination guest identity initialization is pending; copied source READY cannot authorize access. Confirm cloud-init is enabled with automatic cache checking if this persists.'
+                    # The source host key can answer briefly before the new
+                    # seed rotates it. Discard only unpromoted launch evidence.
+                    Remove-Item -LiteralPath $candidate.Candidate -Force -ErrorAction SilentlyContinue
+                    $candidate = $null
+                }
+                elseif ([int]$result.ExitCode -eq 255 -or [int]$result.ExitCode -eq -1) {
+                    # OpenSSH starts with exit_status=-1 until the remote sends
+                    # an exit-status message. A guest reboot can close that
+                    # channel first: POSIX reports 255, while Windows preserves
+                    # the signed -1 value. Neither result proves readiness.
                     $lastError = "SSH authentication/transport is not ready: $([string]$result.StdErr)"
+                    if ($initializationEnabled) {
+                        Remove-Item -LiteralPath $candidate.Candidate -Force -ErrorAction SilentlyContinue
+                        $candidate = $null
+                    }
                 }
                 else {
                     throw "Authenticated SSH readiness probe exited unexpectedly with code $($result.ExitCode): $([string]$result.StdErr)"
@@ -1069,16 +1693,15 @@ function Start-EzVmReadyInstance {
         $allocationLock = Enter-EzVmSshAllocationLock -Root $Root
         $sshPort = Assert-EzVmInstanceSshPortReservation -Root $Root -Intent $intent -PortProbe $PortProbe
         $remaining = [Math]::Max(1, [int][Math]::Ceiling(($deadline - [DateTime]::UtcNow).TotalSeconds))
-        $started = Start-EzVmInstance -Root $Root -InstanceName $InstanceName -Accelerator $Accelerator -StartupTimeoutSeconds $remaining -QemuImgRunner $QemuImgRunner -QemuStatusProvider $QemuStatusProvider -ProcessProvider $ProcessProvider -ProcessLauncher $ProcessLauncher -QmpInvoker $QmpInvoker -SshPort $sshPort -SeedHostPort ([int]$seedServer.Port) -SeedGuestAddress '10.0.2.100' -SeedGuestPort 8000
+        $started = Start-EzVmInstance -Root $Root -InstanceName $InstanceName -Accelerator $Accelerator -StartupTimeoutSeconds $remaining -QemuImgRunner $QemuImgRunner -QemuStatusProvider $QemuStatusProvider -ProcessProvider $ProcessProvider -ProcessLauncher $ProcessLauncher -QmpInvoker $QmpInvoker -SshPort $sshPort -SeedHostPort ([int]$seedServer.Port) -SeedGuestAddress '10.0.2.100' -SeedGuestPort 8000 -ExpectedIntent $intent
         $allocationLock.Dispose()
         $allocationLock = $null
 
-        $runtime = Get-EzVmRuntimeStateFile -Root $Root -InstanceName $InstanceName
         $access = [pscustomobject][ordered]@{
             schemaVersion = 2
             instanceName = $InstanceName
             baseId = [string]$intent.baseId
-            launchId = [string]$runtime.launchId
+            launchId = [string]$started.launchId
             sshHost = '127.0.0.1'
             sshPort = [int]$sshPort
             sshUser = 'coder'
@@ -1090,12 +1713,12 @@ function Start-EzVmReadyInstance {
             provisioningDigest = [string]$seed.CodingProfile.Digest
             readyAt = ''
         }
-        Write-EzVmSshAccessState -Root $Root -InstanceName $InstanceName -Access $access
+        Publish-EzVmSshLaunchAccess -Root $Root -InstanceName $InstanceName -ExpectedIntent $intent -Access $access -State PROVISIONING -ProcessProvider $ProcessProvider
         $remaining = [int][Math]::Ceiling(($deadline - [DateTime]::UtcNow).TotalSeconds)
         if ($remaining -lt 1) {
             throw "Instance '$InstanceName' reached QEMU RUNNING but exhausted its $ReadyTimeoutSeconds second total readiness timeout before SSH qualification."
         }
-        $ready = Wait-EzVmSshReady -Root $Root -InstanceName $InstanceName -Intent $intent -Access $access -Identity $ControllerIdentity -Tooling $Tooling -SeedServer $seedServer -TimeoutSeconds $remaining -DeadlineUtc $deadline -PortProbe $PortProbe -HostKeyScanner $HostKeyScanner -SshRunner $SshRunner -SleepProvider $SleepProvider
+        $ready = Wait-EzVmSshReady -Root $Root -InstanceName $InstanceName -Intent $intent -Access $access -Identity $ControllerIdentity -Tooling $Tooling -SeedServer $seedServer -TimeoutSeconds $remaining -DeadlineUtc $deadline -PortProbe $PortProbe -HostKeyScanner $HostKeyScanner -SshRunner $SshRunner -SleepProvider $SleepProvider -ProcessProvider $ProcessProvider
         return [pscustomobject][ordered]@{
             name = $InstanceName
             state = 'READY'

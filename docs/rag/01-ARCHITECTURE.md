@@ -6,7 +6,7 @@ ezvm has four layers:
 
 1. repository-controlled source and manifests;
 2. downloaded host runtime and source-image cache;
-3. immutable prepared bases;
+3. immutable managed bases (clean prepared images or explicit stateful snapshots);
 4. mutable per-instance overlays and state.
 
 The repository controls behavior. Generated runtime state is intentionally untracked.
@@ -101,7 +101,7 @@ The resulting prepared base receives a stable base ID and manifest containing pr
 v0.1 deliberately uses only:
 
 ~~~text
-prepared-base.qcow2  <-  instance/disk.qcow2
+immutable-base.qcow2  <-  instance/disk.qcow2
 ~~~
 
 No child overlays of instance overlays.
@@ -122,7 +122,8 @@ instance.json contains durable instance intent such as:
 - assigned SSH port;
 - creation timestamp;
 - resource profile name;
-- coding provisioning profile and version.
+- coding provisioning profile and version;
+- explicit identity generation for new schema version 2 instances.
 
 runtime.json is replaceable process state such as:
 
@@ -263,9 +264,10 @@ the reviewed version 1 instance policy and validates those installed tools,
 the locked-password `coder` account and its writable workspace. It does not
 reinstall baseline packages or fetch vendor-agent installers on instance boot.
 
-`instance.json` retains schema version 1 and separately records the resource
-profile (`profile`) and coding identity (`provisioningProfile`,
-`provisioningVersion`). New instances select `coding-default`/`1`. The resolver
+EZVM-009 introduced complete schema version 1 `instance.json` with separate
+resource profile (`profile`) and coding identity (`provisioningProfile`,
+`provisioningVersion`). New instances select `coding-default`/`1`; EZVM-010
+adds the version 2 identity generation described below. The resolver
 validates the repository profile schema and supported identity, then computes a
 digest of the normalized manifest and recipe before seed generation. Existing
 `ezvm-core`/`1` intent remains readable for
@@ -283,4 +285,41 @@ cannot authorize READY or host-key trust promotion.
 Profile changes require reviewed source changes and an explicit version path.
 New baseline dependencies require a new prepared base identity; neither profile
 updates nor user-installed agent software may modify an existing immutable base.
-Agent software and authentication belong to the mutable instance overlay.
+Agent software and authentication are installed into the mutable instance
+overlay. An explicit stateful clone/export can preserve that state in a
+sensitive snapshot, as described below.
+
+## Implemented portable lifecycle (EZVM-010)
+
+Clean prepared bases retain the EZVM-004 schema version 1 provenance and
+credential-free build contract. Schema version 2 derived/imported bases are
+content-addressed standalone snapshots with explicit `kind`,
+`sensitiveState: true` and `guestIdentityResetRequired: true`. They preserve
+state intentionally and are not implicitly selected by ordinary `create`.
+Each remains immutable beneath exactly one mutable instance overlay.
+
+Reset recreates an overlay against the instance's existing base. Fresh clone
+creates a new instance above that same base, excluding changes in the source
+overlay. Stateful clone flattens the stopped source into an independent derived
+base and creates the new instance above that snapshot. Thus resetting the source
+cannot change the clone's baseline, and a clone never depends on a mutable source
+disk. A snapshot baseline can already contain authentication; reset/fresh clone
+does not promise a credential-free environment when using it.
+
+Export publishes a new directory containing a standalone `disk.qcow2` and
+`manifest.json` together. Import validates external image structure before
+QEMU can traverse a backing reference, then copies and normalizes a valid
+standalone image into an immutable imported base and a new instance. Neither
+operation overwrites an existing destination or uploads data.
+
+New durable intent uses schema version 2 and `identityGeneration`, a random
+32-character lowercase hexadecimal nonce. Create/clone/import allocate a new
+generation; reset replaces it. Normal stop/restart and cold relocation preserve
+it. Complete schema version 1 intent remains readable with its original
+identity derivation. Copied guest READY files cannot satisfy a different
+destination's identity and live readiness checks.
+
+`portability check` validates every instance's stopped ownership, durable intent
+and one-level chain under the current root. It does not rewrite backing paths or
+discard uncertain process evidence. Complete stopped source/runtime copies keep
+their relative layout and rederive launch paths at the destination.
