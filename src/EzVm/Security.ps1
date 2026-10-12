@@ -38,32 +38,20 @@ function Assert-EzVmSafePath {
         }
     }
     # Walk ALL existing ancestors, including those above the selected root.
-    # Get-Item -Force sees dangling links and hidden files; Test-Path alone does not.
+    # Use the filesystem API rather than PowerShell provider objects: Windows
+    # PowerShell 5.1 can expose different item shapes for the same directory.
+    # GetAttributes still observes the reparse-point bit on the entry itself,
+    # including dangling links, while missing future path components are normal.
     $cursor = $full
     while (-not [string]::IsNullOrWhiteSpace($cursor)) {
         try {
-            $item = Get-Item -LiteralPath $cursor -Force -ErrorAction Stop
-            $attributesProperty = $item.PSObject.Properties['Attributes']
-            if ($null -ne $attributesProperty) {
-                if (([IO.FileAttributes]$attributesProperty.Value -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-                    throw "$Description traverses a reparse point at '$cursor'. Refusing junction/symlink redirection; restore a regular local layout."
-                }
-            }
-            elseif ($item -is [System.Management.Automation.PSDriveInfo]) {
-                # Windows PowerShell 5.1 can represent the drive root itself as
-                # PSDriveInfo rather than DirectoryInfo. Accept that provider
-                # shape only for the exact filesystem root; descendants must
-                # still expose filesystem attributes and remain fail-closed.
-                $pathRoot = [IO.Path]::GetPathRoot($cursor)
-                if (-not [string]::Equals($cursor, $pathRoot, [StringComparison]::OrdinalIgnoreCase)) {
-                    throw "$Description could not validate filesystem attributes at '$cursor'. Refusing an ambiguous ancestor."
-                }
-            }
-            else {
-                throw "$Description could not validate filesystem attributes at '$cursor'. Refusing an ambiguous ancestor."
+            $attributes = [IO.File]::GetAttributes($cursor)
+            if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "$Description traverses a reparse point at '$cursor'. Refusing junction/symlink redirection; restore a regular local layout."
             }
         }
-        catch [System.Management.Automation.ItemNotFoundException] { }
+        catch [IO.FileNotFoundException] { }
+        catch [IO.DirectoryNotFoundException] { }
         $parent = [IO.Path]::GetDirectoryName($cursor)
         if ($parent -ceq $cursor) { break }
         $cursor = $parent
