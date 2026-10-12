@@ -857,7 +857,12 @@ function Start-EzVmInstance {
                 throw "QEMU exited or changed identity before startup completed: $($identity.Reason)"
             }
             try {
-                $null = Invoke-EzVmRuntimeQmp -HostAddress $qmpHost -Port $qmpPort -Command 'query-status' -TimeoutMilliseconds 750 -QmpInvoker $QmpInvoker
+                $qmpStatus = Invoke-EzVmRuntimeQmp -HostAddress $qmpHost -Port $qmpPort -Command 'query-status' -TimeoutMilliseconds 750 -QmpInvoker $QmpInvoker
+                $qmpRunning = Get-EzVmRuntimeProperty $qmpStatus 'running'
+                $qmpState = [string](Get-EzVmRuntimeProperty $qmpStatus 'status')
+                if ($qmpRunning -ne $true -or $qmpState -cne 'running') {
+                    throw "QMP is reachable but reports status '$qmpState' (running=$qmpRunning)."
+                }
                 $runtime.state = 'RUNNING'
                 $runtime.lastObservedAt = [DateTime]::UtcNow.ToString('o')
                 Write-EzVmRuntimeStateFile -Root $Root -InstanceName $InstanceName -Runtime $runtime
