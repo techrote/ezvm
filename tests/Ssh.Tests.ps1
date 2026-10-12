@@ -474,6 +474,7 @@ Add-EzVmTest -Name 'SSH: readiness grants slow TCG SSH probes a bounded per-atte
     $root = New-EzVmCheckoutFixture -Prefix 'ssh slow readiness'
     try {
         $paths = Get-EzVmSshPaths -Root $root -InstanceName 'ssh-agent'
+        [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($paths.AccessState))
         $intent = New-EzVmSshTestIntent
         $access = [pscustomobject][ordered]@{
             schemaVersion = 1
