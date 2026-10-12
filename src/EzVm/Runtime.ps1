@@ -57,6 +57,8 @@ function Get-EzVmInstanceRuntimePaths {
         Directory = $storage.Directory
         Disk = $storage.Disk
         Intent = Join-Path $storage.Directory 'instance.json'
+        Operation = Join-Path $storage.Directory 'lifecycle-operation.json'
+        Origin = Join-Path $storage.Directory 'origin.json'
         Runtime = Join-Path $storage.Directory 'runtime.json'
         FirmwareVariables = Join-Path $storage.Directory 'uefi-vars.fd'
         Logs = Join-Path $storage.Directory 'logs'
@@ -75,11 +77,17 @@ function Assert-EzVmInstanceIntent {
         }
     }
 
-    Assert-EzVmRuntimeFields -Value $Intent -Expected @(
+    $schema = Get-EzVmRuntimeProperty -Object $Intent -Name 'schemaVersion'
+    Assert-EzVmRuntimeInteger -Value $schema -Description 'Instance intent schemaVersion' -Minimum 1 -Maximum 2
+    $fields = @(
         'schemaVersion', 'name', 'baseId', 'profile', 'cpus', 'memoryMiB',
         'sshPort', 'createdAt', 'provisioningProfile', 'provisioningVersion'
-    ) -Description 'Instance intent'
-    Assert-EzVmRuntimeInteger -Value $Intent.schemaVersion -Description 'Instance intent schemaVersion' -Minimum 1 -Maximum 1
+    )
+    if ($schema -eq 2) { $fields += 'identityGeneration' }
+    Assert-EzVmRuntimeFields -Value $Intent -Expected $fields -Description 'Instance intent'
+    if ($schema -eq 2 -and ($Intent.identityGeneration -isnot [string] -or $Intent.identityGeneration -cnotmatch '^[a-f0-9]{32}$')) {
+        throw 'Instance intent identityGeneration must be 32 lowercase hexadecimal characters.'
+    }
     Assert-EzVmStorageInstanceName -Name ([string]$Intent.name)
     if ($Intent.name -cne $ExpectedName) {
         throw "Instance intent name '$($Intent.name)' does not match managed instance '$ExpectedName'."
@@ -144,7 +152,7 @@ function New-EzVmInstanceIntent {
     }
 
     $intent = [pscustomobject][ordered]@{
-        schemaVersion = 1
+        schemaVersion = 2
         name = $InstanceName
         baseId = $BaseId
         profile = $Profile
@@ -154,9 +162,10 @@ function New-EzVmInstanceIntent {
         createdAt = [DateTime]::UtcNow.ToString('o')
         provisioningProfile = $ProvisioningProfile
         provisioningVersion = $ProvisioningVersion
+        identityGeneration = [Guid]::NewGuid().ToString('N')
     }
     Assert-EzVmInstanceIntent -Intent $intent -ExpectedName $InstanceName
-    Write-EzVmJson -Path $runtimePaths.Intent -Value $intent -SchemaVersion 1
+    Write-EzVmJson -Path $runtimePaths.Intent -Value $intent -SchemaVersion 2
     return $intent
 }
 
@@ -173,7 +182,10 @@ function Get-EzVmInstanceIntent {
         throw "Instance '$InstanceName' has no durable instance.json. Create/reconcile the instance before starting it."
     }
     $null = Assert-EzVmStorageManagedPath -Path $runtimePaths.Intent -ContainmentRoot $paths.Instances -SafetyRoot $paths.Root -Description 'Instance intent' -RequireFile
-    $intent = Read-EzVmJson -Path $runtimePaths.Intent -SchemaVersion 1
+    # Both complete schema versions remain readable; reads never rotate identity.
+    $text = [IO.File]::ReadAllText($runtimePaths.Intent, (New-Object Text.UTF8Encoding($false, $true)))
+    try { $intent = ConvertFrom-EzVmJsonText -Text $text -SchemaVersion 2 -Description 'Instance intent' }
+    catch { $intent = ConvertFrom-EzVmJsonText -Text $text -SchemaVersion 1 -Description 'Instance intent' }
     Assert-EzVmInstanceIntent -Intent $intent -ExpectedName $InstanceName
     return $intent
 }
@@ -465,6 +477,9 @@ function Get-EzVmInstanceStatus {
     if (-not (Test-Path -LiteralPath $runtimePaths.Intent -PathType Leaf)) {
         return New-EzVmRuntimeStatusResult -InstanceName $InstanceName -State 'ABSENT' -Reason 'No durable instance intent exists.'
     }
+    if (Test-Path -LiteralPath $runtimePaths.Operation) {
+        return New-EzVmRuntimeStatusResult -InstanceName $InstanceName -State 'UNKNOWN' -Reason ("An interrupted lifecycle operation requires recovery. Preserve and inspect '$($runtimePaths.Operation)' and its recorded recovery artifacts before starting or changing storage.")
+    }
     try { $null = Get-EzVmInstanceIntent -Root $Root -InstanceName $InstanceName }
     catch {
         return New-EzVmRuntimeStatusResult -InstanceName $InstanceName -State 'UNKNOWN' -Reason ("Durable instance intent is invalid: " + $_.Exception.Message)
@@ -552,11 +567,13 @@ function Enter-EzVmInstanceLifecycleLock {
 
     Assert-EzVmStorageInstanceName -Name $InstanceName
     $paths = Get-EzVmPaths -Root $Root
+    $null = Assert-EzVmStorageManagedPath -Path $paths.Locks -ContainmentRoot $paths.Runtime -SafetyRoot $paths.Root -Description 'Lifecycle lock directory'
     [void][IO.Directory]::CreateDirectory($paths.Locks)
     $null = Assert-EzVmStorageManagedPath -Path $paths.Locks -ContainmentRoot $paths.Runtime -SafetyRoot $paths.Root -Description 'Lifecycle lock directory' -RequireDirectory
     $lockPath = Join-Path $paths.Locks ('instance-' + $InstanceName + '.lock')
     $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMilliseconds)
     while ($true) {
+        $null = Assert-EzVmStorageManagedPath -Path $lockPath -ContainmentRoot $paths.Locks -SafetyRoot $paths.Root -Description 'Instance lifecycle lock'
         try {
             $stream = New-Object IO.FileStream($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
             $payload = [Text.Encoding]::UTF8.GetBytes(('pid=' + $PID + ';acquiredAt=' + [DateTime]::UtcNow.ToString('o')))
@@ -578,11 +595,13 @@ function Enter-EzVmQmpAllocationLock {
     param([string]$Root, [ValidateRange(1, 30000)][int]$TimeoutMilliseconds = 5000)
 
     $paths = Get-EzVmPaths -Root $Root
+    $null = Assert-EzVmStorageManagedPath -Path $paths.Locks -ContainmentRoot $paths.Runtime -SafetyRoot $paths.Root -Description 'QMP allocation lock directory'
     [void][IO.Directory]::CreateDirectory($paths.Locks)
     $null = Assert-EzVmStorageManagedPath -Path $paths.Locks -ContainmentRoot $paths.Runtime -SafetyRoot $paths.Root -Description 'Lifecycle lock directory' -RequireDirectory
     $lockPath = Join-Path $paths.Locks 'qmp-port-allocation.lock'
     $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMilliseconds)
     while ($true) {
+        $null = Assert-EzVmStorageManagedPath -Path $lockPath -ContainmentRoot $paths.Locks -SafetyRoot $paths.Root -Description 'QMP allocation lock'
         try {
             return New-Object IO.FileStream($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
         }
@@ -699,7 +718,12 @@ function New-EzVmRuntimeQemuArguments {
     if ($SeedHostPort -gt 0) {
         $seedUrl = 'http://' + $SeedGuestAddress + ':' + $SeedGuestPort + '/'
         $arguments.Add('-smbios')
-        $arguments.Add('type=1,serial=ds=nocloud;s=' + $seedUrl)
+        $instanceIdOption = if ($Intent.schemaVersion -eq 2) { 'i=' + (Get-EzVmGuestCloudInstanceId -Intent $Intent) + ';' } else { '' }
+        $arguments.Add('type=1,serial=ds=nocloud;' + $instanceIdOption + 's=' + $seedUrl)
+    }
+    if ($Intent.schemaVersion -eq 2) {
+        $arguments.Add('-uuid')
+        $arguments.Add((Get-EzVmGuestMachineUuid -Intent $Intent))
     }
     if ($Accelerator -ceq 'tcg') {
         $arguments.Add('-cpu')
@@ -707,7 +731,9 @@ function New-EzVmRuntimeQemuArguments {
     }
     $arguments.Add('-no-user-config')
     $arguments.Add('-nodefaults')
-    $arguments.Add('-no-reboot')
+    # Generation-aware guests perform one identity initialization reboot without
+    # releasing QEMU's storage ownership. Older instances keep their old argv policy.
+    if ($Intent.schemaVersion -eq 1) { $arguments.Add('-no-reboot') }
     return $arguments.ToArray()
 }
 
@@ -851,7 +877,8 @@ function Start-EzVmInstance {
         [ValidateRange(0, 65535)][int]$SshPort = 0,
         [ValidateRange(0, 65535)][int]$SeedHostPort = 0,
         [string]$SeedGuestAddress = '10.0.2.100',
-        [ValidateRange(1, 65535)][int]$SeedGuestPort = 8000
+        [ValidateRange(1, 65535)][int]$SeedGuestPort = 8000,
+        [AllowNull()][object]$ExpectedIntent = $null
     )
 
     Assert-EzVmStorageInstanceName -Name $InstanceName
@@ -861,6 +888,12 @@ function Start-EzVmInstance {
     $runtimePublished = $false
     try {
         $intent = Get-EzVmInstanceIntent -Root $Root -InstanceName $InstanceName
+        if ($null -ne $ExpectedIntent) {
+            Assert-EzVmInstanceIntent -Intent $ExpectedIntent -ExpectedName $InstanceName
+            if (($intent | ConvertTo-Json -Depth 8 -Compress) -cne ($ExpectedIntent | ConvertTo-Json -Depth 8 -Compress)) {
+                throw 'Instance intent changed while preparing the launch seed. Retry start with the current identity; no guest was launched.'
+            }
+        }
         $status = Get-EzVmInstanceStatus -Root $Root -InstanceName $InstanceName -ProcessProvider $ProcessProvider
         if (@('CREATED', 'STOPPED') -cnotcontains $status.state) {
             throw "Instance '$InstanceName' cannot start from lifecycle state '$($status.state)': $($status.reason)"
@@ -944,6 +977,7 @@ function Start-EzVmInstance {
                     name = $InstanceName
                     state = 'RUNNING'
                     pid = [int]$runtime.pid
+                    launchId = [string]$runtime.launchId
                     accelerator = $Accelerator
                     qmpHost = $qmpHost
                     qmpPort = $qmpPort

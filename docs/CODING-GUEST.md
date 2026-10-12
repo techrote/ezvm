@@ -113,15 +113,25 @@ apply the same explicit version and acquisition policy to that dependency.
 | Operation | Guest files, installed agents and authentication |
 | --- | --- |
 | Normal stop and restart | Preserved in the same overlay; an external provider can still expire or revoke a login. |
-| Reset to the prepared base | Overlay state is discarded, including installed agents and guest login state. Reinstall and reauthenticate. |
-| Intentional stateful clone/export | Can preserve source, software and credentials from the guest. Treat the resulting copy as sensitive. |
+| Reset to a clean prepared base | Later overlay state is discarded, including installed agents and guest login state. Reinstall and reauthenticate. |
+| Reset to a derived/imported snapshot base | Restores that snapshot's content, including any authentication saved in it; later overlay changes are discarded. |
+| Fresh clone | Uses the source's existing base without later overlay changes. A snapshot base can already contain software and authentication. |
+| Intentional stateful clone/export/import | Preserves guest disk state independently of the source overlay and can include credentials. Treat the resulting copies and snapshot bases as sensitive. |
 | Copy the complete ezvm folder after cleanly stopping every VM | Preserves included overlays and optional bundle SSH identity; destination runtime state is revalidated. |
 
-`stop` and `start` are available now. Public reset/clone/export/import commands
-are planned under EZVM-010; these persistence rules define their required
-behavior, not additional commands available in this change. Never copy a live
-VM disk as though it were cleanly stopped. Do not share an authenticated overlay
-or export without deliberately deciding what credentials it contains.
+The reset, explicit fresh/stateful clone, standalone export/import and
+`portability check` commands are available with EZVM-010. See
+[Reset, clone and move coding environments](PORTABILITY.md) for exact commands
+and recovery behavior. Never copy a live VM disk as though it were cleanly
+stopped. Do not share an authenticated overlay, immutable snapshot or export
+without deliberately deciding what credentials it contains.
+
+A stateful copy receives a new ezvm cloud/machine/SSH host identity and must
+repeat the normal live coding-ready proof. Guest project files, installed tools
+and outgoing agent authentication remain part of the copied data. These identity
+changes are not an agent logout or a credential scrub. New instances and resets
+record a new `identityGeneration` in version 2 durable intent; ordinary
+stop/restart and complete cold relocation preserve it.
 
 ## Readiness and diagnosis
 

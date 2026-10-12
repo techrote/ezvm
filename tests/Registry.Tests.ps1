@@ -217,9 +217,9 @@ Add-EzVmTest -Name 'Registry: reconstruction survives root relocation and fails 
         Assert-EzVmEqual -Actual $rebuilt[0].sshPort -Expected 22000
 
         $intentPath = (Get-EzVmInstanceRuntimePaths -Root $relocated -InstanceName 'portable-agent').Intent
-        $intent = Read-EzVmJson -Path $intentPath -SchemaVersion 1
+        $intent = Read-EzVmJson -Path $intentPath -SchemaVersion 2
         $intent.name = 'other-agent'
-        Write-EzVmJson -Path $intentPath -Value $intent -SchemaVersion 1
+        Write-EzVmJson -Path $intentPath -Value $intent -SchemaVersion 2
         Assert-EzVmThrows -ScriptBlock { Get-EzVmInstanceRegistry -Root $relocated } -MessagePattern 'does not match managed instance' | Out-Null
     }
     finally {
@@ -234,9 +234,9 @@ Add-EzVmTest -Name 'Registry: duplicate durable SSH reservations fail reconstruc
         $null = New-EzVmManagedInstance -Root $fixture.Root -InstanceName 'dup-one' -BaseId $fixture.BaseId -Profile light -QemuImgRunner $fixture.StorageRunner -PortProbe { param($port) return $true }
         $null = New-EzVmManagedInstance -Root $fixture.Root -InstanceName 'dup-two' -BaseId $fixture.BaseId -Profile light -QemuImgRunner $fixture.StorageRunner -PortProbe { param($port) return $true }
         $secondPath = (Get-EzVmInstanceRuntimePaths -Root $fixture.Root -InstanceName 'dup-two').Intent
-        $second = Read-EzVmJson -Path $secondPath -SchemaVersion 1
+        $second = Read-EzVmJson -Path $secondPath -SchemaVersion 2
         $second.sshPort = 22000
-        Write-EzVmJson -Path $secondPath -Value $second -SchemaVersion 1
+        Write-EzVmJson -Path $secondPath -Value $second -SchemaVersion 2
         Assert-EzVmThrows -ScriptBlock { Get-EzVmInstanceRegistry -Root $fixture.Root } -MessagePattern 'both reserve SSH port 22000' | Out-Null
     }
     finally { Remove-EzVmRegistryFixture $fixture }

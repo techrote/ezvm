@@ -15,10 +15,16 @@ Primary references:
 Exactly one backing level is supported:
 
 ~~~text
-immutable prepared base <- mutable instance overlay
+immutable managed base <- mutable instance overlay
 ~~~
 
 An instance overlay must never be used as the backing file for another managed instance overlay.
+
+An immutable managed base is either a clean prepared image or an explicitly
+derived/imported standalone snapshot. Snapshots preserve guest content and are
+labelled sensitive; they do not inherit the clean prepared-image credential
+claim. Both base kinds obey the same content identity, read-only and one-level
+backing rules.
 
 ## Base immutability
 
@@ -91,9 +97,12 @@ A failed reset must leave either the original usable overlay or a clearly recove
 
 Two clone meanings must remain distinct.
 
-### Thin clone from clean base
+### Fresh clone from the source's existing base
 
-Create a new empty overlay against the same prepared base. This creates a fresh environment, not a copy of the source instance state.
+Create a new empty overlay against the source's same immutable base. Source
+overlay changes are excluded. When that base is a stateful snapshot, its saved
+contents are still inherited; fresh clone does not silently switch to an older
+clean prepared base.
 
 ### Stateful clone
 
@@ -109,11 +118,32 @@ A stopped instance may be exported to a standalone qcow2 image using qemu-img co
 
 An export manifest records source instance, base ID, creation time, qemu-img version and digest.
 
+EZVM-010 publishes a new export directory containing `disk.qcow2` and
+`manifest.json`. The directory rename is the publication point, so consumers do
+not receive a final image without its manifest. Existing destinations and
+destinations inside managed runtime state are refused. The manifest includes
+the source's full durable intent, overlay and base-manifest hashes, base kind,
+QEMU provenance, virtual size and resulting image digest. It explicitly marks
+the content as potentially sensitive.
+
 ## Import semantics
 
 Import never trusts a filename alone.
 
 Validate format, backing status, size and manifest. A standalone imported image may need normalization into ezvm's managed layout. It must not introduce an unexpected external backing path.
+
+Import inspects a bounded QCOW2 header before invoking QEMU on the image. It
+refuses backing files, external data files, encryption, internal snapshots,
+unsupported feature flags/extensions and malformed/truncated metadata. The
+caller input is exclusively opened on Windows, copied to private staging and
+hashed against that copy. QEMU operates on the staged copy. A supplied export
+manifest must match the image digest and virtual size. Structurally valid
+standalone images may be imported without claiming guest boot/profile support.
+
+Accepted imports are normalized into standalone read-only bases with schema
+version 2 provenance and a fresh instance overlay. The source is preserved.
+Import creates a new instance; it does not replace an existing instance or open
+a source from inside managed runtime state as an unrelated external image.
 
 ## Relocation
 
@@ -220,3 +250,42 @@ instance.
 The recoverable durable authority remains `instance.json` plus the one-level
 overlay. Registry enumeration does not infer a valid instance from a stray disk
 or directory that lacks valid intent metadata.
+
+## Public reset, snapshots and relocation (EZVM-010)
+
+The public reset/clone/export APIs obtain proven stopped ownership under the
+instance lifecycle lock. Publication of a new named instance also holds the
+bundle allocation lock. Running, transitional, stale or unknown ownership never
+becomes offline safety merely because an operation would be convenient.
+
+Reset preserves the selected base and SSH/resource reservation while replacing
+the overlay and identity generation. Readiness and process evidence are
+reconciled as part of that transaction. Failure must restore the original disk
+and durable intent together, or leave an explicit recovery artifact rather than
+an apparently completed half-reset. Prepared-base bytes are never rewritten.
+
+A `lifecycle-operation.json` journal blocks startup before the first reset disk
+rename and remains until the new disk, regenerated intent and archived launch state
+have committed. It records the original/target intent and relative recovery
+artifact names. A failed transaction requires explicit recovery; deleting the
+journal alone or retrying reset blindly is not recovery. Successful reset
+reports any remaining disk/archive artifacts whose cleanup did not finish.
+
+Derived/imported snapshot bases have content-addressed IDs, read-only images
+and schema version 2 manifests. Their manifests record `kind`,
+`sensitiveState`, `guestIdentityResetRequired`, source provenance and the QEMU
+identity. Reusing already validated identical bytes never overwrites their
+existing provenance. A new clone/import records its own operation provenance in
+the destination's `origin.json`.
+
+Reset always returns to the chosen base. It can therefore restore credentials
+saved inside a sensitive snapshot. Fresh clone likewise excludes only later
+overlay changes; it retains the selected baseline. These operations are neither
+secure erasure nor a vendor logout.
+
+`portability check` validates all named instances and complete backing chains
+under the current root after every VM has stopped. Normal cold relocation copies
+the complete root and requires no rebase. Old absolute paths in known stopped
+runtime metadata do not become durable configuration; a new launch derives
+executable, firmware and log paths from the current root. Unknown/stale active
+ownership remains a refusal, and the checker performs no automatic repair.

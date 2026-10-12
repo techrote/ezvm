@@ -263,3 +263,32 @@ These checks describe readiness at the successful launch probe. Agent activity
 can subsequently change the guest; READY is not continuous enforcement or
 remote attestation against a guest controlled by root. Each later start requires
 the authenticated live checks again.
+
+## Copied guest identity and trust (EZVM-010)
+
+New/reset instances use an explicit durable identity generation. The host binds
+the generation into cloud-init/DMI identity, and the guest initializes a distinct
+machine ID and Ed25519 host key before READY. The first initialization performs
+one guest reboot inside the same total launch-readiness budget. A normal restart
+or complete cold relocation preserves the adopted key and machine identity.
+
+A copied snapshot can briefly expose the source SSH key and source READY file
+while its destination initialization is pending. The schema version 2 readiness
+path first checks expected DMI identity, the destination generation marker and
+adoption by the running boot. Only the exact bounded pending protocol is
+retryable. It discards unpromoted candidate trust during that transition, so the
+source's transient key cannot prevent learning the destination key. Malformed
+proofs still fail closed. Existing managed trust is retained until the final
+normal authenticated identity, cloud-init, coding marker and live checks pass.
+
+Publishing PROVISIONING or READY also holds the instance lifecycle lock and
+rechecks the exact durable intent, original launch ID and positively reconciled
+RUNNING process. A late SSH result from a stopped, reset or superseded launch
+cannot replace current access or managed trust. Guest waiting holds no lifecycle
+lock, so stop remains available; final publication consumes the original deadline.
+
+Destination provisioning replaces the managed inbound
+`/home/coder/.ssh/authorized_keys` with the current controller public key.
+Outgoing SSH identities/known-hosts and vendor-agent authentication remain guest
+data and can be preserved in a stateful clone or export. No controller private
+key enters the guest seed, snapshot provenance or readiness logs.

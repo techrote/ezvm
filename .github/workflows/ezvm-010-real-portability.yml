@@ -1,0 +1,40 @@
+name: EZVM-010 real portability qualification
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ezvm-010-portability
+    paths:
+      - .github/workflows/ezvm-010-real-portability.yml
+      - scripts/Invoke-EzVm010RealPortability.ps1
+      - src/EzVm/**
+      - guest/**
+      - manifests/qemu-windows.json
+      - manifests/ubuntu-noble-amd64.json
+
+concurrency:
+  group: ezvm-010-real-portability-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  real-portability:
+    name: Real QCOW2 and Ubuntu portability (Windows TCG; WHPX SKIP)
+    runs-on: windows-2022
+    timeout-minutes: 150
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Qualify real reset, independent copies, import and cold relocation
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\scripts\Invoke-EzVm010RealPortability.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

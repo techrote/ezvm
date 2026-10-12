@@ -53,9 +53,10 @@ ezvm exec <name> -- <command>
 ezvm copy ...
 
 ezvm reset <name>
-ezvm clone <source> <destination>
-ezvm export <name> <path>
-ezvm import <path> <name>
+ezvm clone <source> <destination> -Mode fresh|stateful
+ezvm export <name> <new-directory>
+ezvm import <name> <image-path>
+ezvm portability check
 ezvm destroy <name>
 ~~~
 
@@ -126,11 +127,11 @@ Later instance and command implementations extend the precedence to:
 
 ## instance.json
 
-Durable instance intent includes fields equivalent to:
+New durable instance intent uses schema version 2:
 
 ~~~json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "name": "example",
   "baseId": "base-<sha256>",
   "profile": "normal",
@@ -139,11 +140,16 @@ Durable instance intent includes fields equivalent to:
   "sshPort": 22001,
   "createdAt": "...",
   "provisioningProfile": "coding-default",
-  "provisioningVersion": 1
+  "provisioningVersion": 1,
+  "identityGeneration": "<32 lowercase hex>"
 }
 ~~~
 
 Do not persist absolute paths that can be derived from the relocated ezvm root.
+
+Complete schema version 1 intent remains readable using its original identity
+derivation. New create/clone/import and explicit reset use version 2; ordinary
+reads or starts do not silently rewrite existing version 1 intent.
 
 ## runtime.json
 
@@ -455,13 +461,13 @@ remains durable provenance. If `-BaseId` is omitted, create selects the valid
 prepared base with the newest manifest `builtAt` timestamp. Explicit base IDs
 are validated before use.
 
-The `instance.json` schema remains version 1 during the pre-v0.1 development
-line. EZVM-008 introduced the complete durable intent, and EZVM-009 changes
-the default provisioning identity to `coding-default`/`1`:
+EZVM-008 introduced complete version 1 durable intent, and EZVM-009 changed
+the default provisioning identity to `coding-default`/`1`. EZVM-010 creates
+version 2 intent with an explicit identity generation:
 
 ~~~json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "name": "example",
   "baseId": "base-<sha256>",
   "profile": "normal",
@@ -470,7 +476,8 @@ the default provisioning identity to `coding-default`/`1`:
   "sshPort": 22001,
   "createdAt": "<ISO timestamp>",
   "provisioningProfile": "coding-default",
-  "provisioningVersion": 1
+  "provisioningVersion": 1,
+  "identityGeneration": "<32 lowercase hex>"
 }
 ~~~
 
@@ -532,3 +539,56 @@ Future version support requires reviewed profile source, schema/resolver and
 readiness tests plus an explicit new-instance or migration path. Existing
 immutable bases and old overlays must not be modified to make an unsupported
 profile appear current.
+
+## Public portability commands and state (EZVM-010)
+
+The implemented command additions are:
+
+~~~text
+ezvm reset <name>
+ezvm clone <source> <destination> -Mode fresh|stateful
+ezvm export <name> <new-directory>
+ezvm import <name> <image-path> [-ManifestPath <manifest-path>] [-Profile <profile>] [-Cpus <n>] [-MemoryMiB <n>]
+ezvm portability check
+~~~
+
+Clone mode is mandatory; omitted/unknown/duplicate options and extra arguments
+fail as usage errors. Reset and both clone modes require a positively stopped
+source. Existing clone/import destinations and existing export directories are
+refused. Export publishes an image/manifest directory and requires its parent
+directory to exist. Import accepts an explicit manifest or checks adjacent
+`manifest.json` when present; an invalid sidecar is an error, never silently
+ignored. It does not overwrite an existing named instance.
+
+The module interfaces are:
+
+| Function | Essential parameters and result |
+| --- | --- |
+| `Reset-EzVmManagedInstance` | `-InstanceName`; returns name, CREATED state, base ID, new identity generation, baseline kind, sensitivity and any recovery artifact |
+| `Copy-EzVmManagedInstance` | `-SourceInstanceName -DestinationInstanceName -Mode fresh\|stateful`; returns newly allocated instance metadata and copy provenance |
+| `Export-EzVmManagedInstance` | `-InstanceName -DestinationDirectory`; returns export directory, image path, manifest path and manifest |
+| `Import-EzVmManagedInstance` | `-InstanceName -ImagePath`, optional `-ManifestPath`, resource options; returns new instance metadata and import context |
+| `Test-EzVmPortableBundle` | `-Root`; returns Valid, InstanceCount, current Root and each instance's name/base/state/chain depth; throws on a failed check |
+
+All accept the current `-Root`; derived absolute paths are runtime results, not
+durable identity. Public `-Json` uses the existing single command-result envelope
+and never mixes human progress into the success stream.
+
+New create/clone/import allocate `identityGeneration`, a 32-character lowercase
+hexadecimal nonce, in version 2 intent. Reset preserves name, base and resource
+reservation but creates a new generation. The new cloud identity incorporates
+this generation; normal stop/restart and cold relocation preserve it. Guest
+identity and access documents retain their version 2 schemas because they bind
+the resulting cloud instance ID. Legacy complete version 1 intent keeps the
+prior name/base/creation-time identity derivation until an explicit reset.
+
+Clone/import record operation provenance separately in `origin.json`, including
+the source identity and relevant image/base/export provenance. This record
+allows a byte-identical immutable base to be reused without overwriting that
+base's original manifest or losing the new instance's derivation history.
+
+`profile` remains the resource profile. A `custom` profile requires explicit
+CPU and RAM values; clone preserves the resolved source resources. Prepared
+base selection without `-BaseId` excludes schema version 2 snapshot bases,
+which can contain credentials. See [the portability guide](../PORTABILITY.md)
+for reset/fresh semantics on a sensitive snapshot baseline.
