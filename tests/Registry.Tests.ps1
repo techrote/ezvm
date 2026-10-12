@@ -208,8 +208,9 @@ Add-EzVmTest -Name 'Registry: reconstruction survives root relocation and fails 
     try {
         $null = New-EzVmManagedInstance -Root $fixture.Root -InstanceName 'portable-agent' -BaseId $fixture.BaseId -Profile normal -QemuImgRunner $fixture.StorageRunner -PortProbe { param($port) return $true }
 
-        $relocated = Join-Path ([IO.Path]::GetTempPath()) ('ezvm registry relocated ' + [Guid]::NewGuid().ToString('N'))
-        Copy-Item -LiteralPath $fixture.Root -Destination $relocated -Recurse
+        $relocated = New-EzVmTestDirectory -Prefix 'registry relocated'
+        Remove-Item -LiteralPath $relocated -Recurse -Force
+        Copy-Item -LiteralPath $fixture.Root -Destination $relocated -Recurse -Force
         $rebuilt = @(Get-EzVmInstanceRegistry -Root $relocated)
         Assert-EzVmEqual -Actual $rebuilt.Count -Expected 1
         Assert-EzVmEqual -Actual $rebuilt[0].name -Expected 'portable-agent'
@@ -225,6 +226,20 @@ Add-EzVmTest -Name 'Registry: reconstruction survives root relocation and fails 
         if ($null -ne $relocated) { Remove-EzVmTestDirectory -Path $relocated }
         Remove-EzVmRegistryFixture $fixture
     }
+}
+
+Add-EzVmTest -Name 'Registry: duplicate durable SSH reservations fail reconstruction instead of colliding silently' -ScriptBlock {
+    $fixture = New-EzVmRegistryFixture
+    try {
+        $null = New-EzVmManagedInstance -Root $fixture.Root -InstanceName 'dup-one' -BaseId $fixture.BaseId -Profile light -QemuImgRunner $fixture.StorageRunner -PortProbe { param($port) return $true }
+        $null = New-EzVmManagedInstance -Root $fixture.Root -InstanceName 'dup-two' -BaseId $fixture.BaseId -Profile light -QemuImgRunner $fixture.StorageRunner -PortProbe { param($port) return $true }
+        $secondPath = (Get-EzVmInstanceRuntimePaths -Root $fixture.Root -InstanceName 'dup-two').Intent
+        $second = Read-EzVmJson -Path $secondPath -SchemaVersion 1
+        $second.sshPort = 22000
+        Write-EzVmJson -Path $secondPath -Value $second -SchemaVersion 1
+        Assert-EzVmThrows -ScriptBlock { Get-EzVmInstanceRegistry -Root $fixture.Root } -MessagePattern 'both reserve SSH port 22000' | Out-Null
+    }
+    finally { Remove-EzVmRegistryFixture $fixture }
 }
 
 Add-EzVmTest -Name 'Registry: legacy EZVM-006 intent is refused with explicit migration guidance' -ScriptBlock {
