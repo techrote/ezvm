@@ -182,3 +182,26 @@ guest and image checks pass. Publication uses a separate
 The base ID is content-addressed by the complete resulting QCOW2 SHA-256, so an ID
 is never intentionally reused for different content. A byte-identical rebuild may
 reuse an already validated authoritative base without replacing it.
+## Implemented instance storage layer (EZVM-005)
+
+EZVM-005 implements the reusable QCOW2 storage boundary used by later instance
+and lifecycle issues. A managed instance disk has exactly one supported chain:
+
+~~~text
+runtime/instances/<name>/disk.qcow2
+        |
+        v
+runtime/bases/<base-id>/base.qcow2
+~~~
+
+The overlay stores a relative backing reference calculated from the instance
+directory to the authoritative prepared base. Durable authority is the expected
+content-addressed base ID/fingerprint supplied by instance state; absolute host
+paths are regenerated from the current ezvm root and are not persistent storage
+identity.
+
+Storage mutation APIs require explicit positive lifecycle evidence
+(`proven-safe`). Missing, running, transitional or unknown state fails closed.
+This interface is intentionally separate from EZVM-006, which owns the complete
+QEMU process/state machine.
+
