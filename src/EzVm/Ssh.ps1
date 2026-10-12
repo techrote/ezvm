@@ -453,7 +453,10 @@ function New-EzVmSshCommandArguments {
         [switch]$AcceptNewHostKey
     )
 
-    if ($User -cnotmatch '^[a-z_][a-z0-9_-]{0,31}
+    if ($User -cnotmatch '^[a-z_][a-z0-9_-]{0,31}$') { throw "SSH user '$User' is invalid." }
+    $strictHostKeyMode = if ($AcceptNewHostKey) { 'accept-new' } else { 'yes' }
+    $arguments = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($pair in @(
         @('-p', [string]$Port),
         @('-i', [IO.Path]::GetFullPath($PrivateKey)),
         @('-o', 'IdentitiesOnly=yes'),
