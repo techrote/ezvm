@@ -68,6 +68,8 @@ Add-EzVmTest -Name 'SSH: command argv uses scoped strict host-key checking and p
         $args = New-EzVmSshCommandArguments -PrivateKey $paths.ControllerPrivateKey -KnownHosts $paths.InstanceKnownHosts -Port 22001 -Batch -RemoteCommand @('printf', 'a b', "x'y", '')
         Assert-EzVmTrue -Condition ($args -ccontains 'StrictHostKeyChecking=yes')
         Assert-EzVmTrue -Condition ($args -ccontains 'UpdateHostKeys=no')
+        Assert-EzVmTrue -Condition ($args -ccontains 'HostKeyAlgorithms=ssh-ed25519')
+        Assert-EzVmTrue -Condition ($args -ccontains 'HashKnownHosts=no')
         Assert-EzVmTrue -Condition ($args -notcontains 'StrictHostKeyChecking=no')
         Assert-EzVmTrue -Condition ($args -ccontains ('UserKnownHostsFile=' + $paths.InstanceKnownHosts))
         Assert-EzVmTrue -Condition ($args -ccontains 'BatchMode=yes')
@@ -78,6 +80,22 @@ Add-EzVmTest -Name 'SSH: command argv uses scoped strict host-key checking and p
         Assert-EzVmTrue -Condition ($remote -match "'a b'")
         Assert-EzVmTrue -Condition ($remote.Contains($quotedSingle)) -Message 'Single quotes must be encoded without losing the argv boundary.'
         Assert-EzVmTrue -Condition ($remote.EndsWith("''", [StringComparison]::Ordinal))
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'SSH: launch-local candidate may accept a new key without weakening managed trust' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'ssh candidate argv'
+    try {
+        $paths = Get-EzVmSshPaths -Root $root -InstanceName 'ssh-agent'
+        $candidate = Join-Path $paths.KnownHostsDirectory '.candidate'
+        $args = New-EzVmSshCommandArguments -PrivateKey $paths.ControllerPrivateKey -KnownHosts $candidate -Port 22009 -Batch -AcceptNewHostKey -RemoteCommand @('true')
+        Assert-EzVmTrue -Condition ($args -ccontains 'StrictHostKeyChecking=accept-new')
+        Assert-EzVmTrue -Condition ($args -notcontains 'StrictHostKeyChecking=no')
+        Assert-EzVmTrue -Condition ($args -ccontains 'UpdateHostKeys=no')
+        Assert-EzVmTrue -Condition ($args -ccontains 'HostKeyAlgorithms=ssh-ed25519')
+        Assert-EzVmTrue -Condition ($args -ccontains 'HashKnownHosts=no')
+        Assert-EzVmTrue -Condition ($args -ccontains ('UserKnownHostsFile=' + [IO.Path]::GetFullPath($candidate)))
     }
     finally { Remove-EzVmTestDirectory -Path $root }
 }
@@ -107,6 +125,65 @@ Add-EzVmTest -Name 'SSH: known-hosts state is bundle-scoped and one file per man
         Assert-EzVmTrue -Condition ($paths.InstanceKnownHosts.StartsWith($runtime.Keys, [StringComparison]::OrdinalIgnoreCase))
         Assert-EzVmTrue -Condition ($paths.InstanceKnownHosts -match 'known-hosts[\\/]+agent-one\.known_hosts$')
         Assert-EzVmTrue -Condition ($paths.ControllerPrivateKey.StartsWith($runtime.Keys, [StringComparison]::OrdinalIgnoreCase))
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'SSH: readiness bootstraps trust through ssh accept-new only in the launch-local candidate' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'ssh accept new readiness'
+    try {
+        $paths = Get-EzVmSshPaths -Root $root -InstanceName 'ssh-agent'
+        [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($paths.AccessState))
+        $intent = New-EzVmSshTestIntent
+        $access = [pscustomobject][ordered]@{
+            schemaVersion = 1
+            instanceName = 'ssh-agent'
+            launchId = ('d' * 32)
+            sshHost = '127.0.0.1'
+            sshPort = 22079
+            sshUser = 'coder'
+            state = 'PROVISIONING'
+            cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
+            profile = 'normal'
+            readyAt = ''
+        }
+        $identity = [pscustomobject]@{ PrivateKey = (Join-Path $root 'unused-key') }
+        $tooling = [pscustomobject]@{ Ssh = 'unused-ssh' }
+        $identityJson = [pscustomobject][ordered]@{
+            schemaVersion = 1
+            instanceName = 'ssh-agent'
+            baseId = $intent.baseId
+            profile = 'normal'
+            cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
+        } | ConvertTo-Json -Compress
+        $nl = [Environment]::NewLine
+        $readyOutput = 'EZVM_IDENTITY_B64=' + (ConvertTo-EzVmSshTestBase64 $identityJson) + $nl + 'EZVM_CLOUD_B64=' + (ConvertTo-EzVmSshTestBase64 'status: done') + $nl + 'EZVM_READY=1' + $nl
+        $module = Get-Module EzVm
+        $observed = & $module {
+            param($r, $i, $a, $id, $tools, $output)
+            $state = [pscustomobject]@{ AcceptNew = $false; StrictBypass = $false }
+            $sshOutput = $output
+            $runner = {
+                param($exe, $arguments, $timeout)
+                $state.AcceptNew = $arguments -ccontains 'StrictHostKeyChecking=accept-new'
+                $state.StrictBypass = $arguments -contains 'StrictHostKeyChecking=no'
+                $knownOption = @($arguments | Where-Object { $_ -like 'UserKnownHostsFile=*' } | Select-Object -First 1)
+                if ($knownOption.Count -ne 1) { throw 'fixture did not receive one candidate known-hosts path' }
+                $candidatePath = ([string]$knownOption[0]).Substring('UserKnownHostsFile='.Length)
+                [IO.File]::WriteAllText($candidatePath, ('[127.0.0.1]:22079 ssh-ed25519 CCCC' + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
+                return [pscustomobject]@{ ExitCode = 0; StdOut = $sshOutput; StdErr = '' }
+            }.GetNewClosure()
+            $ready = Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 2 -PortProbe { param($hostAddress, $port) return $true } -SshRunner $runner
+            return [pscustomobject]@{ Ready = $ready; AcceptNew = $state.AcceptNew; StrictBypass = $state.StrictBypass }
+        } $root $intent $access $identity $tooling $readyOutput
+
+        Assert-EzVmEqual -Actual $observed.Ready.state -Expected 'READY'
+        Assert-EzVmEqual -Actual $observed.AcceptNew -Expected $true
+        Assert-EzVmEqual -Actual $observed.StrictBypass -Expected $false
+        $managed = [IO.File]::ReadAllText($paths.InstanceKnownHosts)
+        Assert-EzVmTrue -Condition ($managed.Contains('[127.0.0.1]:22079 ssh-ed25519 CCCC'))
+        $temporary = @(Get-ChildItem -LiteralPath $paths.KnownHostsDirectory -Filter '*.candidate' -File -ErrorAction SilentlyContinue)
+        Assert-EzVmEqual -Actual $temporary.Count -Expected 0
     }
     finally { Remove-EzVmTestDirectory -Path $root }
 }
@@ -331,7 +408,7 @@ Add-EzVmTest -Name 'SSH: missing OpenSSH tools produce concrete remediation' -Sc
                 Reason = 'Missing required OpenSSH application(s): ssh.exe, scp.exe.'
             })
         }
-    } -MessagePattern 'Install the Windows OpenSSH Client.*ssh\.exe.*scp\.exe.*ssh-keygen\.exe.*ssh-keyscan\.exe' | Out-Null
+    } -MessagePattern 'Install the Windows OpenSSH Client.*ssh\.exe.*scp\.exe.*ssh-keygen\.exe' | Out-Null
 }
 
 Add-EzVmTest -Name 'SSH: implementation never disables strict host-key checking' -ScriptBlock {
@@ -340,6 +417,8 @@ Add-EzVmTest -Name 'SSH: implementation never disables strict host-key checking'
     Assert-EzVmTrue -Condition ($source -match 'StrictHostKeyChecking=yes')
     Assert-EzVmTrue -Condition ($source -match 'UpdateHostKeys=no')
     Assert-EzVmTrue -Condition ($source -match 'UserKnownHostsFile=')
+    Assert-EzVmTrue -Condition ($source -match 'StrictHostKeyChecking=accept-new')
+    Assert-EzVmTrue -Condition ($source -notmatch 'ssh-keyscan') -Message 'Windows ssh-keyscan is not a supported trust bootstrap because affected Win32 builds can negotiate an unavailable KEX.'
 }
 
 
@@ -352,7 +431,6 @@ Add-EzVmTest -Name 'SSH: a newly generated controller key is removed if Windows 
             Ssh = 'fake-ssh'
             Scp = 'fake-scp'
             Keygen = 'fake-keygen'
-            Keyscan = 'fake-keyscan'
             Missing = @()
             Reason = 'fixture'
         }
