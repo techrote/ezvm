@@ -377,3 +377,16 @@ Add-EzVmTest -Name 'SSH: a newly generated controller key is removed if Windows 
     }
     finally { Remove-EzVmTestDirectory -Path $root }
 }
+
+
+Add-EzVmTest -Name 'SSH: seed server lifetime cannot pre-empt READY deadline' -ScriptBlock {
+    $module = Get-Module EzVm
+    $short = & $module { Get-EzVmSeedServerLifetimeSeconds -ReadyTimeoutSeconds 1 }
+    $normal = & $module { Get-EzVmSeedServerLifetimeSeconds -ReadyTimeoutSeconds 60 }
+    $maximum = & $module { Get-EzVmSeedServerLifetimeSeconds -ReadyTimeoutSeconds 3600 }
+
+    Assert-EzVmEqual -Actual $short -Expected 31
+    Assert-EzVmEqual -Actual $normal -Expected 90
+    Assert-EzVmEqual -Actual $maximum -Expected 3630
+    Assert-EzVmTrue -Condition ($short -gt 1 -and $normal -gt 60 -and $maximum -gt 3600) -Message 'The subordinate seed server deadline must outlive the enclosing READY deadline.'
+}
