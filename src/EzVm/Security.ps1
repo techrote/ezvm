@@ -43,8 +43,24 @@ function Assert-EzVmSafePath {
     while (-not [string]::IsNullOrWhiteSpace($cursor)) {
         try {
             $item = Get-Item -LiteralPath $cursor -Force -ErrorAction Stop
-            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-                throw "$Description traverses a reparse point at '$cursor'. Refusing junction/symlink redirection; restore a regular local layout."
+            $attributesProperty = $item.PSObject.Properties['Attributes']
+            if ($null -ne $attributesProperty) {
+                if (([IO.FileAttributes]$attributesProperty.Value -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                    throw "$Description traverses a reparse point at '$cursor'. Refusing junction/symlink redirection; restore a regular local layout."
+                }
+            }
+            elseif ($item -is [System.Management.Automation.PSDriveInfo]) {
+                # Windows PowerShell 5.1 can represent the drive root itself as
+                # PSDriveInfo rather than DirectoryInfo. Accept that provider
+                # shape only for the exact filesystem root; descendants must
+                # still expose filesystem attributes and remain fail-closed.
+                $pathRoot = [IO.Path]::GetPathRoot($cursor)
+                if (-not [string]::Equals($cursor, $pathRoot, [StringComparison]::OrdinalIgnoreCase)) {
+                    throw "$Description could not validate filesystem attributes at '$cursor'. Refusing an ambiguous ancestor."
+                }
+            }
+            else {
+                throw "$Description could not validate filesystem attributes at '$cursor'. Refusing an ambiguous ancestor."
             }
         }
         catch [System.Management.Automation.ItemNotFoundException] { }
