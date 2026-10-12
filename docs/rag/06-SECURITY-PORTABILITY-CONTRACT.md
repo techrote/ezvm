@@ -152,3 +152,22 @@ for secret-bearing instance seeds without explicit redaction/cleanup rules.
 Prepared-base manifests store artifact/provisioning hashes and version identities,
 not host absolute paths or credentials. Normal cold relocation therefore derives
 all executable and disk paths again from the moved ezvm root.
+## EZVM-005 storage path and lifecycle safeguards
+
+Storage operations canonicalize paths for containment decisions while preserving
+relative QCOW2 backing names for portability. Managed instance/base paths are
+checked against the current ezvm root, and existing path segments are refused if
+they are reparse points that could redirect storage access outside the managed
+tree.
+
+Instance names are constrained before filesystem paths are derived. Destructive
+or offline-mutating storage operations require a versioned lifecycle guard whose
+state is explicitly `proven-safe`; absent metadata is not interpreted as
+stopped. RUNNING, STARTING, STOPPING and UNKNOWN/ambiguous evidence all refuse
+mutation or `qemu-img check`.
+
+Reset promotion uses same-filesystem file renames and preserves the old overlay
+until a replacement chain has fully validated. If promotion cannot complete, the
+implementation restores the original where possible and otherwise reports the
+exact recovery artifact instead of guessing or deleting evidence.
+
