@@ -5,7 +5,7 @@ $script:EzVmDefaultRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot
 $script:EzVmVersion = (Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot 'EzVm.psd1')).PrivateData.EzVmVersion
 
 # An explicit list prevents an unexpected file in this directory being executed on import.
-foreach ($source in @('Paths.ps1', 'Json.ps1', 'Configuration.ps1', 'Process.ps1', 'Download.ps1', 'Qemu.ps1', 'Doctor.ps1', 'SourceImage.ps1', 'SeedServer.ps1', 'BaseRecipe.ps1', 'BaseBuilder.ps1', 'Cli.ps1')) {
+foreach ($source in @('Paths.ps1', 'Json.ps1', 'Configuration.ps1', 'Process.ps1', 'Download.ps1', 'Qemu.ps1', 'Doctor.ps1', 'SourceImage.ps1', 'SeedServer.ps1', 'BaseRecipe.ps1', 'BaseBuilder.ps1', 'Storage.ps1', 'Cli.ps1')) {
     . (Join-Path $PSScriptRoot $source)
 }
 
@@ -19,5 +19,8 @@ Export-ModuleMember -Function @(
     'Start-EzVmSeedServer', 'Invoke-EzVmSeedServerPending', 'Stop-EzVmSeedServer',
     'Get-EzVmBaseRecipe', 'Get-EzVmBaseProvisioningDigest', 'New-EzVmBaseSeedData', 'New-EzVmBaseQemuArguments',
     'Invoke-EzVmBaseBuild', 'Test-EzVmPreparedBase',
+    'Get-EzVmInstanceStoragePaths', 'Get-EzVmStorageRelativePath', 'New-EzVmStorageLifecycleGuard',
+    'Get-EzVmStorageImageInfo', 'Get-EzVmStorageBackingChain', 'Test-EzVmInstanceOverlay', 'Test-EzVmInstanceStorage',
+    'New-EzVmInstanceOverlay', 'Test-EzVmStoppedImageIntegrity', 'Reset-EzVmInstanceOverlayStorage',
     'Invoke-EzVmCommand', 'Write-EzVmResult'
 )

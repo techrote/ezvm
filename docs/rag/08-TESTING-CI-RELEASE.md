@@ -223,3 +223,25 @@ accepted. Hosted execution may use TCG to prove real Ubuntu cloud-init,
 guestfwd/SMBIOS seed discovery, package provisioning, cleanup and qemu-img
 flattening. Such evidence is an orchestration PASS only. WHPX remains an explicit
 capability SKIP until it runs on a suitable Windows host.
+## EZVM-005 storage coverage
+
+Fast Windows CI uses deterministic QCOW2 metadata runners to exercise:
+
+- explicit overlay/backing formats and relative backing generation;
+- exact one-level chain acceptance;
+- complete-root relocation without rebase;
+- missing/wrong/external/deeper backing rejection;
+- prepared-base digest/provenance mismatch;
+- malformed machine-readable qemu-img output;
+- lifecycle refusal for missing/running/transitional/unknown evidence;
+- stopped-only integrity results without repair;
+- replacement validation before reset mutation;
+- original-overlay restoration after failed replacement promotion;
+- prepared-base byte preservation and absence of commit/rebase shortcuts.
+
+A separate bounded Windows lane bootstraps the reviewed managed QEMU runtime and
+uses real `qemu-img` against tiny synthetic QCOW2 images. It proves real thin
+overlay creation, machine-readable backing-chain enumeration, integrity checking,
+real second-level-chain rejection, cold relocation of the storage layout, and a
+reset-safe replacement. EZVM-005 performs no guest execution, so WHPX is not an
+applicable acceptance capability.

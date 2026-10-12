@@ -6,8 +6,9 @@ Portable, disposable QEMU + QCOW2 coding-agent environments for Windows hosts.
 
 **EZVM-001 provides the control-plane foundation, EZVM-002 adds portable QEMU
 bootstrap plus Windows host preflight, EZVM-003 adds verified Ubuntu source
-acquisition, and EZVM-004 adds reproducible prepared-base construction; the
-project remains version `0.0.0-dev`.**
+acquisition, EZVM-004 adds reproducible prepared-base construction, and EZVM-005
+adds validated thin-overlay storage primitives; the project remains version
+`0.0.0-dev`.**
 The checkout has reviewed QEMU/7-Zip manifests, repository-local verified runtime
 bootstrap, `doctor`, and automated tests under Windows PowerShell 5.1 and
 PowerShell 7.
@@ -67,8 +68,15 @@ The reviewed build process is reproducible in configuration/provenance terms; it
 does not claim byte-for-byte reproducibility when Ubuntu package repository state
 or timestamps differ between builds.
 
-Instance overlay and VM lifecycle commands are delivered by subsequent programme
-issues. Version `0.0.0-dev` is not the v0.1 release.
+EZVM-005 provides the internal storage layer used by later instance/lifecycle
+commands: overlays store a relative QCOW2 backing reference to the exact
+content-addressed prepared base, complete chains are validated with machine-readable
+`qemu-img` output, stopped-only diagnostics require explicit lifecycle evidence,
+and reset storage is replaced only after a candidate overlay validates. No public
+instance-create/start command is introduced by EZVM-005.
+
+VM lifecycle commands are delivered by subsequent programme issues. Version
+`0.0.0-dev` is not the v0.1 release.
 
 ## Planned target experience
 

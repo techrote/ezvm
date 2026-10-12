@@ -294,3 +294,24 @@ envelope.
 Prepared-base durable state is `runtime/bases/<base-id>/base.qcow2` plus
 `manifest.json`. The manifest contains no relocatable absolute paths. Temporary
 `.build-*` and `.publish-*` directories are not authoritative bases.
+## Storage API boundary (EZVM-005)
+
+EZVM-005 intentionally adds no final public instance-create/reset command. It
+exports reusable module APIs for subsequent issues:
+
+- instance storage path derivation;
+- relative backing calculation;
+- lifecycle-guard construction;
+- machine-readable image/backing-chain inspection;
+- overlay creation and complete-chain validation;
+- stopped-image integrity diagnostics;
+- reset-safe overlay replacement.
+
+The lifecycle guard state `proven-safe` is the only state that permits storage
+mutation or offline integrity checking. EZVM-006 must produce that evidence from
+its process/state reconciliation; callers cannot rely on a missing runtime file
+or stale PID as an implicit STOPPED result.
+
+No absolute prepared-base path is required as durable instance authority. Later
+instance metadata should record the base ID/fingerprint and derive the current
+path from the active ezvm root.

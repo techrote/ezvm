@@ -1,0 +1,46 @@
+name: EZVM-005 real qemu-img qualification
+
+on:
+  push:
+    branches:
+      - ezvm-005-qcow2-lifecycle
+    paths:
+      - .github/workflows/ezvm-005-real-qemu-img.yml
+      - scripts/Invoke-EzVm005RealQemuImg.ps1
+      - src/EzVm/Storage.ps1
+      - src/EzVm/BaseBuilder.ps1
+      - src/EzVm/Qemu.ps1
+      - manifests/qemu-windows.json
+
+concurrency:
+  group: ezvm-005-real-qemu-img-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  real-qemu-img:
+    name: Real managed qemu-img storage qualification
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - name: Checkout reviewed branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bootstrap reviewed portable QEMU
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\ezvm.ps1 bootstrap
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Qualify thin overlay, chain, relocation, integrity and reset
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\scripts\Invoke-EzVm005RealQemuImg.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -32,6 +32,16 @@
         'New-EzVmBaseQemuArguments',
         'Invoke-EzVmBaseBuild',
         'Test-EzVmPreparedBase',
+        'Get-EzVmInstanceStoragePaths',
+        'Get-EzVmStorageRelativePath',
+        'New-EzVmStorageLifecycleGuard',
+        'Get-EzVmStorageImageInfo',
+        'Get-EzVmStorageBackingChain',
+        'Test-EzVmInstanceOverlay',
+        'Test-EzVmInstanceStorage',
+        'New-EzVmInstanceOverlay',
+        'Test-EzVmStoppedImageIntegrity',
+        'Reset-EzVmInstanceOverlayStorage',
         'Invoke-EzVmCommand',
         'Write-EzVmResult'
     )
