@@ -963,8 +963,24 @@ function Stop-EzVmInstance {
         $null = Invoke-EzVmRuntimeQmp -HostAddress $runtime.qmpHost -Port ([int]$runtime.qmpPort) -Command 'system_powerdown' -TimeoutMilliseconds 3000 -QmpInvoker $QmpInvoker
 
         $deadline = [DateTime]::UtcNow.AddSeconds($ShutdownTimeoutSeconds)
+        $lastIdentityObservationError = $null
         while ([DateTime]::UtcNow -lt $deadline) {
-            $observed = @(Get-EzVmObservedQemuProcesses -ProcessId ([int]$runtime.pid) -ProcessProvider $ProcessProvider)
+            try {
+                $observed = @(Get-EzVmObservedQemuProcesses -ProcessId ([int]$runtime.pid) -ProcessProvider $ProcessProvider)
+                $lastIdentityObservationError = $null
+            }
+            catch {
+                # Windows can briefly retain a terminating PID after QEMU has
+                # exited far enough that CIM no longer exposes its command line.
+                # That state is not proof of exit, so never mark STOPPED from the
+                # query failure itself. Retry within the existing bounded shutdown
+                # deadline and require either a proven matching/reused identity or
+                # an empty PID observation before releasing storage ownership.
+                $lastIdentityObservationError = $_.Exception.Message
+                Start-Sleep -Milliseconds 100
+                continue
+            }
+
             if ($observed.Count -eq 0) {
                 $runtime.state = 'STOPPED'
                 $runtime.lastObservedAt = [DateTime]::UtcNow.ToString('o')
@@ -974,7 +990,7 @@ function Stop-EzVmInstance {
             }
             if ($observed.Count -eq 1) {
                 $current = Get-EzVmRuntimeIdentityResult -Runtime $runtime -ProcessProvider $ProcessProvider
-                if (-not $current.Match -and $current.Kind -eq 'reused') {
+                if (-not $current.Match -and @('missing', 'reused') -ccontains $current.Kind) {
                     $runtime.state = 'STOPPED'
                     $runtime.lastObservedAt = [DateTime]::UtcNow.ToString('o')
                     $runtime.stoppedAt = $runtime.lastObservedAt
@@ -990,7 +1006,12 @@ function Stop-EzVmInstance {
             }
             Start-Sleep -Milliseconds 100
         }
-        throw "Guest powerdown was requested, but instance '$InstanceName' did not exit within $ShutdownTimeoutSeconds seconds. QEMU was not killed; runtime state remains STOPPING."
+        $detail = if ([string]::IsNullOrWhiteSpace([string]$lastIdentityObservationError)) {
+            ''
+        } else {
+            ' Last process-identity observation error: ' + [string]$lastIdentityObservationError
+        }
+        throw "Guest powerdown was requested, but instance '$InstanceName' did not exit within $ShutdownTimeoutSeconds seconds. QEMU was not killed; runtime state remains STOPPING.$detail"
     }
     finally { $lock.Dispose() }
 }
