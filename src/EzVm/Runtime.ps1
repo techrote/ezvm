@@ -302,7 +302,7 @@ function Assert-EzVmRuntimeState {
     if (@('STARTING', 'RUNNING', 'STOPPING', 'STOPPED') -cnotcontains [string]$Runtime.state) {
         throw "Instance runtime state '$($Runtime.state)' is unsupported."
     }
-    Assert-EzVmRuntimeInteger -Value $Runtime.pid -Description 'Instance runtime pid' -Minimum 1 -Maximum [int]::MaxValue
+    Assert-EzVmRuntimeInteger -Value $Runtime.pid -Description 'Instance runtime pid' -Minimum 1 -Maximum ([int]::MaxValue)
     Assert-EzVmRuntimeTimestamp -Value $Runtime.processStartTimeUtc -Description 'Instance runtime processStartTimeUtc'
     if ($Runtime.qemuExecutable -isnot [string] -or -not [IO.Path]::IsPathRooted($Runtime.qemuExecutable)) {
         throw 'Instance runtime qemuExecutable must be an absolute path.'
