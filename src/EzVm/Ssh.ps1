@@ -109,7 +109,7 @@ function Write-EzVmSshTextAtomically {
         finally { $stream.Dispose() }
 
         if (Test-Path -LiteralPath $fullPath -PathType Leaf) {
-            [IO.File]::Replace($temporary, $fullPath, $null)
+            [IO.File]::Replace($temporary, $fullPath, [System.Management.Automation.Language.NullString]::Value)
         }
         else {
             [IO.File]::Move($temporary, $fullPath)
@@ -423,7 +423,7 @@ function ConvertTo-EzVmPosixArgument {
 }
 
 function Join-EzVmRemoteCommand {
-    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Tokens)
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][AllowEmptyString()][string[]]$Tokens)
     if ($Tokens.Count -eq 0) { throw 'A remote command requires at least one token.' }
     return [string]::Join(' ', @($Tokens | ForEach-Object { ConvertTo-EzVmPosixArgument $_ }))
 }
