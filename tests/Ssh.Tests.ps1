@@ -9,9 +9,13 @@ function New-EzVmSshTestIntent {
         schemaVersion = 1
         name = $Name
         baseId = $BaseId
+        profile = $(if ($Cpus -eq 4 -and $MemoryMiB -eq 8192) { 'normal' } elseif ($Cpus -eq 2 -and $MemoryMiB -eq 4096) { 'light' } else { 'custom' })
         cpus = $Cpus
         memoryMiB = $MemoryMiB
+        sshPort = 22001
         createdAt = '2026-10-12T00:00:00.0000000Z'
+        provisioningProfile = 'ezvm-core'
+        provisioningVersion = 1
     }
 }
 
