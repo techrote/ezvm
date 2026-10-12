@@ -93,7 +93,7 @@ function New-EzVmRuntimeFixture {
     }.GetNewClosure()
 
     $qmp = {
-        param($pipeName, $command, $timeoutMilliseconds)
+        param($hostAddress, $port, $command, $timeoutMilliseconds)
         $processState.QmpCalls.Add($command)
         if ($null -ne $processState.QmpFailure) { throw [InvalidOperationException]::new([string]$processState.QmpFailure) }
         if ($command -ceq 'query-status') {
@@ -146,23 +146,23 @@ function Set-EzVmRuntimeFixtureBacking {
     [IO.File]::WriteAllText($Fixture.Overlay, ($payload | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding($false)))
 }
 
-Add-EzVmTest -Name 'Runtime: QEMU arguments are explicit headless WHPX with host-local named-pipe QMP' -ScriptBlock {
+Add-EzVmTest -Name 'Runtime: QEMU arguments are explicit headless WHPX with loopback-only QMP' -ScriptBlock {
     $fixture = New-EzVmRuntimeFixture
     try {
         $intent = Get-EzVmInstanceIntent -Root $fixture.Root -InstanceName $fixture.InstanceName
         $runtimePaths = Get-EzVmInstanceRuntimePaths -Root $fixture.Root -InstanceName $fixture.InstanceName
         [void][IO.Directory]::CreateDirectory($runtimePaths.Logs)
         $firmware = Get-EzVmRuntimeFirmwarePaths -Root $fixture.Root -InstanceName $fixture.InstanceName
-        $pipe = 'ezvm-qmp-' + $fixture.InstanceName + '-' + ('a' * 32)
-        $args = New-EzVmRuntimeQemuArguments -InstanceName $fixture.InstanceName -Intent $intent -Disk $fixture.Overlay -FirmwareCode $firmware.Code -FirmwareVariables $firmware.Variables -SerialLog (Join-Path $runtimePaths.Logs 'serial with spaces.log') -QemuLog (Join-Path $runtimePaths.Logs 'qemu with spaces.log') -QmpPipe $pipe -Accelerator whpx
+        $port = 32123
+        $args = New-EzVmRuntimeQemuArguments -InstanceName $fixture.InstanceName -Intent $intent -Disk $fixture.Overlay -FirmwareCode $firmware.Code -FirmwareVariables $firmware.Variables -SerialLog (Join-Path $runtimePaths.Logs 'serial with spaces.log') -QemuLog (Join-Path $runtimePaths.Logs 'qemu with spaces.log') -QmpPort $port -Accelerator whpx
         $joined = ' ' + ($args -join ' ') + ' '
         Assert-EzVmTrue -Condition ($joined -match ' -machine q35 ')
         Assert-EzVmTrue -Condition ($joined -match ' -accel whpx ')
         Assert-EzVmTrue -Condition ($joined -match ' -display none ')
         Assert-EzVmTrue -Condition ($joined -match 'virtio-blk-pci,drive=osdisk')
         Assert-EzVmTrue -Condition ($joined -match 'virtio-net-pci,netdev=net0')
-        Assert-EzVmTrue -Condition ($joined -match (' -qmp pipe:' + [regex]::Escape($pipe) + ' '))
-        Assert-EzVmTrue -Condition ($joined -notmatch 'qmp.*tcp:') -Message 'Management channel must not be TCP/LAN exposed.'
+        Assert-EzVmTrue -Condition ($joined -match (' -qmp tcp:127\.0\.0\.1:' + $port + ',server=on,wait=off,nodelay=on '))
+        Assert-EzVmTrue -Condition ($joined -notmatch 'qmp tcp:(?!127\.0\.0\.1)') -Message 'QMP TCP must bind only to loopback.'
         Assert-EzVmTrue -Condition ($joined -notmatch 'tcg') -Message 'Normal WHPX arguments must not silently degrade to TCG.'
         $diskToken = @($args | Where-Object { $_ -match '^if=none,id=osdisk' })[0]
         Assert-EzVmTrue -Condition ($diskToken -match 'file=.*runtime-agent\\disk\.qcow2$')
@@ -178,8 +178,8 @@ Add-EzVmTest -Name 'Runtime: explicit TCG is visible and does not alter WHPX def
         $runtimePaths = Get-EzVmInstanceRuntimePaths -Root $fixture.Root -InstanceName $fixture.InstanceName
         [void][IO.Directory]::CreateDirectory($runtimePaths.Logs)
         $firmware = Get-EzVmRuntimeFirmwarePaths -Root $fixture.Root -InstanceName $fixture.InstanceName
-        $pipe = 'ezvm-qmp-' + $fixture.InstanceName + '-' + ('b' * 32)
-        $args = New-EzVmRuntimeQemuArguments -InstanceName $fixture.InstanceName -Intent $intent -Disk $fixture.Overlay -FirmwareCode $firmware.Code -FirmwareVariables $firmware.Variables -SerialLog (Join-Path $runtimePaths.Logs 'serial.log') -QemuLog (Join-Path $runtimePaths.Logs 'qemu.log') -QmpPipe $pipe -Accelerator tcg
+        $port = 32124
+        $args = New-EzVmRuntimeQemuArguments -InstanceName $fixture.InstanceName -Intent $intent -Disk $fixture.Overlay -FirmwareCode $firmware.Code -FirmwareVariables $firmware.Variables -SerialLog (Join-Path $runtimePaths.Logs 'serial.log') -QemuLog (Join-Path $runtimePaths.Logs 'qemu.log') -QmpPort $port -Accelerator tcg
         $joined = ' ' + ($args -join ' ') + ' '
         Assert-EzVmTrue -Condition ($joined -match ' -accel tcg,thread=multi ')
         Assert-EzVmTrue -Condition ($joined -match ' -cpu max ')
@@ -201,7 +201,8 @@ Add-EzVmTest -Name 'Runtime: valid start transitions CREATED to RUNNING with dur
         Assert-EzVmEqual -Actual $runtime.state -Expected 'RUNNING'
         Assert-EzVmTrue -Condition ($runtime.argumentFingerprint -match '^[a-f0-9]{64}$')
         Assert-EzVmTrue -Condition ($runtime.qemuExecutable -match 'qemu-system-x86_64\.exe$')
-        Assert-EzVmTrue -Condition ($runtime.qmpPipe -match '^ezvm-qmp-runtime-agent-')
+        Assert-EzVmEqual -Actual $runtime.qmpHost -Expected '127.0.0.1'
+        Assert-EzVmTrue -Condition ([int]$runtime.qmpPort -ge 1024 -and [int]$runtime.qmpPort -le 65535)
         Assert-EzVmTrue -Condition ([IO.Path]::IsPathRooted($runtime.serialLog))
         Assert-EzVmTrue -Condition ([IO.Path]::IsPathRooted($runtime.qemuLog))
         $status = Get-EzVmInstanceStatus -Root $fixture.Root -InstanceName $fixture.InstanceName -ProcessProvider $fixture.ProcessProvider
@@ -328,7 +329,7 @@ Add-EzVmTest -Name 'Runtime: untracked QEMU owner makes missing runtime evidence
         $intent = Get-EzVmInstanceIntent -Root $fixture.Root -InstanceName $fixture.InstanceName
         [void][IO.Directory]::CreateDirectory($runtimePaths.Logs)
         $firmware = Get-EzVmRuntimeFirmwarePaths -Root $fixture.Root -InstanceName $fixture.InstanceName
-        $args = New-EzVmRuntimeQemuArguments -InstanceName $fixture.InstanceName -Intent $intent -Disk $fixture.Overlay -FirmwareCode $firmware.Code -FirmwareVariables $firmware.Variables -SerialLog (Join-Path $runtimePaths.Logs 'serial-untracked.log') -QemuLog (Join-Path $runtimePaths.Logs 'qemu-untracked.log') -QmpPipe ('ezvm-qmp-' + $fixture.InstanceName + '-' + ('c' * 32)) -Accelerator whpx
+        $args = New-EzVmRuntimeQemuArguments -InstanceName $fixture.InstanceName -Intent $intent -Disk $fixture.Overlay -FirmwareCode $firmware.Code -FirmwareVariables $firmware.Variables -SerialLog (Join-Path $runtimePaths.Logs 'serial-untracked.log') -QemuLog (Join-Path $runtimePaths.Logs 'qemu-untracked.log') -QmpPort 32125 -Accelerator whpx
         $fixture.State.Processes.Add([pscustomobject]@{
             Pid = 49999
             ExecutablePath = Join-Path $fixture.Paths.Qemu 'qemu-system-x86_64.exe'
