@@ -115,6 +115,7 @@ Add-EzVmTest -Name 'SSH: changed host key remains staged until authenticated ide
     try {
         $paths = Get-EzVmSshPaths -Root $root -InstanceName 'ssh-agent'
         [void][IO.Directory]::CreateDirectory($paths.KnownHostsDirectory)
+        [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($paths.AccessState))
         $oldLine = '[127.0.0.1]:22001 ssh-ed25519 AAAA'
         $newLine = '[127.0.0.1]:22077 ssh-ed25519 BBBB'
         [IO.File]::WriteAllText($paths.InstanceKnownHosts, ($oldLine + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
