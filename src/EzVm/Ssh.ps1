@@ -825,7 +825,7 @@ function Wait-EzVmSshReady {
         throw "Instance '$InstanceName' did not reach authenticated SSH READY within $TimeoutSeconds seconds. Last readiness evidence: $lastError"
     }
     finally {
-        if ($null -ne $candidate -and Test-Path -LiteralPath $candidate.Candidate) {
+        if ($null -ne $candidate -and (Test-Path -LiteralPath $candidate.Candidate)) {
             Remove-Item -LiteralPath $candidate.Candidate -Force -ErrorAction SilentlyContinue
         }
     }
