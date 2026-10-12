@@ -244,4 +244,3 @@ Add-EzVmTest -Name 'CLI: lifecycle commands require exactly one portable instanc
         Assert-EzVmTrue -Condition ($result.StandardError -match 'help')
     }
 }
-
