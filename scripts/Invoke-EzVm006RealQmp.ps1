@@ -10,14 +10,15 @@ $bootstrap = Install-EzVmQemuRuntime -Root $Root
 $qemu = [IO.Path]::GetFullPath($bootstrap.qemuSystem)
 $qemuRoot = Split-Path -Parent $qemu
 $launchId = [Guid]::NewGuid().ToString('N')
-$pipeName = 'ezvm-qmp-smoke-' + $launchId
+$qmpHost = '127.0.0.1'
+$qmpPort = & $module { Get-EzVmEphemeralLoopbackPort }
 $arguments = @(
     '-name', 'guest=ezvm-qmp-smoke',
     '-machine', 'none',
     '-accel', 'tcg,thread=multi',
     '-display', 'none',
     '-monitor', 'none',
-    '-qmp', ('pipe:' + $pipeName),
+    '-qmp', ('tcp:127.0.0.1:' + $qmpPort + ',server=on,wait=off,nodelay=on'),
     '-no-user-config',
     '-nodefaults'
 )
@@ -69,7 +70,7 @@ try {
             throw "Real QEMU smoke process exited before QMP became ready with code $($launch.Process.ExitCode). stderr=<$stderr> stdout=<$stdout>"
         }
         try {
-            $query = & $module { param($pipe) Invoke-EzVmQmpCommand -PipeName $pipe -Command 'query-status' -TimeoutMilliseconds 1000 } $pipeName
+            $query = & $module { param($hostAddress, $port) Invoke-EzVmQmpCommand -HostAddress $hostAddress -Port $port -Command 'query-status' -TimeoutMilliseconds 1000 } $qmpHost $qmpPort
             break
         }
         catch {
@@ -77,7 +78,7 @@ try {
             Start-Sleep -Milliseconds 100
         }
     }
-    if ($null -eq $query) { throw "Real QMP named-pipe handshake did not become ready: $lastError" }
+    if ($null -eq $query) { throw "Real loopback QMP handshake did not become ready: $lastError" }
 
     $snapshots = @(& $module {
         param($pidValue)
@@ -92,7 +93,7 @@ try {
     $observedFingerprint = Get-EzVmArgumentFingerprint -ArgumentList ([string[]]$snapshot.Arguments)
     if ($observedFingerprint -cne $expectedFingerprint) { throw 'Real Windows process argv fingerprint did not round-trip through Win32_Process.' }
 
-    $null = & $module { param($pipe) Invoke-EzVmQmpCommand -PipeName $pipe -Command 'system_powerdown' -TimeoutMilliseconds 3000 } $pipeName
+    $null = & $module { param($hostAddress, $port) Invoke-EzVmQmpCommand -HostAddress $hostAddress -Port $port -Command 'system_powerdown' -TimeoutMilliseconds 3000 } $qmpHost $qmpPort
     Write-Host 'EZVM006_REAL_QMP_POWERDOWN_REQUEST=PASS'
 
     Start-Sleep -Milliseconds 500
@@ -104,7 +105,7 @@ try {
         # machine=none has no guest OS to complete an ACPI shutdown. The quit
         # command is test cleanup only; production Stop-EzVmInstance never
         # converts a powerdown timeout into quit/kill.
-        $null = & $module { param($pipe) Invoke-EzVmQmpCommand -PipeName $pipe -Command 'quit' -TimeoutMilliseconds 3000 } $pipeName
+        $null = & $module { param($hostAddress, $port) Invoke-EzVmQmpCommand -HostAddress $hostAddress -Port $port -Command 'quit' -TimeoutMilliseconds 3000 } $qmpHost $qmpPort
     }
 
     $exitDeadline = [DateTime]::UtcNow.AddSeconds(10)
@@ -122,10 +123,10 @@ try {
     } $launch.Pid)
     if ($left.Count -ne 0) { throw 'Real QEMU smoke process did not exit after QMP cleanup.' }
 
-    Write-Host ('EZVM006_REAL_QMP_PIPE=' + $pipeName)
+    Write-Host ('EZVM006_REAL_QMP_ENDPOINT=' + $qmpHost + ':' + $qmpPort)
     Write-Host ('EZVM006_REAL_PID=' + $launch.Pid)
     Write-Host ('EZVM006_REAL_ARGV_SHA256=' + $expectedFingerprint)
-    Write-Host 'EZVM006_REAL_QMP_HOST_SCOPE=WINDOWS_NAMED_PIPE'
+    Write-Host 'EZVM006_REAL_QMP_HOST_SCOPE=127.0.0.1_ONLY'
     Write-Host 'EZVM006_WHPX_EXECUTION=SKIP: hosted qualification uses explicit TCG; no WHPX runtime PASS is claimed.'
 }
 finally {
