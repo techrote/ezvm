@@ -417,7 +417,7 @@ Add-EzVmTest -Name 'SSH: implementation never disables strict host-key checking'
     Assert-EzVmTrue -Condition ($source -match 'StrictHostKeyChecking=yes')
     Assert-EzVmTrue -Condition ($source -match 'UpdateHostKeys=no')
     Assert-EzVmTrue -Condition ($source -match 'UserKnownHostsFile=')
-    Assert-EzVmTrue -Condition ($source -match 'StrictHostKeyChecking=accept-new')
+    Assert-EzVmTrue -Condition ($source -match "'accept-new'") -Message 'Launch-local candidate bootstrap must use OpenSSH accept-new rather than disabling verification.'
     Assert-EzVmTrue -Condition ($source -notmatch 'ssh-keyscan') -Message 'Windows ssh-keyscan is not a supported trust bootstrap because affected Win32 builds can negotiate an unavailable KEX.'
 }
 
