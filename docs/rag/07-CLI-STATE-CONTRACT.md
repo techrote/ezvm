@@ -315,4 +315,3 @@ or stale PID as an implicit STOPPED result.
 No absolute prepared-base path is required as durable instance authority. Later
 instance metadata should record the base ID/fingerprint and derive the current
 path from the active ezvm root.
-
