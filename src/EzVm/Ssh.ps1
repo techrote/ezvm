@@ -576,7 +576,6 @@ function New-EzVmInstanceSeedData {
         ('hostname: ' + (ConvertTo-EzVmYamlSingleQuoted $hostname)),
         'ssh_pwauth: false',
         'disable_root: true',
-        'manual_cache_clean: false',
         'ssh_deletekeys: true',
         'ssh_genkeytypes: [ed25519]',
         'users:',
@@ -591,6 +590,13 @@ function New-EzVmInstanceSeedData {
         '    ssh_authorized_keys:',
         ('      - ' + (ConvertTo-EzVmYamlSingleQuoted $ControllerPublicKey)),
         'write_files:',
+        # Cache policy belongs to system configuration, not cloud-config user
+        # data. An unknown top-level key degrades cloud-init to status exit 2.
+        '  - path: /etc/cloud/cloud.cfg.d/99-ezvm-identity.cfg',
+        '    owner: root:root',
+        "    permissions: '0644'",
+        '    encoding: b64',
+        ('    content: ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("manual_cache_clean: false`n"))),
         '  - path: /etc/ssh/sshd_config.d/00-ezvm-coding.conf',
         '    owner: root:root',
         "    permissions: '0644'",
@@ -623,24 +629,48 @@ set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 LC_ALL=C
 export PATH LC_ALL
-if ! cloud-init status --wait >/var/log/ezvm-cloud-init-status.log 2>&1; then
+stage=cloud-init
+report_stage() {
+    printf 'EZVM_GUEST_FINALIZE_STAGE=%s\n' "$stage" || true
+}
+report_exit() {
+    result=$?
+    if test "$result" -ne 0; then
+        printf 'EZVM_GUEST_FINALIZE_FAILED=stage=%s;exit=%s\n' "$stage" "$result" >&2 || true
+    fi
+}
+trap report_exit 0
+report_stage
+if cloud-init status --wait >/var/log/ezvm-cloud-init-status.log 2>&1; then
+    :
+else
+    cloud_exit=$?
+    printf 'EZVM_GUEST_CLOUD_INIT_EXIT=%s\n' "$cloud_exit" >&2 || true
     exit 1
 fi
+stage=identity
+report_stage
 set +e
 /usr/local/sbin/ezvm-instance-identity
 identity_exit=$?
 set -e
 if test "$identity_exit" -eq 75; then
+    stage=reboot
+    report_stage
     systemctl reboot
     exit 0
 fi
 if test "$identity_exit" -ne 0; then
     exit "$identity_exit"
 fi
+stage=ssh-policy
+report_stage
 if ! /usr/sbin/sshd -t || ! systemctl reload ssh; then
     printf '%s\n' 'SSH policy activation failed' > /var/lib/ezvm/provisioning-failed
     exit 1
 fi
+stage=coding-profile
+report_stage
 exec /usr/local/sbin/ezvm-coding-profile provision
 '@
         $unit = @'
@@ -653,6 +683,8 @@ Wants=cloud-final.service
 Type=oneshot
 ExecStart=/usr/local/sbin/ezvm-instance-finalize
 TimeoutStartSec=180
+StandardOutput=journal+console
+StandardError=journal+console
 
 [Install]
 WantedBy=multi-user.target

@@ -194,6 +194,27 @@ Add-EzVmTest -Name 'Portability identity: malformed identity generations refuse 
     }
 }
 
+Add-EzVmTest -Name 'Portability identity: cache policy uses system configuration without degrading cloud-config user data' -ScriptBlock {
+    # cloud-init 26.1 schema-cloud-config-v1.json rejects unknown top-level
+    # properties. manual_cache_clean is a system setting, not a user-data key.
+    foreach ($intent in @((New-EzVmSshTestIntent), (New-EzVmPortabilityIdentityTestIntent))) {
+        $seed = New-EzVmInstanceSeedData -Root $script:EzVmRepositoryRoot -InstanceName $intent.name -Intent $intent -ControllerPublicKey 'ssh-ed25519 AAAA'
+        Assert-EzVmTrue -Condition ($seed.UserData -cnotmatch '(?m)^manual_cache_clean:') -Message 'Unsupported user-data keys cause cloud-init status 2 before identity initialization.'
+        $policy = Get-EzVmPortabilitySeedFile -UserData $seed.UserData -Path '/etc/cloud/cloud.cfg.d/99-ezvm-identity.cfg'
+        Assert-EzVmEqual -Actual $policy -Expected "manual_cache_clean: false`n"
+        if ($intent.schemaVersion -eq 2) {
+            $finalizer = Get-EzVmPortabilitySeedFile -UserData $seed.UserData -Path '/usr/local/sbin/ezvm-instance-finalize'
+            Assert-EzVmTrue -Condition ($finalizer.Contains('EZVM_GUEST_CLOUD_INIT_EXIT=%s') -and $finalizer.Contains('EZVM_GUEST_FINALIZE_FAILED=stage=%s;exit=%s'))
+            Assert-EzVmTrue -Condition ($finalizer.IndexOf('stage=cloud-init') -lt $finalizer.IndexOf('cloud-init status --wait'))
+            Assert-EzVmTrue -Condition ($finalizer.IndexOf('stage=identity') -lt $finalizer.IndexOf('/usr/local/sbin/ezvm-instance-identity'))
+            Assert-EzVmTrue -Condition ($finalizer.IndexOf('stage=reboot') -lt $finalizer.IndexOf('systemctl reboot'))
+            Assert-EzVmTrue -Condition (-not $finalizer.Contains('cat /var/log/ezvm-cloud-init-status.log')) -Message 'Diagnostics must not dump cloud-init output or user-data.'
+            $unit = Get-EzVmPortabilitySeedFile -UserData $seed.UserData -Path '/etc/systemd/system/ezvm-instance-finalize.service'
+            Assert-EzVmTrue -Condition ($unit.Contains('StandardOutput=journal+console') -and $unit.Contains('StandardError=journal+console'))
+        }
+    }
+}
+
 Add-EzVmTest -Name 'Portability identity: source relocation preserves seed identity and persistent first-boot finalization' -ScriptBlock {
     $root = New-EzVmCheckoutFixture -Prefix 'identity relocated root [spaces]'
     try {
@@ -202,7 +223,6 @@ Add-EzVmTest -Name 'Portability identity: source relocation preserves seed ident
         $moved = New-EzVmInstanceSeedData -Root $root -InstanceName $intent.name -Intent $intent -ControllerPublicKey 'ssh-ed25519 AAAA omitted-comment'
         Assert-EzVmEqual -Actual $moved.UserData -Expected $original.UserData
         Assert-EzVmEqual -Actual $moved.MetaData -Expected $original.MetaData
-        Assert-EzVmTrue -Condition ($moved.UserData.Contains('manual_cache_clean: false'))
         Assert-EzVmTrue -Condition ($moved.UserData.Contains('ssh_deletekeys: true'))
         Assert-EzVmTrue -Condition ($moved.UserData.Contains('systemctl, start, --no-block, ezvm-instance-finalize.service'))
         $unit = Get-EzVmPortabilitySeedFile -UserData $moved.UserData -Path '/etc/systemd/system/ezvm-instance-finalize.service'

@@ -74,10 +74,18 @@ function Invoke-EzVm010Guest {
 function Start-EzVm010Guest {
     param([string]$Name)
     if (-not $active.Contains($Name)) { $active.Add($Name) }
-    $ready = Start-EzVmReadyInstance -Root $Root -InstanceName $Name -Accelerator tcg -ReadyTimeoutSeconds 900
-    if ($ready.state -cne 'READY' -or $ready.accelerator -cne 'tcg' -or $ready.sshHost -cne '127.0.0.1') {
-        throw "Guest '$Name' did not reach coding READY under explicit TCG and localhost-only SSH."
+    Write-Host ('EZVM010_STEP=guest_start; instance=' + $Name + '; at=' + [DateTime]::UtcNow.ToString('o') + '; root=' + $Root)
+    try {
+        $ready = Start-EzVmReadyInstance -Root $Root -InstanceName $Name -Accelerator tcg -ReadyTimeoutSeconds 900
+        if ($ready.state -cne 'READY' -or $ready.accelerator -cne 'tcg' -or $ready.sshHost -cne '127.0.0.1') {
+            throw "Guest '$Name' did not reach coding READY under explicit TCG and localhost-only SSH."
+        }
     }
+    catch {
+        Write-Host ('EZVM010_STEP=guest_start_failed; instance=' + $Name + '; at=' + [DateTime]::UtcNow.ToString('o'))
+        throw
+    }
+    Write-Host ('EZVM010_STEP=guest_ready; instance=' + $Name + '; at=' + [DateTime]::UtcNow.ToString('o'))
 }
 
 function Stop-EzVm010Guest {
@@ -219,7 +227,9 @@ try {
     Write-Host 'EZVM010_STEP=prepare_real_guest'
     $source = Invoke-EzVmSourceImageAcquire -Root $Root
     Write-Host ('EZVM010_REAL_SOURCE_SHA256=' + $source.sha256)
+    Write-Host ('EZVM010_STEP=base_build_started; at=' + [DateTime]::UtcNow.ToString('o'))
     $base = Invoke-EzVmBaseBuild -Root $Root -Accelerator tcg -BuildTimeoutSeconds 2400
+    Write-Host ('EZVM010_STEP=base_build_completed; at=' + [DateTime]::UtcNow.ToString('o') + '; base=' + $base.baseId)
     $prepared = Test-EzVmPreparedBase -Root $Root -BaseId $base.baseId
     if ($prepared.Manifest.build.accelerator -cne 'tcg') { throw 'Base build did not record explicit TCG.' }
     $created = New-EzVmManagedInstance -Root $Root -InstanceName $sourceName -BaseId $base.baseId -Profile light
@@ -337,6 +347,10 @@ sync
 }
 catch {
     Write-Host 'EZVM010_REAL_DIAGNOSTICS_BEGIN'
+    Write-Host ('EZVM010_FAILED_AT=' + [DateTime]::UtcNow.ToString('o'))
+    # Read only host-side state and controlled QEMU logs. Serial output is
+    # diagnostic evidence, never a substitute for authenticated guest READY.
+    # Do not inspect seed data, key files or guest credential contents here.
     foreach ($name in @($sourceName, $cloneName, $importName)) {
         try {
             $runtimePaths = Get-EzVmInstanceRuntimePaths -Root $Root -InstanceName $name
@@ -347,9 +361,17 @@ catch {
                 }
             }
             if (Test-Path -LiteralPath $runtimePaths.Logs -PathType Container) {
-                foreach ($log in Get-ChildItem -LiteralPath $runtimePaths.Logs -File -ErrorAction SilentlyContinue) {
-                    Write-Host ('LOG_TAIL=' + $log.FullName)
-                    Get-Content -LiteralPath $log.FullName -Tail 100 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+                $logs = Get-ChildItem -LiteralPath $runtimePaths.Logs -File -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -match '^(serial|qemu)-[a-f0-9]+\.log$' } |
+                    Sort-Object LastWriteTimeUtc
+                foreach ($log in $logs) {
+                    $tailLines = if ($log.Name.StartsWith('serial-', [StringComparison]::Ordinal)) { 500 } else { 100 }
+                    Write-Host ('LOG_TAIL=' + $log.FullName + '; lines=' + $tailLines)
+                    Get-Content -LiteralPath $log.FullName -Tail $tailLines -ErrorAction SilentlyContinue | ForEach-Object {
+                        $line = [string]$_
+                        if ($line.Length -gt 4096) { $line = $line.Substring(0, 4096) + ' [diagnostic line truncated]' }
+                        Write-Host $line
+                    }
                 }
             }
         }
