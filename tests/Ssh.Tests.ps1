@@ -468,3 +468,59 @@ Add-EzVmTest -Name 'SSH: seed server lifetime cannot pre-empt READY deadline' -S
     Assert-EzVmEqual -Actual $maximum -Expected 3630
     Assert-EzVmTrue -Condition ($short -gt 1 -and $normal -gt 60 -and $maximum -gt 3600) -Message 'The subordinate seed server deadline must outlive the enclosing READY deadline.'
 }
+
+
+Add-EzVmTest -Name 'SSH: readiness grants slow TCG SSH probes a bounded per-attempt budget' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'ssh slow readiness'
+    try {
+        $paths = Get-EzVmSshPaths -Root $root -InstanceName 'ssh-agent'
+        $intent = New-EzVmSshTestIntent
+        $access = [pscustomobject][ordered]@{
+            schemaVersion = 1
+            instanceName = 'ssh-agent'
+            launchId = ('d' * 32)
+            sshHost = '127.0.0.1'
+            sshPort = 22080
+            sshUser = 'coder'
+            state = 'PROVISIONING'
+            cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
+            profile = 'normal'
+            readyAt = ''
+        }
+        $identity = [pscustomobject]@{ PrivateKey = (Join-Path $root 'unused-key') }
+        $tooling = [pscustomobject]@{ Ssh = 'unused-ssh' }
+        $identityJson = [pscustomobject][ordered]@{
+            schemaVersion = 1
+            instanceName = 'ssh-agent'
+            baseId = $intent.baseId
+            profile = 'normal'
+            cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
+        } | ConvertTo-Json -Compress
+        $nl = [Environment]::NewLine
+        $readyOutput = 'EZVM_IDENTITY_B64=' + (ConvertTo-EzVmSshTestBase64 $identityJson) + $nl + 'EZVM_CLOUD_B64=' + (ConvertTo-EzVmSshTestBase64 'status: done') + $nl + 'EZVM_READY=1' + $nl
+        $module = Get-Module EzVm
+        $observed = & $module {
+            param($r, $i, $a, $id, $tools, $output)
+            $state = [pscustomobject]@{ ProcessTimeout = 0; ConnectTimeout = '' }
+            $sshOutput = $output
+            $runner = {
+                param($exe, $arguments, $timeout)
+                $state.ProcessTimeout = $timeout
+                $state.ConnectTimeout = @($arguments | Where-Object { $_ -like 'ConnectTimeout=*' } | Select-Object -First 1)[0]
+                $knownOption = @($arguments | Where-Object { $_ -like 'UserKnownHostsFile=*' } | Select-Object -First 1)
+                if ($knownOption.Count -ne 1) { throw 'fixture did not receive one candidate known-hosts path' }
+                $candidatePath = ([string]$knownOption[0]).Substring('UserKnownHostsFile='.Length)
+                [IO.File]::WriteAllText($candidatePath, ('[127.0.0.1]:22080 ssh-ed25519 DDDD' + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
+                return [pscustomobject]@{ ExitCode = 0; StdOut = $sshOutput; StdErr = '' }
+            }.GetNewClosure()
+            $ready = Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 120 -PortProbe { param($hostAddress, $port) return $true } -SshRunner $runner
+            return [pscustomobject]@{ Ready = $ready; ProcessTimeout = $state.ProcessTimeout; ConnectTimeout = $state.ConnectTimeout }
+        } $root $intent $access $identity $tooling $readyOutput
+
+        Assert-EzVmEqual -Actual $observed.Ready.state -Expected 'READY'
+        Assert-EzVmEqual -Actual $observed.ProcessTimeout -Expected 30
+        Assert-EzVmEqual -Actual $observed.ConnectTimeout -Expected 'ConnectTimeout=15'
+        Assert-EzVmTrue -Condition ([IO.File]::ReadAllText($paths.InstanceKnownHosts).Contains('[127.0.0.1]:22080 ssh-ed25519 DDDD'))
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
