@@ -220,4 +220,3 @@ instance.
 The recoverable durable authority remains `instance.json` plus the one-level
 overlay. Registry enumeration does not infer a valid instance from a stray disk
 or directory that lacks valid intent metadata.
-
