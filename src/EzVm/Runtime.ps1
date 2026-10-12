@@ -605,10 +605,27 @@ function New-EzVmRuntimeQemuArguments {
         [Parameter(Mandatory = $true)][string]$SerialLog,
         [Parameter(Mandatory = $true)][string]$QemuLog,
         [Parameter(Mandatory = $true)][ValidateRange(1024, 65535)][int]$QmpPort,
-        [ValidateSet('whpx', 'tcg')][string]$Accelerator = 'whpx'
+        [ValidateSet('whpx', 'tcg')][string]$Accelerator = 'whpx',
+        [ValidateRange(0, 65535)][int]$SshPort = 0,
+        [ValidateRange(0, 65535)][int]$SeedHostPort = 0,
+        [string]$SeedGuestAddress = '10.0.2.100',
+        [ValidateRange(1, 65535)][int]$SeedGuestPort = 8000
     )
 
     Assert-EzVmInstanceIntent -Intent $Intent -ExpectedName $InstanceName
+    if ($SshPort -gt 0 -and $SshPort -lt 1024) { throw 'SSH host forwarding requires a non-privileged port from 1024 to 65535.' }
+    if ($SeedHostPort -gt 0 -and $SeedHostPort -lt 1024) { throw 'Seed guest forwarding requires a non-privileged host port from 1024 to 65535.' }
+    if ($SeedHostPort -gt 0 -and $SeedGuestAddress -cne '10.0.2.100') {
+        throw 'The EZVM-007 NoCloud guest-forward address must be exactly 10.0.2.100.'
+    }
+
+    $netdev = 'user,id=net0,ipv6=off'
+    if ($SshPort -gt 0) {
+        $netdev += ',hostfwd=tcp:127.0.0.1:' + $SshPort + '-:22'
+    }
+    if ($SeedHostPort -gt 0) {
+        $netdev += ',guestfwd=tcp:' + $SeedGuestAddress + ':' + $SeedGuestPort + '-tcp:127.0.0.1:' + $SeedHostPort
+    }
 
     $arguments = New-Object 'System.Collections.Generic.List[string]'
     foreach ($pair in @(
@@ -627,13 +644,18 @@ function New-EzVmRuntimeQemuArguments {
         @('-drive', ('if=pflash,format=raw,file=' + [IO.Path]::GetFullPath($FirmwareVariables))),
         @('-drive', ('if=none,id=osdisk,format=qcow2,file=' + [IO.Path]::GetFullPath($Disk))),
         @('-device', 'virtio-blk-pci,drive=osdisk,bootindex=0'),
-        @('-netdev', 'user,id=net0,ipv6=off'),
+        @('-netdev', $netdev),
         @('-device', 'virtio-net-pci,netdev=net0'),
         @('-boot', 'order=c,strict=on'),
         @('-rtc', 'base=utc')
     )) {
         $arguments.Add($pair[0])
         $arguments.Add($pair[1])
+    }
+    if ($SeedHostPort -gt 0) {
+        $seedUrl = 'http://' + $SeedGuestAddress + ':' + $SeedGuestPort + '/'
+        $arguments.Add('-smbios')
+        $arguments.Add('type=1,serial=ds=nocloud;s=' + $seedUrl)
     }
     if ($Accelerator -ceq 'tcg') {
         $arguments.Add('-cpu')
@@ -781,7 +803,11 @@ function Start-EzVmInstance {
         [scriptblock]$QemuStatusProvider,
         [scriptblock]$ProcessProvider,
         [scriptblock]$ProcessLauncher,
-        [scriptblock]$QmpInvoker
+        [scriptblock]$QmpInvoker,
+        [ValidateRange(0, 65535)][int]$SshPort = 0,
+        [ValidateRange(0, 65535)][int]$SeedHostPort = 0,
+        [string]$SeedGuestAddress = '10.0.2.100',
+        [ValidateRange(1, 65535)][int]$SeedGuestPort = 8000
     )
 
     Assert-EzVmStorageInstanceName -Name $InstanceName
@@ -814,7 +840,7 @@ function Start-EzVmInstance {
         $qmpPort = Get-EzVmEphemeralLoopbackPort
         $serialLog = Join-Path $runtimePaths.Logs ('serial-' + $launchId + '.log')
         $qemuLog = Join-Path $runtimePaths.Logs ('qemu-' + $launchId + '.log')
-        $arguments = New-EzVmRuntimeQemuArguments -InstanceName $InstanceName -Intent $intent -Disk $storage.OverlayPath -FirmwareCode $firmware.Code -FirmwareVariables $firmware.Variables -SerialLog $serialLog -QemuLog $qemuLog -QmpPort $qmpPort -Accelerator $Accelerator
+        $arguments = New-EzVmRuntimeQemuArguments -InstanceName $InstanceName -Intent $intent -Disk $storage.OverlayPath -FirmwareCode $firmware.Code -FirmwareVariables $firmware.Variables -SerialLog $serialLog -QemuLog $qemuLog -QmpPort $qmpPort -Accelerator $Accelerator -SshPort $SshPort -SeedHostPort $SeedHostPort -SeedGuestAddress $SeedGuestAddress -SeedGuestPort $SeedGuestPort
         $fingerprint = Get-EzVmArgumentFingerprint -ArgumentList $arguments
 
         if ($null -ne $ProcessLauncher) {
