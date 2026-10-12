@@ -293,7 +293,7 @@ function Assert-EzVmRuntimeState {
 
     Assert-EzVmRuntimeFields -Value $Runtime -Expected @(
         'schemaVersion', 'instanceName', 'state', 'pid', 'processStartTimeUtc',
-        'qemuExecutable', 'argumentFingerprint', 'launchId', 'qmpPipe',
+        'qemuExecutable', 'argumentFingerprint', 'launchId', 'qmpHost', 'qmpPort',
         'accelerator', 'startedAt', 'lastObservedAt', 'stoppedAt',
         'qemuLog', 'serialLog'
     ) -Description 'Instance runtime state'
@@ -313,9 +313,10 @@ function Assert-EzVmRuntimeState {
     if ($Runtime.launchId -isnot [string] -or $Runtime.launchId -cnotmatch '^[a-f0-9]{32}$') {
         throw 'Instance runtime launchId is invalid.'
     }
-    if ($Runtime.qmpPipe -isnot [string] -or $Runtime.qmpPipe -cnotmatch '^ezvm-qmp-[A-Za-z0-9._-]+-[a-f0-9]{32}$') {
-        throw 'Instance runtime qmpPipe is invalid.'
+    if ($Runtime.qmpHost -cne '127.0.0.1') {
+        throw 'Instance runtime qmpHost must be exactly 127.0.0.1.'
     }
+    Assert-EzVmRuntimeInteger -Value $Runtime.qmpPort -Description 'Instance runtime qmpPort' -Minimum 1024 -Maximum 65535
     if (@('whpx', 'tcg') -cnotcontains [string]$Runtime.accelerator) {
         throw 'Instance runtime accelerator must be whpx or tcg.'
     }
@@ -401,7 +402,8 @@ function New-EzVmRuntimeStatusResult {
         reason = $Reason
         pid = $(if ($null -ne $Process) { [int]$Process.Pid } elseif ($null -ne $Runtime) { [int]$Runtime.pid } else { $null })
         accelerator = $(if ($null -ne $Runtime) { [string]$Runtime.accelerator } else { $null })
-        qmpPipe = $(if ($null -ne $Runtime) { [string]$Runtime.qmpPipe } else { $null })
+        qmpHost = $(if ($null -ne $Runtime) { [string]$Runtime.qmpHost } else { $null })
+        qmpPort = $(if ($null -ne $Runtime) { [int]$Runtime.qmpPort } else { $null })
         startedAt = $(if ($null -ne $Runtime) { [string]$Runtime.startedAt } else { $null })
         stoppedAt = $(if ($null -ne $Runtime) { [string]$Runtime.stoppedAt } else { $null })
     }
@@ -558,6 +560,19 @@ function Get-EzVmRuntimeFirmwarePaths {
     }
 }
 
+function Get-EzVmEphemeralLoopbackPort {
+    [CmdletBinding()]
+    param()
+
+    $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+    try {
+        $listener.Server.ExclusiveAddressUse = $true
+        $listener.Start()
+        return [int]([Net.IPEndPoint]$listener.LocalEndpoint).Port
+    }
+    finally { $listener.Stop() }
+}
+
 function New-EzVmRuntimeQemuArguments {
     [CmdletBinding()]
     param(
@@ -568,12 +583,11 @@ function New-EzVmRuntimeQemuArguments {
         [Parameter(Mandatory = $true)][string]$FirmwareVariables,
         [Parameter(Mandatory = $true)][string]$SerialLog,
         [Parameter(Mandatory = $true)][string]$QemuLog,
-        [Parameter(Mandatory = $true)][string]$QmpPipe,
+        [Parameter(Mandatory = $true)][ValidateRange(1024, 65535)][int]$QmpPort,
         [ValidateSet('whpx', 'tcg')][string]$Accelerator = 'whpx'
     )
 
     Assert-EzVmInstanceIntent -Intent $Intent -ExpectedName $InstanceName
-    if ($QmpPipe -cnotmatch '^ezvm-qmp-[A-Za-z0-9._-]+-[a-f0-9]{32}$') { throw 'Invalid runtime QMP pipe name.' }
 
     $arguments = New-Object 'System.Collections.Generic.List[string]'
     foreach ($pair in @(
@@ -587,7 +601,7 @@ function New-EzVmRuntimeQemuArguments {
         @('-serial', ('file:' + [IO.Path]::GetFullPath($SerialLog))),
         @('-D', [IO.Path]::GetFullPath($QemuLog)),
         @('-d', 'guest_errors,unimp'),
-        @('-qmp', ('pipe:' + $QmpPipe)),
+        @('-qmp', ('tcp:127.0.0.1:' + $QmpPort + ',server=on,wait=off,nodelay=on')),
         @('-drive', ('if=pflash,format=raw,readonly=on,file=' + [IO.Path]::GetFullPath($FirmwareCode))),
         @('-drive', ('if=pflash,format=raw,file=' + [IO.Path]::GetFullPath($FirmwareVariables))),
         @('-drive', ('if=none,id=osdisk,format=qcow2,file=' + [IO.Path]::GetFullPath($Disk))),
@@ -688,27 +702,30 @@ function Wait-EzVmQmpResponse {
 function Invoke-EzVmQmpCommand {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true)][string]$PipeName,
+        [Parameter(Mandatory = $true)][string]$HostAddress,
+        [Parameter(Mandatory = $true)][ValidateRange(1024, 65535)][int]$Port,
         [Parameter(Mandatory = $true)][string]$Command,
         [ValidateRange(100, 30000)][int]$TimeoutMilliseconds = 3000
     )
 
-    if ($PipeName -cnotmatch '^ezvm-qmp-[A-Za-z0-9._-]+-[a-f0-9]{32}$') { throw 'Refusing invalid QMP pipe name.' }
+    if ($HostAddress -cne '127.0.0.1') { throw 'QMP management must connect only to 127.0.0.1.' }
     if ($Command -notin @('query-status', 'system_powerdown', 'quit')) { throw "QMP command '$Command' is not permitted by this control path." }
 
-    $client = New-Object IO.Pipes.NamedPipeClientStream(
-        '.', $PipeName, [IO.Pipes.PipeDirection]::InOut, [IO.Pipes.PipeOptions]::Asynchronous)
+    $client = New-Object Net.Sockets.TcpClient([Net.Sockets.AddressFamily]::InterNetwork)
     $reader = $null
     $writer = $null
     try {
-        $client.Connect($TimeoutMilliseconds)
-        $reader = New-Object IO.StreamReader($client, (New-Object Text.UTF8Encoding($false)), $false, 4096, $true)
-        $writer = New-Object IO.StreamWriter($client, (New-Object Text.UTF8Encoding($false)), 4096, $true)
+        $connect = $client.ConnectAsync($HostAddress, $Port)
+        if (-not $connect.Wait($TimeoutMilliseconds)) { throw ('Timed out connecting to QMP at ' + $HostAddress + ':' + $Port + '.') }
+        if (-not $client.Connected) { throw ('Could not connect to QMP at ' + $HostAddress + ':' + $Port + '.') }
+        $stream = $client.GetStream()
+        $reader = New-Object IO.StreamReader($stream, (New-Object Text.UTF8Encoding($false)), $false, 4096, $true)
+        $writer = New-Object IO.StreamWriter($stream, (New-Object Text.UTF8Encoding($false)), 4096, $true)
         $writer.NewLine = [Environment]::NewLine
         $writer.AutoFlush = $true
 
         $greeting = Read-EzVmQmpJsonLine -Reader $reader -TimeoutMilliseconds $TimeoutMilliseconds
-        if ($null -eq (Get-EzVmRuntimeProperty $greeting 'QMP')) { throw 'QMP management pipe did not provide a valid server greeting.' }
+        if ($null -eq (Get-EzVmRuntimeProperty $greeting 'QMP')) { throw 'QMP management endpoint did not provide a valid server greeting.' }
 
         $capId = 'ezvm-capabilities'
         $writer.WriteLine(([pscustomobject][ordered]@{ execute = 'qmp_capabilities'; id = $capId } | ConvertTo-Json -Compress))
@@ -727,9 +744,9 @@ function Invoke-EzVmQmpCommand {
 }
 
 function Invoke-EzVmRuntimeQmp {
-    param([string]$PipeName, [string]$Command, [int]$TimeoutMilliseconds, [scriptblock]$QmpInvoker)
-    if ($null -ne $QmpInvoker) { return & $QmpInvoker $PipeName $Command $TimeoutMilliseconds }
-    return Invoke-EzVmQmpCommand -PipeName $PipeName -Command $Command -TimeoutMilliseconds $TimeoutMilliseconds
+    param([string]$HostAddress, [int]$Port, [string]$Command, [int]$TimeoutMilliseconds, [scriptblock]$QmpInvoker)
+    if ($null -ne $QmpInvoker) { return & $QmpInvoker $HostAddress $Port $Command $TimeoutMilliseconds }
+    return Invoke-EzVmQmpCommand -HostAddress $HostAddress -Port $Port -Command $Command -TimeoutMilliseconds $TimeoutMilliseconds
 }
 
 function Start-EzVmInstance {
@@ -770,10 +787,11 @@ function Start-EzVmInstance {
         $null = Assert-EzVmStorageManagedPath -Path $runtimePaths.Logs -ContainmentRoot $runtimePaths.Directory -SafetyRoot $paths.Root -Description 'Instance log directory' -RequireDirectory
         $firmware = Get-EzVmRuntimeFirmwarePaths -Root $Root -InstanceName $InstanceName
         $launchId = [Guid]::NewGuid().ToString('N')
-        $qmpPipe = 'ezvm-qmp-' + $InstanceName + '-' + $launchId
+        $qmpHost = '127.0.0.1'
+        $qmpPort = Get-EzVmEphemeralLoopbackPort
         $serialLog = Join-Path $runtimePaths.Logs ('serial-' + $launchId + '.log')
         $qemuLog = Join-Path $runtimePaths.Logs ('qemu-' + $launchId + '.log')
-        $arguments = New-EzVmRuntimeQemuArguments -InstanceName $InstanceName -Intent $intent -Disk $storage.OverlayPath -FirmwareCode $firmware.Code -FirmwareVariables $firmware.Variables -SerialLog $serialLog -QemuLog $qemuLog -QmpPipe $qmpPipe -Accelerator $Accelerator
+        $arguments = New-EzVmRuntimeQemuArguments -InstanceName $InstanceName -Intent $intent -Disk $storage.OverlayPath -FirmwareCode $firmware.Code -FirmwareVariables $firmware.Variables -SerialLog $serialLog -QemuLog $qemuLog -QmpPort $qmpPort -Accelerator $Accelerator
         $fingerprint = Get-EzVmArgumentFingerprint -ArgumentList $arguments
 
         if ($null -ne $ProcessLauncher) {
@@ -796,7 +814,8 @@ function Start-EzVmInstance {
             qemuExecutable = [IO.Path]::GetFullPath($managed.QemuSystem)
             argumentFingerprint = $fingerprint
             launchId = $launchId
-            qmpPipe = $qmpPipe
+            qmpHost = $qmpHost
+            qmpPort = $qmpPort
             accelerator = $Accelerator
             startedAt = $now
             lastObservedAt = $now
@@ -815,7 +834,7 @@ function Start-EzVmInstance {
                 throw "QEMU exited or changed identity before startup completed: $($identity.Reason)"
             }
             try {
-                $null = Invoke-EzVmRuntimeQmp -PipeName $qmpPipe -Command 'query-status' -TimeoutMilliseconds 750 -QmpInvoker $QmpInvoker
+                $null = Invoke-EzVmRuntimeQmp -HostAddress $qmpHost -Port $qmpPort -Command 'query-status' -TimeoutMilliseconds 750 -QmpInvoker $QmpInvoker
                 $runtime.state = 'RUNNING'
                 $runtime.lastObservedAt = [DateTime]::UtcNow.ToString('o')
                 Write-EzVmRuntimeStateFile -Root $Root -InstanceName $InstanceName -Runtime $runtime
@@ -824,7 +843,8 @@ function Start-EzVmInstance {
                     state = 'RUNNING'
                     pid = [int]$runtime.pid
                     accelerator = $Accelerator
-                    qmpPipe = $qmpPipe
+                    qmpHost = $qmpHost
+                    qmpPort = $qmpPort
                     serialLog = $runtime.serialLog
                     qemuLog = $runtime.qemuLog
                 }
@@ -881,7 +901,7 @@ function Stop-EzVmInstance {
         $runtime.state = 'STOPPING'
         $runtime.lastObservedAt = [DateTime]::UtcNow.ToString('o')
         Write-EzVmRuntimeStateFile -Root $Root -InstanceName $InstanceName -Runtime $runtime
-        $null = Invoke-EzVmRuntimeQmp -PipeName $runtime.qmpPipe -Command 'system_powerdown' -TimeoutMilliseconds 3000 -QmpInvoker $QmpInvoker
+        $null = Invoke-EzVmRuntimeQmp -HostAddress $runtime.qmpHost -Port ([int]$runtime.qmpPort) -Command 'system_powerdown' -TimeoutMilliseconds 3000 -QmpInvoker $QmpInvoker
 
         $deadline = [DateTime]::UtcNow.AddSeconds($ShutdownTimeoutSeconds)
         while ([DateTime]::UtcNow -lt $deadline) {
