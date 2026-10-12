@@ -161,7 +161,7 @@ Add-EzVmTest -Name 'Runtime: QEMU arguments are explicit headless WHPX with host
         Assert-EzVmTrue -Condition ($joined -match ' -display none ')
         Assert-EzVmTrue -Condition ($joined -match 'virtio-blk-pci,drive=osdisk')
         Assert-EzVmTrue -Condition ($joined -match 'virtio-net-pci,netdev=net0')
-        Assert-EzVmTrue -Condition ($joined -match ('pipe,id=qmp,path=' + [regex]::Escape($pipe)))
+        Assert-EzVmTrue -Condition ($joined -match (' -qmp pipe:' + [regex]::Escape($pipe) + ' '))
         Assert-EzVmTrue -Condition ($joined -notmatch 'qmp.*tcp:') -Message 'Management channel must not be TCP/LAN exposed.'
         Assert-EzVmTrue -Condition ($joined -notmatch 'tcg') -Message 'Normal WHPX arguments must not silently degrade to TCG.'
         $diskToken = @($args | Where-Object { $_ -match '^if=none,id=osdisk' })[0]
