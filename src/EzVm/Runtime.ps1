@@ -498,6 +498,7 @@ function Enter-EzVmInstanceLifecycleLock {
         [ValidateRange(1, 30000)][int]$TimeoutMilliseconds = 5000
     )
 
+    Assert-EzVmStorageInstanceName -Name $InstanceName
     $paths = Get-EzVmPaths -Root $Root
     [void][IO.Directory]::CreateDirectory($paths.Locks)
     $null = Assert-EzVmStorageManagedPath -Path $paths.Locks -ContainmentRoot $paths.Runtime -SafetyRoot $paths.Root -Description 'Lifecycle lock directory' -RequireDirectory
@@ -543,6 +544,8 @@ function Get-EzVmRuntimeFirmwarePaths {
             if (Test-Path -LiteralPath $candidate) { try { Remove-Item -LiteralPath $candidate -Force } catch { } }
         }
     }
+    $paths = Get-EzVmPaths -Root $Root
+    $null = Assert-EzVmStorageManagedPath -Path $runtimePaths.FirmwareVariables -ContainmentRoot $runtimePaths.Directory -SafetyRoot $paths.Root -Description 'Instance UEFI variable store' -RequireFile
     return [pscustomobject][ordered]@{
         Code = [IO.Path]::GetFullPath($code)
         Variables = [IO.Path]::GetFullPath($runtimePaths.FirmwareVariables)
@@ -738,8 +741,10 @@ function Start-EzVmInstance {
         [scriptblock]$QmpInvoker
     )
 
+    Assert-EzVmStorageInstanceName -Name $InstanceName
     $lock = Enter-EzVmInstanceLifecycleLock -Root $Root -InstanceName $InstanceName
     $launch = $null
+    $runtimePublished = $false
     try {
         $intent = Get-EzVmInstanceIntent -Root $Root -InstanceName $InstanceName
         $status = Get-EzVmInstanceStatus -Root $Root -InstanceName $InstanceName -ProcessProvider $ProcessProvider
@@ -757,6 +762,7 @@ function Start-EzVmInstance {
 
         $runtimePaths = Get-EzVmInstanceRuntimePaths -Root $Root -InstanceName $InstanceName
         [void][IO.Directory]::CreateDirectory($runtimePaths.Logs)
+        $null = Assert-EzVmStorageManagedPath -Path $runtimePaths.Logs -ContainmentRoot $runtimePaths.Directory -SafetyRoot $paths.Root -Description 'Instance log directory' -RequireDirectory
         $firmware = Get-EzVmRuntimeFirmwarePaths -Root $Root -InstanceName $InstanceName
         $launchId = [Guid]::NewGuid().ToString('N')
         $qmpPipe = 'ezvm-qmp-' + $InstanceName + '-' + $launchId
@@ -794,6 +800,7 @@ function Start-EzVmInstance {
             serialLog = [IO.Path]::GetFullPath($serialLog)
         }
         Write-EzVmRuntimeStateFile -Root $Root -InstanceName $InstanceName -Runtime $runtime
+        $runtimePublished = $true
 
         $deadline = [DateTime]::UtcNow.AddSeconds($StartupTimeoutSeconds)
         $lastError = $null
@@ -824,6 +831,14 @@ function Start-EzVmInstance {
         }
         throw "Instance '$InstanceName' exceeded its $StartupTimeoutSeconds second startup timeout while QEMU still owns the disk. runtime.json remains STARTING; do not mutate storage until status is reconciled. Last QMP error: $lastError"
     }
+    catch {
+        if ($null -ne $launch -and -not $runtimePublished -and $null -ne (Get-EzVmRuntimeProperty $launch 'Process')) {
+            try {
+                if (-not $launch.Process.HasExited) { $launch.Process.Kill() }
+            } catch { }
+        }
+        throw
+    }
     finally {
         if ($null -ne $launch -and $null -ne (Get-EzVmRuntimeProperty $launch 'Process')) {
             try { $launch.Process.Dispose() } catch { }
@@ -842,6 +857,7 @@ function Stop-EzVmInstance {
         [scriptblock]$QmpInvoker
     )
 
+    Assert-EzVmStorageInstanceName -Name $InstanceName
     $lock = Enter-EzVmInstanceLifecycleLock -Root $Root -InstanceName $InstanceName
     try {
         $status = Get-EzVmInstanceStatus -Root $Root -InstanceName $InstanceName -ProcessProvider $ProcessProvider
