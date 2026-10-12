@@ -272,14 +272,28 @@ machine ID and Ed25519 host key before READY. The first initialization performs
 one guest reboot inside the same total launch-readiness budget. A normal restart
 or complete cold relocation preserves the adopted key and machine identity.
 
+Version 2 intent still requires successful finalizer completion in the current
+guest boot before READY on every launch. The finalizer service retains its
+successful completion state for that boot. An unchanged generation and matching
+READY document from a previous boot cannot authorize READY while the current
+boot's finalizer is pending. This applies equally to normal restart and cold
+relocation.
+
 A copied snapshot can briefly expose the source SSH key and source READY file
 while its destination initialization is pending. The schema version 2 readiness
 path first checks expected DMI identity, the destination generation marker and
-adoption by the running boot. Only the exact bounded pending protocol is
-retryable. It discards unpromoted candidate trust during that transition, so the
-source's transient key cannot prevent learning the destination key. Malformed
-proofs still fail closed. Existing managed trust is retained until the final
-normal authenticated identity, cloud-init, coding marker and live checks pass.
+adoption by the running boot, and successful finalizer completion in that boot.
+Only the exact bounded pending protocol is retryable. Unpromoted candidate trust
+is discarded during that transition, so the source's transient key cannot
+prevent learning the destination key. Malformed proofs still fail closed.
+Existing managed trust is retained until the final normal authenticated
+identity, cloud-init, coding marker and live checks pass. After live validation,
+the probe rechecks the same completed finalizer execution in the current boot
+and the unchanged READY document before reporting success.
+Current-boot completion supplements those checks: cloud-init must still report
+exactly `done` with exit code 0, the complete identity and READY documents must
+match, and live profile validation must succeed. All waiting and validation
+consume the original absolute launch-readiness deadline.
 
 Publishing PROVISIONING or READY also holds the instance lifecycle lock and
 rechecks the exact durable intent, original launch ID and positively reconciled

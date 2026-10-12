@@ -681,6 +681,7 @@ Wants=cloud-final.service
 
 [Service]
 Type=oneshot
+RemainAfterExit=yes
 ExecStart=/usr/local/sbin/ezvm-instance-finalize
 TimeoutStartSec=180
 StandardOutput=journal+console
@@ -1294,6 +1295,7 @@ function Get-EzVmReadinessRemoteScript {
         [AllowEmptyString()][string]$ExpectedMachineUuid = ''
     )
     $initializationGate = ''
+    $initializationPostGate = ''
     if ($ExpectedCloudInstanceId.Length -gt 0 -or $ExpectedMachineUuid.Length -gt 0) {
         if ($ExpectedCloudInstanceId -cnotmatch '^[a-z0-9._-]{1,128}$' -or
             $ExpectedMachineUuid -cnotmatch '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$') {
@@ -1307,7 +1309,7 @@ function Get-EzVmReadinessRemoteScript {
         # This is a host-generated, read-only preflight. The normal strict
         # readiness parser never sees or accepts a copied source identity.
         $gate = @'
-import base64, hashlib, json, os, re, stat, sys
+import base64, hashlib, json, os, re, stat, subprocess, sys
 expected = json.loads(base64.b64decode('__EZVM_GATE_CONFIG__'))
 class Pending(Exception):
     pass
@@ -1337,6 +1339,47 @@ def read_regular(path):
             os.close(document)
     finally:
         os.close(fd)
+
+def completed_finalizer():
+    # Unit runtime state is rebuilt each boot. A persistent ready.json alone
+    # cannot distinguish this boot from an earlier, identical guest generation.
+    fields = {'LoadState', 'ActiveState', 'SubState', 'Result', 'ExecMainCode',
+              'ExecMainStatus', 'ExecMainStartTimestampMonotonic', 'InvocationID'}
+    try:
+        result = subprocess.run(['/usr/bin/systemctl', 'show', '--no-pager', '--all',
+                                 '--property=' + ','.join(sorted(fields)),
+                                 'ezvm-instance-finalize.service'],
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                text=True, timeout=5, check=False)
+    except subprocess.TimeoutExpired:
+        raise Pending()
+    if len(result.stdout) > 8192:
+        raise ValueError('oversized guest finalizer status')
+    status = {}
+    for line in result.stdout.splitlines():
+        key, separator, value = line.partition('=')
+        if not separator or key not in fields or key in status:
+            raise ValueError('malformed guest finalizer status')
+        status[key] = value
+    if status.get('LoadState') == 'not-found' and result.returncode in (0, 4):
+        raise Pending()
+    if result.returncode != 0 or set(status) != fields or status['LoadState'] != 'loaded':
+        raise ValueError('could not inspect the current guest finalizer')
+    if status['ActiveState'] == 'failed' or status['Result'] != 'success':
+        raise ValueError('guest finalizer failed in the current boot')
+    if status['ActiveState'] != 'active' or status['SubState'] != 'exited':
+        raise Pending()
+    if status['ExecMainCode'] != '1' or status['ExecMainStatus'] != '0':
+        raise ValueError('guest finalizer did not exit successfully')
+    if not re.fullmatch('[1-9][0-9]*', status['ExecMainStartTimestampMonotonic']):
+        raise ValueError('guest finalizer lacks current-boot execution evidence')
+    if not re.fullmatch('[a-f0-9]{32}', status['InvocationID']) or status['InvocationID'] == '0' * 32:
+        raise ValueError('guest finalizer has an invalid invocation identifier')
+    try:
+        ready = read_regular('/var/lib/ezvm/ready.json')
+    except FileNotFoundError:
+        raise Pending()
+    return status['InvocationID'] + ':' + hashlib.sha256(ready).hexdigest()
 
 try:
     if open('/sys/class/dmi/id/product_uuid', encoding='ascii').read().strip().lower() != expected['machineUuid']:
@@ -1376,7 +1419,8 @@ try:
     for key in ('sshHostKeySha256', 'controllerPublicKeySha256'):
         if not isinstance(marker[key], str) or not re.fullmatch('[a-f0-9]{64}', marker[key]):
             raise ValueError('invalid guest identity evidence digest')
-    if marker['initializedBootId'] == open('/proc/sys/kernel/random/boot_id', encoding='ascii').read().strip():
+    boot_id = open('/proc/sys/kernel/random/boot_id', encoding='ascii').read().strip()
+    if marker['initializedBootId'] == boot_id:
         raise Pending()
     if read_regular('/etc/machine-id').decode('ascii').strip() != expected['machineId']:
         raise ValueError('destination machine-id was not adopted')
@@ -1388,6 +1432,7 @@ try:
         raise ValueError('DBus machine identity was not adopted')
     if hashlib.sha256(read_regular('/etc/ssh/ssh_host_ed25519_key.pub')).hexdigest() != marker['sshHostKeySha256']:
         raise ValueError('destination SSH host identity differs from initialization')
+    print(boot_id + ':' + completed_finalizer())
 except Pending:
     sys.exit(75)
 except Exception as error:
@@ -1395,13 +1440,28 @@ except Exception as error:
     sys.exit(70)
 '@
         $gate = $gate.Replace('__EZVM_GATE_CONFIG__', [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($configuration))).Replace("`r`n", "`n")
-        $initializationGate = 'sudo -n -- python3 -c ' + (ConvertTo-EzVmPosixArgument -Value $gate) + "`n" +
+        $initializationGate = 'ezvm_guest_boot_gate() {' + "`n" +
+            '    sudo -n -- python3 -c ' + (ConvertTo-EzVmPosixArgument -Value $gate) + "`n" +
+            '}' + "`n" +
+            'ezvm_boot_proof="$(ezvm_guest_boot_gate)"' + "`n" +
             'identity_exit=$?' + "`n" +
             'if test "$identity_exit" -eq 75; then' + "`n" +
             "    printf '%s\n' 'EZVM_GUEST_IDENTITY_PENDING=$ExpectedCloudInstanceId'" + "`n" +
             '    exit 75' + "`n" +
             'fi' + "`n" +
             'if test "$identity_exit" -ne 0; then exit "$identity_exit"; fi' + "`n"
+        # The live profile check is intentionally substantial. Pin both the
+        # completed service invocation and ready bytes across that check so a
+        # concurrent finalizer restart cannot publish old captured evidence.
+        $initializationPostGate = 'if test "$profile_check" = pass; then' + "`n" +
+            '    ezvm_boot_proof_after="$(ezvm_guest_boot_gate)"' + "`n" +
+            '    identity_exit=$?' + "`n" +
+            '    if test "$identity_exit" -eq 75 || { test "$identity_exit" -eq 0 && test "$ezvm_boot_proof_after" != "$ezvm_boot_proof"; }; then' + "`n" +
+            "        printf '%s\n' 'EZVM_GUEST_IDENTITY_PENDING=$ExpectedCloudInstanceId'" + "`n" +
+            '        exit 75' + "`n" +
+            '    fi' + "`n" +
+            '    if test "$identity_exit" -ne 0; then exit "$identity_exit"; fi' + "`n" +
+            'fi' + "`n"
     }
     $script = @'
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -1429,10 +1489,11 @@ elif test "$cloud_exit" -eq 0 && test "$cloud_text" = 'status: done' && test -n 
         profile_check=failed
     fi
 fi
+__EZVM_INITIALIZATION_POST_GATE__
 profile_error_b64="$(printf %s "$profile_error" | head -c 2048 | base64 -w0)"
 printf 'EZVM_IDENTITY_B64=%s\nEZVM_CLOUD_B64=%s\nEZVM_CLOUD_EXIT=%s\nEZVM_READY_B64=%s\nEZVM_PROFILE_CHECK=%s\nEZVM_PROFILE_ERROR_B64=%s\n' "$identity_b64" "$cloud_b64" "$cloud_exit" "$ready_b64" "$profile_check" "$profile_error_b64"
 '@
-    return $script.Replace('__EZVM_INITIALIZATION_GATE__', $initializationGate).Replace('__EZVM_PROFILE_DIGEST__', $ProvisioningDigest).Replace(([string][char]13 + [char]10), [string][char]10)
+    return $script.Replace('__EZVM_INITIALIZATION_GATE__', $initializationGate).Replace('__EZVM_INITIALIZATION_POST_GATE__', $initializationPostGate).Replace('__EZVM_PROFILE_DIGEST__', $ProvisioningDigest).Replace(([string][char]13 + [char]10), [string][char]10)
 }
 
 function Wait-EzVmSshReady {

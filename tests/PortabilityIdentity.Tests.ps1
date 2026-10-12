@@ -227,6 +227,7 @@ Add-EzVmTest -Name 'Portability identity: source relocation preserves seed ident
         Assert-EzVmTrue -Condition ($moved.UserData.Contains('systemctl, start, --no-block, ezvm-instance-finalize.service'))
         $unit = Get-EzVmPortabilitySeedFile -UserData $moved.UserData -Path '/etc/systemd/system/ezvm-instance-finalize.service'
         Assert-EzVmTrue -Condition ($unit.Contains('After=cloud-final.service') -and $unit.Contains('Wants=cloud-final.service'))
+        Assert-EzVmTrue -Condition ($unit -cmatch '(?m)^Type=oneshot$' -and $unit -cmatch '(?m)^RemainAfterExit=yes$') -Message 'Successful current-boot completion must remain observable and repeated start requests must not rerun the finalizer.'
         # cloud-init 26.1 cloud-final.service is After=multi-user.target.
         # Target Wants adds an implicit After edge to its member: installing
         # finalization under multi-user would close a cycle on every reboot.
@@ -427,9 +428,152 @@ Add-EzVmTest -Name 'Portability identity: host-generated gate precedes copied re
     Assert-EzVmTrue -Condition ($remote.IndexOf('guest-identity.json') -lt $remote.IndexOf('identity_b64='))
     Assert-EzVmTrue -Condition ($remote.Contains('initializedBootId') -and $remote.Contains('product_uuid'))
     Assert-EzVmTrue -Condition ($remote.Contains('exit 75') -and $remote.Contains('EZVM_GUEST_IDENTITY_PENDING='))
+    Assert-EzVmTrue -Condition ($remote.IndexOf('ezvm_boot_proof="$(ezvm_guest_boot_gate)"') -lt $remote.IndexOf('ready_b64='))
+    Assert-EzVmTrue -Condition ($remote.IndexOf('ezvm_boot_proof_after="$(ezvm_guest_boot_gate)"') -gt $remote.IndexOf('/usr/local/sbin/ezvm-coding-profile validate'))
+    Assert-EzVmTrue -Condition ($remote.IndexOf('ezvm_boot_proof_after="$(ezvm_guest_boot_gate)"') -lt $remote.IndexOf("printf 'EZVM_IDENTITY_B64="))
+    Assert-EzVmTrue -Condition ($remote.Contains('test "$ezvm_boot_proof_after" != "$ezvm_boot_proof"')) -Message 'A restarted finalizer or changed readiness file must invalidate captured proof.'
     Assert-EzVmThrows -ScriptBlock {
         & $module { Get-EzVmReadinessRemoteScript -ProvisioningDigest ('a' * 64) -ExpectedCloudInstanceId 'x;reboot' -ExpectedMachineUuid ('a' * 32) }
     } -MessagePattern 'requires the exact destination' | Out-Null
+}
+
+$bootGatePython = @(Get-Command -Name 'python', 'python3' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1)
+$bootGateSkip = if ($bootGatePython.Count -eq 0) { 'Python 3 is unavailable; executable generated-guest-gate regression requires the guest scripting language.' } else { '' }
+$bootGatePythonPath = if ($bootGatePython.Count -eq 0) { '' } else { $bootGatePython[0].Source }
+Add-EzVmTest -Name 'Portability identity: executable gate requires current-boot finalizer completion and binds revalidation to its invocation and ready bytes' -Data $bootGatePythonPath -SkipReason $bootGateSkip -ScriptBlock {
+    param($pythonPath)
+    $root = New-EzVmTestDirectory -Prefix 'current boot gate'
+    try {
+        $intent = New-EzVmPortabilityIdentityTestIntent
+        $module = Get-Module EzVm
+        $remote = & $module {
+            param($i)
+            Get-EzVmReadinessRemoteScript -ProvisioningDigest ('a' * 64) -ExpectedCloudInstanceId (Get-EzVmGuestCloudInstanceId -Intent $i) -ExpectedMachineUuid (Get-EzVmGuestMachineUuid -Intent $i)
+        } $intent
+        $encoding = New-Object Text.UTF8Encoding($false)
+        $remotePath = Join-Path $root 'generated remote.sh'
+        $identityPath = Join-Path $root 'identity.json'
+        $fixturePath = Join-Path $root 'exercise gate.py'
+        [IO.File]::WriteAllText($remotePath, $remote, $encoding)
+        [IO.File]::WriteAllText($identityPath, (New-EzVmSshTestIdentityJson -Intent $intent), $encoding)
+        $fixture = @'
+import ast, contextlib, copy, hashlib, io, json, shlex, subprocess, sys, types
+
+tokens = shlex.split(open(sys.argv[1], encoding='utf-8').read())
+python_index = tokens.index('python3')
+assert tokens[python_index + 1] == '-c'
+tree = ast.parse(tokens[python_index + 2])
+assert isinstance(tree.body[-1], ast.Try)
+definitions = compile(ast.Module(body=tree.body[:-1], type_ignores=[]), '<generated gate definitions>', 'exec')
+decision = compile(ast.Module(body=tree.body[-1:], type_ignores=[]), '<generated gate decision>', 'exec')
+identity = json.load(open(sys.argv[2], encoding='utf-8'))
+ready = (json.dumps(dict(identity, provisioningState='complete')) + '\n').encode()
+boot = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+old_boot = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+complete = dict(LoadState='loaded', ActiveState='active', SubState='exited', Result='success',
+                ExecMainCode='1', ExecMainStatus='0', ExecMainStartTimestampMonotonic='123456',
+                InvocationID='c' * 32)
+
+def run(status=None, returncode=0, missing_ready=False, ready_bytes=ready,
+        duplicate=False, timeout=False, initialized_boot=old_boot, current_boot=boot,
+        wrong_hardware=False):
+    namespace = {}
+    exec(definitions, namespace)
+    expected = namespace['expected']
+    public = b'ssh-ed25519 AAAA fixture\n'
+    marker = dict(schemaVersion=1, cloudInstanceId=expected['cloudInstanceId'],
+                  machineUuid=expected['machineUuid'], machineId=expected['machineId'],
+                  initializedBootId=initialized_boot, sshHostKeySha256=hashlib.sha256(public).hexdigest(),
+                  controllerPublicKeySha256='d' * 64)
+    files = {'/var/lib/ezvm/guest-identity.json': json.dumps(marker).encode(),
+             '/etc/ezvm/identity.json': json.dumps(identity).encode(),
+             '/etc/machine-id': expected['machineId'].encode(),
+             '/var/lib/dbus/machine-id': expected['machineId'].encode(),
+             '/etc/ssh/ssh_host_ed25519_key.pub': public}
+    if not missing_ready:
+        files['/var/lib/ezvm/ready.json'] = ready_bytes
+    observed = dict(queries=0, ready_reads=0)
+    def read_regular(path):
+        if path.endswith('/ready.json'):
+            observed['ready_reads'] += 1
+        if path not in files:
+            raise FileNotFoundError(path)
+        return files[path]
+    def open_kernel(path, **kwargs):
+        if path == '/sys/class/dmi/id/product_uuid':
+            return io.StringIO('wrong' if wrong_hardware else expected['machineUuid'])
+        assert path == '/proc/sys/kernel/random/boot_id', path
+        return io.StringIO(current_boot)
+    def query(arguments, **kwargs):
+        observed['queries'] += 1
+        assert arguments[:4] == ['/usr/bin/systemctl', 'show', '--no-pager', '--all']
+        assert arguments[-1] == 'ezvm-instance-finalize.service'
+        assert kwargs['timeout'] == 5 and kwargs['check'] is False
+        if timeout:
+            raise subprocess.TimeoutExpired(arguments, 5)
+        values = complete if status is None else status
+        output = ''.join(key + '=' + value + '\n' for key, value in reversed(list(values.items())))
+        if duplicate:
+            output += 'Result=success\n'
+        return types.SimpleNamespace(returncode=returncode, stdout=output)
+    # Replace only guest I/O boundaries. Execute the generated parsing and
+    # decision code unchanged, with correctly matching prior-boot ready bytes.
+    namespace.update(read_regular=read_regular, open=open_kernel,
+                     os=types.SimpleNamespace(path=types.SimpleNamespace(islink=lambda path: False)),
+                     subprocess=types.SimpleNamespace(run=query, PIPE=subprocess.PIPE,
+                                                      DEVNULL=subprocess.DEVNULL,
+                                                      TimeoutExpired=subprocess.TimeoutExpired))
+    output, error = io.StringIO(), io.StringIO()
+    result = 0
+    with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+        try:
+            exec(decision, namespace)
+        except SystemExit as stopped:
+            result = stopped.code
+    return result, output.getvalue().strip(), error.getvalue(), observed
+
+for active, sub in [('inactive', 'dead'), ('activating', 'start'), ('active', 'running')]:
+    result = run(dict(complete, ActiveState=active, SubState=sub))
+    assert result[0] == 75 and result[1] == '' and result[3]['ready_reads'] == 0, result
+never_started = dict(complete, ActiveState='inactive', SubState='dead', ExecMainCode='0',
+                     ExecMainStartTimestampMonotonic='0', InvocationID='')
+assert run(never_started)[0] == 75
+assert run({'LoadState': 'not-found'}, returncode=4)[0] == 75
+assert run(timeout=True)[0] == 75
+assert run(missing_ready=True)[0] == 75
+assert run(initialized_boot=boot)[0] == 75  # Required identity reboot still wins.
+assert run(initialized_boot=boot)[3]['queries'] == 0
+assert run(wrong_hardware=True)[0] == 70
+assert run(wrong_hardware=True)[3]['queries'] == 0
+
+for changes in [dict(ActiveState='failed', Result='exit-code'), dict(Result='timeout'),
+                dict(ExecMainStatus='1'), dict(ExecMainCode='2'),
+                dict(ExecMainStartTimestampMonotonic='0'), dict(InvocationID='0' * 32)]:
+    result = run(dict(complete, **changes))
+    assert result[0] == 70 and result[1] == '', result
+assert run(dict(complete, Unexpected='value'))[0] == 70
+missing = dict(complete)
+del missing['InvocationID']
+assert run(missing)[0] == 70
+assert run(duplicate=True)[0] == 70
+assert run(returncode=1)[0] == 70
+
+fresh = run()
+assert fresh[0] == 0 and fresh[1] == boot + ':' + 'c' * 32 + ':' + hashlib.sha256(ready).hexdigest(), fresh
+assert run()[1] == fresh[1]
+# Revalidation must expose restart, file replacement and boot transitions;
+# the generated shell compares this fingerprint before printing proof bytes.
+assert run(dict(complete, InvocationID='e' * 32))[1] != fresh[1]
+assert run(ready_bytes=ready + b' ')[1] != fresh[1]
+assert run(current_boot='ffffffff-ffff-ffff-ffff-ffffffffffff')[1] != fresh[1]
+print('PASS generated gate: prior READY blocked; completed current boot accepted; restart/failure/change invalidated.')
+'@
+        [IO.File]::WriteAllText($fixturePath, $fixture, $encoding)
+        $result = Invoke-EzVmProcess -FilePath $pythonPath -ArgumentList @($fixturePath, $remotePath, $identityPath) -WorkingDirectory $root -TimeoutSeconds 15
+        Assert-EzVmEqual -Actual $result.ExitCode -Expected 0 -Message $result.StdErr
+        Assert-EzVmTrue -Condition ($result.StdOut.Contains('PASS generated gate:'))
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
 }
 
 Add-EzVmTest -Name 'Portability identity: SSH allocation refuses a redirected lock directory before creating outside state' -ScriptBlock {

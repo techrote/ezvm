@@ -243,9 +243,11 @@ within one bounded launch-readiness deadline:
    instance/base/resource profile/cloud instance ID and coding profile
    name/version/digest exactly;
 4. `cloud-init status` to return exit code 0 and report exactly `done`;
-5. the complete ready document to match the same identity and record completed
+5. for schema version 2 intent, successful finalizer completion in the current
+   guest boot;
+6. the complete ready document to match the same identity and record completed
    provisioning;
-6. live required-tool, coder-account and workspace validation to succeed.
+7. live required-tool, coder-account and workspace validation to succeed.
 
 Identity mismatch, missing required tools or invalid account/workspace policy
 cannot produce READY even if an older readiness file remains. Cloud-init or
@@ -308,11 +310,19 @@ identity and key and rerun coding-profile validation without repeating the
 identity reset. Complete older version 1 intent keeps its accepted bootstrap
 behavior and original identity derivation.
 
+Every version 2 launch requires the finalizer to finish successfully in the
+current boot. Its service retains that completion state for the rest of the
+boot. A previous boot's READY document cannot authorize early READY on normal
+restart or cold relocation, even when the durable generation and guest identity
+are unchanged. Waiting for current-boot completion shares the original absolute
+launch-readiness deadline with cloud-init, identity and live profile checks.
+
 The copied image's source identity, cloud-init cache and old READY marker never
 qualify the destination. Before the normal strict readiness parser, a read-only
 host-selected check verifies the expected DMI identity and completed adoption
-of the destination generation. Its narrowly defined pending result allows
-first initialization to finish within the existing bound. An unpromoted SSH
+of the destination generation, together with successful finalizer completion in
+the current boot. Its narrowly defined pending result allows initialization and
+finalization to finish within the existing bound. An unpromoted SSH
 candidate learned during that transition is discarded; only final exact
 identity/profile and live checks can establish managed trust and READY.
 
