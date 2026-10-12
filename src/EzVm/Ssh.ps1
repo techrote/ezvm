@@ -167,6 +167,7 @@ function Get-EzVmControllerSshIdentity {
     [void][IO.Directory]::CreateDirectory($paths.KeysDirectory)
     $privateExists = Test-Path -LiteralPath $paths.ControllerPrivateKey -PathType Leaf
     $publicExists = Test-Path -LiteralPath $paths.ControllerPublicKey -PathType Leaf
+    $createdThisCall = $false
 
     if (-not $privateExists -and $publicExists) {
         throw "The ezvm controller public key exists without its private key at '$($paths.ControllerPrivateKey)'. Restore the matching private key or remove the orphan public key deliberately before generating a new controller identity."
@@ -183,14 +184,28 @@ function Get-EzVmControllerSshIdentity {
             $detail = if ($null -ne $result) { [string]$result.StdErr } else { '' }
             throw "ssh-keygen could not create the ezvm controller keypair. $detail"
         }
+        $createdThisCall = $true
         $privateExists = Test-Path -LiteralPath $paths.ControllerPrivateKey -PathType Leaf
         $publicExists = Test-Path -LiteralPath $paths.ControllerPublicKey -PathType Leaf
         if (-not $privateExists -or -not $publicExists) {
+            foreach ($path in @($paths.ControllerPrivateKey, $paths.ControllerPublicKey)) {
+                if (Test-Path -LiteralPath $path -PathType Leaf) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+            }
             throw 'ssh-keygen reported success but did not create both controller key files.'
         }
     }
 
-    Protect-EzVmControllerPrivateKey -Path $paths.ControllerPrivateKey -ProcessRunner $ProcessRunner
+    try {
+        Protect-EzVmControllerPrivateKey -Path $paths.ControllerPrivateKey -ProcessRunner $ProcessRunner
+    }
+    catch {
+        if ($createdThisCall) {
+            foreach ($path in @($paths.ControllerPrivateKey, $paths.ControllerPublicKey)) {
+                if (Test-Path -LiteralPath $path -PathType Leaf) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+            }
+        }
+        throw
+    }
 
     if (-not $publicExists) {
         $arguments = @('-y', '-f', $paths.ControllerPrivateKey)
@@ -446,6 +461,7 @@ function New-EzVmSshCommandArguments {
         @('-i', [IO.Path]::GetFullPath($PrivateKey)),
         @('-o', 'IdentitiesOnly=yes'),
         @('-o', 'StrictHostKeyChecking=yes'),
+        @('-o', 'UpdateHostKeys=no'),
         @('-o', ('UserKnownHostsFile=' + [IO.Path]::GetFullPath($KnownHosts))),
         @('-o', ('GlobalKnownHostsFile=' + (Get-EzVmNullKnownHostsPath))),
         @('-o', 'PasswordAuthentication=no'),
@@ -490,6 +506,7 @@ function New-EzVmScpCommandArguments {
         '-i', [IO.Path]::GetFullPath($PrivateKey),
         '-o', 'IdentitiesOnly=yes',
         '-o', 'StrictHostKeyChecking=yes',
+        '-o', 'UpdateHostKeys=no',
         '-o', ('UserKnownHostsFile=' + [IO.Path]::GetFullPath($KnownHosts)),
         '-o', ('GlobalKnownHostsFile=' + (Get-EzVmNullKnownHostsPath)),
         '-o', 'PasswordAuthentication=no',
