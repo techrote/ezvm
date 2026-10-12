@@ -41,8 +41,14 @@ function Invoke-EzVmCommand {
 
     $tokens = New-Object 'System.Collections.Generic.List[string]'
     $jsonCount = 0
+    $afterCommandSeparator = $false
     foreach ($argument in $Arguments) {
-        if ($argument -ieq '-Json') { $jsonCount++; continue }
+        if ($argument -ceq '--') {
+            $afterCommandSeparator = $true
+            $tokens.Add($argument)
+            continue
+        }
+        if (-not $afterCommandSeparator -and $argument -ieq '-Json') { $jsonCount++; continue }
         $tokens.Add($argument)
     }
     if ($jsonCount -gt 1) {
@@ -51,6 +57,9 @@ function Invoke-EzVmCommand {
 
     $command = 'help'
     $instanceName = $null
+    $remoteCommand = @()
+    $hostPath = $null
+    $guestPath = $null
     if ($tokens.Count -gt 0) {
         $verb = $tokens[0].ToLowerInvariant()
         switch ($verb) {
@@ -70,7 +79,7 @@ function Invoke-EzVmCommand {
                 }
                 $command = 'base ' + $subcommand
             }
-            { $_ -in @('start', 'status', 'stop') } {
+            { $_ -in @('start', 'status', 'stop', 'ssh') } {
                 if ($tokens.Count -ne 2) {
                     return New-EzVmCliArgumentError -Command $verb -Message "Command '$verb' requires exactly one instance name."
                 }
@@ -79,10 +88,41 @@ function Invoke-EzVmCommand {
                 catch { return New-EzVmCliArgumentError -Command $verb -Message $_.Exception.Message }
                 $command = $verb
             }
+            'exec' {
+                if ($tokens.Count -lt 4 -or $tokens[2] -cne '--') {
+                    return New-EzVmCliArgumentError -Command 'exec' -Message "Command 'exec' requires: exec <instance> -- <command> [arguments]."
+                }
+                $instanceName = $tokens[1]
+                try { Assert-EzVmStorageInstanceName -Name $instanceName }
+                catch { return New-EzVmCliArgumentError -Command 'exec' -Message $_.Exception.Message }
+                $remoteCommand = @($tokens.ToArray()[3..($tokens.Count - 1)])
+                $command = 'exec'
+            }
+            { $_ -in @('copy-to', 'copy-from') } {
+                if ($tokens.Count -ne 4) {
+                    return New-EzVmCliArgumentError -Command $verb -Message "Command '$verb' requires an instance name, guest path and host path in the documented direction."
+                }
+                $instanceName = $tokens[1]
+                try { Assert-EzVmStorageInstanceName -Name $instanceName }
+                catch { return New-EzVmCliArgumentError -Command $verb -Message $_.Exception.Message }
+                if ($verb -ceq 'copy-to') {
+                    $hostPath = $tokens[2]
+                    $guestPath = $tokens[3]
+                }
+                else {
+                    $guestPath = $tokens[2]
+                    $hostPath = $tokens[3]
+                }
+                $command = $verb
+            }
             default {
                 return New-EzVmCliArgumentError -Command $verb -Message "Unknown command '$verb'." -Code 'unknown_command'
             }
         }
+    }
+
+    if ($command -ceq 'ssh' -and $jsonCount -gt 0) {
+        return New-EzVmCliArgumentError -Command 'ssh' -Message 'Interactive ssh cannot be combined with -Json because the child session owns the console streams.'
     }
 
     $null = Get-EzVmRoot -Path $Root
@@ -108,7 +148,25 @@ function Invoke-EzVmCommand {
         }
         'start' {
             $configuration = Get-EzVmConfiguration -Root $Root
-            $data = Start-EzVmInstance -Root $Root -InstanceName $instanceName -Accelerator whpx -StartupTimeoutSeconds ([int]$configuration.timeouts.processSeconds)
+            $data = Start-EzVmReadyInstance -Root $Root -InstanceName $instanceName -Accelerator whpx -ReadyTimeoutSeconds ([int]$configuration.timeouts.processSeconds)
+        }
+        'ssh' {
+            $exitCode = Invoke-EzVmSsh -Root $Root -InstanceName $instanceName
+            $data = [pscustomobject][ordered]@{ name = $instanceName; exitCode = [int]$exitCode }
+            return New-EzVmCommandResult -Success $true -Command 'ssh' -ExitCode ([int]$exitCode) -Data $data
+        }
+        'exec' {
+            $configuration = Get-EzVmConfiguration -Root $Root
+            $data = Invoke-EzVmExec -Root $Root -InstanceName $instanceName -Command $remoteCommand -TimeoutSeconds ([int]$configuration.timeouts.processSeconds)
+            return New-EzVmCommandResult -Success $true -Command 'exec' -ExitCode ([int]$data.exitCode) -Data $data
+        }
+        'copy-to' {
+            $configuration = Get-EzVmConfiguration -Root $Root
+            $data = Invoke-EzVmCopyToGuest -Root $Root -InstanceName $instanceName -HostPath $hostPath -GuestPath $guestPath -TimeoutSeconds ([int]$configuration.timeouts.processSeconds)
+        }
+        'copy-from' {
+            $configuration = Get-EzVmConfiguration -Root $Root
+            $data = Invoke-EzVmCopyFromGuest -Root $Root -InstanceName $instanceName -GuestPath $guestPath -HostPath $hostPath -TimeoutSeconds ([int]$configuration.timeouts.processSeconds)
         }
         'stop' {
             $configuration = Get-EzVmConfiguration -Root $Root
@@ -127,10 +185,14 @@ function Invoke-EzVmCommand {
                     [pscustomobject]@{ name = 'base acquire'; description = 'Acquire and verify the pinned Ubuntu Noble amd64 source image.' }
                     [pscustomobject]@{ name = 'base build'; description = 'Build and publish an immutable prepared coding base using WHPX.' }
                     [pscustomobject]@{ name = 'status <name>'; description = 'Reconcile durable/runtime/process evidence and report instance lifecycle state.' }
-                    [pscustomobject]@{ name = 'start <name>'; description = 'Validate storage and start an existing instance headlessly using WHPX.' }
+                    [pscustomobject]@{ name = 'start <name>'; description = 'Start with WHPX, provision instance identity and wait for authenticated localhost SSH READY.' }
                     [pscustomobject]@{ name = 'stop <name>'; description = 'Request graceful guest powerdown over host-local QMP and wait for exit.' }
+                    [pscustomobject]@{ name = 'ssh <name>'; description = 'Open an interactive managed-key SSH session over the localhost forward.' }
+                    [pscustomobject]@{ name = 'exec <name> -- <command>'; description = 'Run an argv-preserving non-interactive command over managed SSH and return its exit status.' }
+                    [pscustomobject]@{ name = 'copy-to <name> <host> <guest>'; description = 'Copy one host file into the guest using managed scp trust.' }
+                    [pscustomobject]@{ name = 'copy-from <name> <guest> <host>'; description = 'Copy one guest file to a host path using managed scp trust.' }
                 )
-                stage = 'Portable QEMU, prepared bases, thin storage and headless start/status/stop are implemented; instance creation, SSH control and registry allocation follow.'
+                stage = 'Portable QEMU, prepared bases, thin storage, lifecycle control and localhost-only authenticated SSH are implemented; instance creation/registry allocation follows.'
             }
         }
     }
@@ -194,8 +256,23 @@ function Write-EzVmResult {
             Write-Output ("  state: $($Result.data.state)")
             Write-Output ("  pid: $($Result.data.pid)")
             Write-Output ("  accelerator: $($Result.data.accelerator)")
+            Write-Output ("  SSH: $($Result.data.sshUser)@$($Result.data.sshHost):$($Result.data.sshPort)")
+            Write-Output ("  ready at: $($Result.data.readyAt)")
             Write-Output ("  serial log: $($Result.data.serialLog)")
             Write-Output ("  QEMU log: $($Result.data.qemuLog)")
+        }
+        'ssh' { }
+        'exec' {
+            if (-not [string]::IsNullOrEmpty([string]$Result.data.stdout)) { [Console]::Out.Write([string]$Result.data.stdout) }
+            if (-not [string]::IsNullOrEmpty([string]$Result.data.stderr)) { [Console]::Error.Write([string]$Result.data.stderr) }
+        }
+        'copy-to' {
+            Write-Output ("Copied host file to $($Result.data.name):$($Result.data.guestPath)")
+            Write-Output ("  source: $($Result.data.hostPath)")
+        }
+        'copy-from' {
+            Write-Output ("Copied guest file from $($Result.data.name):$($Result.data.guestPath)")
+            Write-Output ("  destination: $($Result.data.hostPath)")
         }
         'stop' {
             if ($Result.data.alreadyStopped) { Write-Output ("$($Result.data.name) is already stopped.") }
