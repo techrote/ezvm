@@ -187,7 +187,7 @@ owner candidate. A separate QEMU process carrying the same instance marker, a
 corrupt runtime file, or an unqueryable process identity is UNKNOWN. Both states
 fail closed for storage mutation.
 
-QMP management is host-local and not exposed on a LAN interface. The public
+QMP management binds explicitly to `127.0.0.1` on an ephemeral runtime port and is not exposed on a LAN interface. The public
 lifecycle surface exports graceful start/status/stop, not a generic QMP `quit`
 shortcut. Normal stop requests guest powerdown and never converts its timeout
 into an implicit process kill. A force-stop feature, if introduced later, must be
