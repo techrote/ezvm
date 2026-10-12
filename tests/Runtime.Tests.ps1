@@ -394,3 +394,10 @@ Add-EzVmTest -Name 'Runtime: argument fingerprint changes on launch-affecting to
     Assert-EzVmTrue -Condition ($b -match '^[a-f0-9]{64}$')
     Assert-EzVmTrue -Condition ($a -cne $b)
 }
+
+Add-EzVmTest -Name 'Runtime: production QMP transport exposes no force-quit command' -ScriptBlock {
+    $source = [IO.File]::ReadAllText((Join-Path $script:EzVmRepositoryRoot 'src/EzVm/Runtime.ps1'))
+    Assert-EzVmTrue -Condition ($source -notmatch "'quit'") -Message 'Production runtime transport must not contain a QMP quit command.'
+    Assert-EzVmTrue -Condition ($source -match 'system_powerdown') -Message 'Graceful QMP powerdown must remain the normal stop mechanism.'
+}
+
