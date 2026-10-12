@@ -245,4 +245,3 @@ overlay creation, machine-readable backing-chain enumeration, integrity checking
 real second-level-chain rejection, cold relocation of the storage layout, and a
 reset-safe replacement. EZVM-005 performs no guest execution, so WHPX is not an
 applicable acceptance capability.
-
