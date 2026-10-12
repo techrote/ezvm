@@ -192,4 +192,3 @@ the active disk is touched. The existing disk is moved to a recoverable backup,
 the validated candidate is atomically promoted, and the backup is restored if
 promotion fails. Normal storage code contains no `qemu-img commit` or automatic
 rebase path and never deliberately removes prepared-base write protection.
-
