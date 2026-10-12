@@ -158,3 +158,38 @@ authoritative-looking directory. A build, flatten or candidate-validation failur
 leaves no authoritative base. Non-authoritative `.build-*` staging is retained
 with `failure.json` where possible so diagnosis does not require destructive
 repair.
+## Implemented overlay lifecycle (EZVM-005)
+
+Overlay creation uses the managed `qemu-img` with explicit QCOW2 overlay and
+backing formats and without unsafe backing creation. The backing name stored in
+the overlay is relative to the directory containing the overlay, matching QEMU's
+documented relative-backing resolution rule.
+
+`Test-EzVmInstanceOverlay` / `Test-EzVmInstanceStorage` are the authoritative
+v0.1 chain validators. They require:
+
+- exactly two images in `qemu-img info --backing-chain --output=json`;
+- a QCOW2 overlay with an explicit QCOW2 backing format;
+- a non-absolute stored backing name;
+- resolved backing containment under the managed base root;
+- exact equality with the prepared base identified by the caller's base ID;
+- a valid immutable prepared-base manifest/digest/read-only state;
+- no backing file beneath the prepared base;
+- matching positive virtual sizes.
+
+A complete cold-root move therefore needs no rebase: the same stored relative
+reference resolves under the new root. Broken/partial moves, external backing
+targets, wrong base identities, malformed JSON and deeper chains are refused
+rather than rewritten.
+
+Stopped-image integrity checks require explicit `proven-safe` lifecycle
+evidence and use `qemu-img check --output=json -f qcow2` without repair options.
+Corruptions, leaks and check errors remain diagnostic results; repair is never
+automatic.
+
+Reset-safe storage replacement validates a fresh same-directory overlay before
+the active disk is touched. The existing disk is moved to a recoverable backup,
+the validated candidate is atomically promoted, and the backup is restored if
+promotion fails. Normal storage code contains no `qemu-img commit` or automatic
+rebase path and never deliberately removes prepared-base write protection.
+
