@@ -400,4 +400,3 @@ Add-EzVmTest -Name 'Runtime: production QMP transport exposes no force-quit comm
     Assert-EzVmTrue -Condition ($source -notmatch "'quit'") -Message 'Production runtime transport must not contain a QMP quit command.'
     Assert-EzVmTrue -Condition ($source -match 'system_powerdown') -Message 'Graceful QMP powerdown must remain the normal stop mechanism.'
 }
-
