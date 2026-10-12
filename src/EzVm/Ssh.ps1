@@ -416,7 +416,10 @@ function Get-EzVmNullKnownHostsPath {
 function ConvertTo-EzVmPosixArgument {
     param([AllowEmptyString()][string]$Value = '')
     if ($Value.IndexOf([char]0) -ge 0) { throw 'Remote command arguments cannot contain NUL characters.' }
-    return "'" + $Value.Replace("'", "'""'""'") + "'"
+    $single = [string][char]39
+    $double = [string][char]34
+    $escapedSingle = $single + $double + $single + $double + $single
+    return $single + $Value.Replace($single, $escapedSingle) + $single
 }
 
 function Join-EzVmRemoteCommand {
