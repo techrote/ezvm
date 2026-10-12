@@ -530,6 +530,27 @@ function Enter-EzVmInstanceLifecycleLock {
     }
 }
 
+function Enter-EzVmQmpAllocationLock {
+    param([string]$Root, [ValidateRange(1, 30000)][int]$TimeoutMilliseconds = 5000)
+
+    $paths = Get-EzVmPaths -Root $Root
+    [void][IO.Directory]::CreateDirectory($paths.Locks)
+    $null = Assert-EzVmStorageManagedPath -Path $paths.Locks -ContainmentRoot $paths.Runtime -SafetyRoot $paths.Root -Description 'Lifecycle lock directory' -RequireDirectory
+    $lockPath = Join-Path $paths.Locks 'qmp-port-allocation.lock'
+    $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMilliseconds)
+    while ($true) {
+        try {
+            return New-Object IO.FileStream($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+        }
+        catch [IO.IOException] {
+            if ([DateTime]::UtcNow -ge $deadline) {
+                throw 'Timed out waiting for the ezvm QMP port-allocation lock. Another instance start may still be publishing its management endpoint.'
+            }
+            Start-Sleep -Milliseconds 50
+        }
+    }
+}
+
 function Get-EzVmRuntimeFirmwarePaths {
     param([string]$Root, [string]$InstanceName)
 
@@ -765,6 +786,7 @@ function Start-EzVmInstance {
 
     Assert-EzVmStorageInstanceName -Name $InstanceName
     $lock = Enter-EzVmInstanceLifecycleLock -Root $Root -InstanceName $InstanceName
+    $qmpAllocationLock = $null
     $launch = $null
     $runtimePublished = $false
     try {
@@ -788,6 +810,7 @@ function Start-EzVmInstance {
         $firmware = Get-EzVmRuntimeFirmwarePaths -Root $Root -InstanceName $InstanceName
         $launchId = [Guid]::NewGuid().ToString('N')
         $qmpHost = '127.0.0.1'
+        $qmpAllocationLock = Enter-EzVmQmpAllocationLock -Root $Root
         $qmpPort = Get-EzVmEphemeralLoopbackPort
         $serialLog = Join-Path $runtimePaths.Logs ('serial-' + $launchId + '.log')
         $qemuLog = Join-Path $runtimePaths.Logs ('qemu-' + $launchId + '.log')
@@ -838,6 +861,10 @@ function Start-EzVmInstance {
                 $runtime.state = 'RUNNING'
                 $runtime.lastObservedAt = [DateTime]::UtcNow.ToString('o')
                 Write-EzVmRuntimeStateFile -Root $Root -InstanceName $InstanceName -Runtime $runtime
+                if ($null -ne $qmpAllocationLock) {
+                    $qmpAllocationLock.Dispose()
+                    $qmpAllocationLock = $null
+                }
                 return [pscustomobject][ordered]@{
                     name = $InstanceName
                     state = 'RUNNING'
@@ -868,6 +895,7 @@ function Start-EzVmInstance {
         if ($null -ne $launch -and $null -ne (Get-EzVmRuntimeProperty $launch 'Process')) {
             try { $launch.Process.Dispose() } catch { }
         }
+        if ($null -ne $qmpAllocationLock) { try { $qmpAllocationLock.Dispose() } catch { } }
         $lock.Dispose()
     }
 }
