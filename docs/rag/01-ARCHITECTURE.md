@@ -204,4 +204,3 @@ Storage mutation APIs require explicit positive lifecycle evidence
 (`proven-safe`). Missing, running, transitional or unknown state fails closed.
 This interface is intentionally separate from EZVM-006, which owns the complete
 QEMU process/state machine.
-
