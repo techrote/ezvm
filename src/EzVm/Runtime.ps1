@@ -122,8 +122,9 @@ function New-EzVmInstanceIntent {
     if ([string]::IsNullOrWhiteSpace($Profile)) {
         $configuration = Get-EzVmConfiguration -Root $Root
         $matches = @(@('light', 'normal', 'heavy') | Where-Object {
-            [int]$configuration.profiles.$_.cpus -eq $Cpus -and
-            [int]$configuration.profiles.$_.memoryMiB -eq $MemoryMiB
+            $candidateProfile = $configuration.profiles.$_
+            [int]$candidateProfile.cpus -eq $Cpus -and
+            [int]$candidateProfile.memoryMiB -eq $MemoryMiB
         })
         $Profile = if ($matches.Count -eq 1) { [string]$matches[0] } else { 'custom' }
     }
