@@ -210,9 +210,11 @@ reports a concrete OpenSSH Client remediation if any are unavailable.
 Host-key checking is never disabled. A scanned host key is first placed in a
 launch candidate known-hosts file and becomes durable trust only after managed-key
 SSH succeeds and the guest proves the expected ezvm identity/readiness state.
-Unexpected changes to an already trusted host key fail closed rather than silently
-replacing trust. A later explicit reset/rebuild operation may own a controlled
-re-key transition.
+A changed key is staged in a launch-local candidate file and never overwrites
+existing trust merely because it was scanned. If managed-key authentication then
+proves the exact requested ezvm identity, completed cloud-init and READY marker,
+only that instance's scoped known-host entry is atomically replaced. Failed or
+mismatched identity proof leaves the previous trust entry untouched.
 
 EZVM-007 stores launch SSH metadata in per-instance `access.json`, separately
 from EZVM-006's durable instance intent and process-lifecycle schema. It contains
