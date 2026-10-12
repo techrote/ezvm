@@ -295,6 +295,86 @@ Add-EzVmTest -Name 'Runtime: graceful stop tolerates terminating PID observation
     finally { Remove-EzVmRuntimeFixture $fixture }
 }
 
+Add-EzVmTest -Name 'Runtime: graceful stop retries a terminating PID during the second identity observation' -ScriptBlock {
+    $fixture = New-EzVmRuntimeFixture
+    try {
+        $null = Start-EzVmRuntimeFixtureInstance -Fixture $fixture
+        $shutdown = [pscustomobject]@{ AfterPowerdown = $false; Polls = 0 }
+        $baseProvider = $fixture.ProcessProvider
+        $baseQmp = $fixture.QmpInvoker
+        $state = $fixture.State
+
+        $provider = {
+            param($processId)
+            if ($shutdown.AfterPowerdown -and $null -ne $processId) {
+                $shutdown.Polls++
+                if ($shutdown.Polls -eq 2) {
+                    throw 'Windows process identity could not be queried safely: terminating PID lost its command line between observations.'
+                }
+                if ($shutdown.Polls -eq 3) {
+                    $state.Processes.Clear()
+                    return @()
+                }
+            }
+            return @(& $baseProvider $processId)
+        }.GetNewClosure()
+
+        $qmp = {
+            param($hostAddress, $port, $command, $timeoutMilliseconds)
+            if ($command -ceq 'system_powerdown') {
+                $shutdown.AfterPowerdown = $true
+                return [pscustomobject]@{}
+            }
+            return & $baseQmp $hostAddress $port $command $timeoutMilliseconds
+        }.GetNewClosure()
+
+        $stopped = Stop-EzVmInstance -Root $fixture.Root -InstanceName $fixture.InstanceName -ShutdownTimeoutSeconds 3 -ProcessProvider $provider -QmpInvoker $qmp
+        Assert-EzVmEqual -Actual $stopped.state -Expected 'STOPPED'
+        Assert-EzVmEqual -Actual $shutdown.Polls -Expected 3 -Message 'Stop must retry the second-query error and obtain affirmative evidence that the PID exited.'
+        Assert-EzVmEqual -Actual $fixture.State.Processes.Count -Expected 0
+        Assert-EzVmEqual -Actual (Get-EzVmRuntimeFixtureState -Fixture $fixture).state -Expected 'STOPPED'
+    }
+    finally { Remove-EzVmRuntimeFixture $fixture }
+}
+
+Add-EzVmTest -Name 'Runtime: repeated second-observation shutdown errors remain bounded and fail-closed' -ScriptBlock {
+    $fixture = New-EzVmRuntimeFixture
+    try {
+        $null = Start-EzVmRuntimeFixtureInstance -Fixture $fixture
+        $shutdown = [pscustomobject]@{ AfterPowerdown = $false; Polls = 0 }
+        $baseProvider = $fixture.ProcessProvider
+        $baseQmp = $fixture.QmpInvoker
+
+        $provider = {
+            param($processId)
+            if ($shutdown.AfterPowerdown -and $null -ne $processId) {
+                $shutdown.Polls++
+                if (($shutdown.Polls % 2) -eq 0) {
+                    throw 'Windows process identity could not be queried safely: persistent second-observation ambiguity.'
+                }
+            }
+            return @(& $baseProvider $processId)
+        }.GetNewClosure()
+
+        $qmp = {
+            param($hostAddress, $port, $command, $timeoutMilliseconds)
+            if ($command -ceq 'system_powerdown') {
+                $shutdown.AfterPowerdown = $true
+                return [pscustomobject]@{}
+            }
+            return & $baseQmp $hostAddress $port $command $timeoutMilliseconds
+        }.GetNewClosure()
+
+        Assert-EzVmThrows -ScriptBlock {
+            Stop-EzVmInstance -Root $fixture.Root -InstanceName $fixture.InstanceName -ShutdownTimeoutSeconds 1 -ProcessProvider $provider -QmpInvoker $qmp
+        } -MessagePattern 'was not killed.*STOPPING.*Last process-identity observation error.*persistent second-observation ambiguity' | Out-Null
+        Assert-EzVmTrue -Condition ($shutdown.Polls -gt 2) -Message 'Stop must make bounded retries after a second-observation query failure.'
+        Assert-EzVmEqual -Actual (Get-EzVmRuntimeFixtureState -Fixture $fixture).state -Expected 'STOPPING'
+        Assert-EzVmEqual -Actual $fixture.State.Processes.Count -Expected 1
+    }
+    finally { Remove-EzVmRuntimeFixture $fixture }
+}
+
 Add-EzVmTest -Name 'Runtime: persistent shutdown identity-query ambiguity remains bounded and fail-closed' -ScriptBlock {
     $fixture = New-EzVmRuntimeFixture
     try {

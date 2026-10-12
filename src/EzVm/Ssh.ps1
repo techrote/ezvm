@@ -687,7 +687,7 @@ StandardOutput=journal+console
 StandardError=journal+console
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=cloud-init.target
 '@
         foreach ($file in @(
             @('/usr/local/sbin/ezvm-instance-identity', '0755', $initializer),
@@ -823,6 +823,29 @@ function Get-EzVmNullKnownHostsPath {
     return '/dev/null'
 }
 
+function ConvertTo-EzVmOpenSshConfigPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [switch]$ExpandTokens
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or $Path.IndexOf([char]0) -ge 0 -or $Path -match '[\r\n]') {
+        throw 'OpenSSH configuration paths must be non-empty single-line paths without NUL characters.'
+    }
+    # OpenSSH reparses -o values using its configuration grammar, even when
+    # the native process receives one complete argv token. Quote the scalar
+    # within that token so spaces and quotes cannot name extra trust files.
+    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { $Path = $Path.Replace('\', '/') }
+    if ($ExpandTokens) {
+        # UserKnownHostsFile expands percent tokens and ${environment} after
+        # parsing quotes. Percent has a literal escape; environment syntax does
+        # not, so refuse a path that would silently redirect managed trust.
+        if ($Path.Contains('${')) { throw 'OpenSSH known-hosts paths cannot contain ''${'' because it expands environment variables. Move the bundle to a path without that syntax.' }
+        $Path = $Path.Replace('%', '%%')
+    }
+    return '"' + $Path.Replace('\', '\\').Replace('"', '\"') + '"'
+}
+
 function ConvertTo-EzVmPosixArgument {
     param([AllowEmptyString()][string]$Value = '')
     if ($Value.IndexOf([char]0) -ge 0) { throw 'Remote command arguments cannot contain NUL characters.' }
@@ -862,8 +885,8 @@ function New-EzVmSshCommandArguments {
         @('-o', 'UpdateHostKeys=no'),
         @('-o', 'HostKeyAlgorithms=ssh-ed25519'),
         @('-o', 'HashKnownHosts=no'),
-        @('-o', ('UserKnownHostsFile=' + [IO.Path]::GetFullPath($KnownHosts))),
-        @('-o', ('GlobalKnownHostsFile=' + (Get-EzVmNullKnownHostsPath))),
+        @('-o', ('UserKnownHostsFile=' + (ConvertTo-EzVmOpenSshConfigPath -Path ([IO.Path]::GetFullPath($KnownHosts)) -ExpandTokens))),
+        @('-o', ('GlobalKnownHostsFile=' + (ConvertTo-EzVmOpenSshConfigPath -Path (Get-EzVmNullKnownHostsPath)))),
         @('-o', 'PasswordAuthentication=no'),
         @('-o', 'KbdInteractiveAuthentication=no'),
         @('-o', 'PreferredAuthentications=publickey'),
@@ -909,8 +932,8 @@ function New-EzVmScpCommandArguments {
         '-o', 'UpdateHostKeys=no',
         '-o', 'HostKeyAlgorithms=ssh-ed25519',
         '-o', 'HashKnownHosts=no',
-        '-o', ('UserKnownHostsFile=' + [IO.Path]::GetFullPath($KnownHosts)),
-        '-o', ('GlobalKnownHostsFile=' + (Get-EzVmNullKnownHostsPath)),
+        '-o', ('UserKnownHostsFile=' + (ConvertTo-EzVmOpenSshConfigPath -Path ([IO.Path]::GetFullPath($KnownHosts)) -ExpandTokens)),
+        '-o', ('GlobalKnownHostsFile=' + (ConvertTo-EzVmOpenSshConfigPath -Path (Get-EzVmNullKnownHostsPath))),
         '-o', 'PasswordAuthentication=no',
         '-o', 'KbdInteractiveAuthentication=no',
         '--',

@@ -1045,6 +1045,13 @@ function Stop-EzVmInstance {
         while ([DateTime]::UtcNow -lt $deadline) {
             try {
                 $observed = @(Get-EzVmObservedQemuProcesses -ProcessId ([int]$runtime.pid) -ProcessProvider $ProcessProvider)
+                $current = $null
+                if ($observed.Count -eq 1) {
+                    # Identity validation performs another fresh process query.
+                    # QEMU may exit between these two observations, so both must
+                    # share the same bounded retry for unreadable terminating PIDs.
+                    $current = Get-EzVmRuntimeIdentityResult -Runtime $runtime -ProcessProvider $ProcessProvider
+                }
                 $lastIdentityObservationError = $null
             }
             catch {
@@ -1052,7 +1059,7 @@ function Stop-EzVmInstance {
                 # exited far enough that CIM no longer exposes its command line.
                 # That state is not proof of exit, so never mark STOPPED from the
                 # query failure itself. Retry within the existing bounded shutdown
-                # deadline and require either a proven matching/reused identity or
+                # deadline and require either a proven reused identity or
                 # an empty PID observation before releasing storage ownership.
                 $lastIdentityObservationError = $_.Exception.Message
                 Start-Sleep -Milliseconds 100
@@ -1067,7 +1074,6 @@ function Stop-EzVmInstance {
                 return [pscustomobject][ordered]@{ name = $InstanceName; state = 'STOPPED'; alreadyStopped = $false }
             }
             if ($observed.Count -eq 1) {
-                $current = Get-EzVmRuntimeIdentityResult -Runtime $runtime -ProcessProvider $ProcessProvider
                 if (-not $current.Match -and @('missing', 'reused') -ccontains $current.Kind) {
                     $runtime.state = 'STOPPED'
                     $runtime.lastObservedAt = [DateTime]::UtcNow.ToString('o')

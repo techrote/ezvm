@@ -226,7 +226,13 @@ Add-EzVmTest -Name 'Portability identity: source relocation preserves seed ident
         Assert-EzVmTrue -Condition ($moved.UserData.Contains('ssh_deletekeys: true'))
         Assert-EzVmTrue -Condition ($moved.UserData.Contains('systemctl, start, --no-block, ezvm-instance-finalize.service'))
         $unit = Get-EzVmPortabilitySeedFile -UserData $moved.UserData -Path '/etc/systemd/system/ezvm-instance-finalize.service'
-        Assert-EzVmTrue -Condition ($unit.Contains('After=cloud-final.service') -and $unit.Contains('WantedBy=multi-user.target'))
+        Assert-EzVmTrue -Condition ($unit.Contains('After=cloud-final.service') -and $unit.Contains('Wants=cloud-final.service'))
+        # cloud-init 26.1 cloud-final.service is After=multi-user.target.
+        # Target Wants adds an implicit After edge to its member: installing
+        # finalization under multi-user would close a cycle on every reboot.
+        Assert-EzVmTrue -Condition ($unit -cmatch '(?m)^WantedBy=cloud-init\.target$')
+        Assert-EzVmTrue -Condition ($unit -cnotmatch '(?m)^(After|Before|WantedBy|RequiredBy)=.*multi-user\.target')
+        Assert-EzVmTrue -Condition ($unit -cnotmatch '(?m)^After=.*cloud-init\.target') -Message 'A member of cloud-init.target must not wait for that target itself.'
         $finalizer = Get-EzVmPortabilitySeedFile -UserData $moved.UserData -Path '/usr/local/sbin/ezvm-instance-finalize'
         Assert-EzVmTrue -Condition ($finalizer.IndexOf('systemctl reboot') -lt $finalizer.IndexOf('ezvm-coding-profile provision'))
         Assert-EzVmTrue -Condition ($finalizer.Contains('cloud-init status --wait'))

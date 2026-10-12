@@ -12,6 +12,8 @@ $sourceRoot = [IO.Path]::GetFullPath($Root)
 $work = Join-Path ([IO.Path]::GetTempPath()) ('ezvm010 qualification ' + [Guid]::NewGuid().ToString('N'))
 $rootA = Join-Path $work 'root A with spaces'
 $rootB = Join-Path $work 'moved root B with spaces'
+$heldRootA = Join-Path $work 'source root A held for relocation'
+$rootARenamed = $false
 [void][IO.Directory]::CreateDirectory($rootA)
 # A fresh qualification root must never incorporate an existing user's runtime.
 foreach ($relative in @('ezvm.ps1', 'src', 'config', 'manifests', 'guest', 'scripts', 'tests', 'docs', 'README.md', 'AGENTS.md', '.github', '.gitattributes', '.gitignore')) {
@@ -319,6 +321,16 @@ sync
         Copy-Item -LiteralPath $entry.FullName -Destination $rootB -Recurse -Force
     }
     $Root = $rootB
+    Import-Module (Join-Path $Root 'src/EzVm/EzVm.psd1') -Force -ErrorAction Stop
+    # The complete source root was proven stopped before copying. Keep it
+    # recoverable but unavailable at its original path throughout B's checks,
+    # so neither loaded defaults nor stale absolute paths can fall back to A.
+    [IO.Directory]::Move($rootA, $heldRootA)
+    $rootARenamed = $true
+    Write-Host ('EZVM010_STEP=source_root_unavailable; at=' + [DateTime]::UtcNow.ToString('o') + '; saved=' + $heldRootA)
+    if ((Test-Path -LiteralPath $rootA) -or -not [string]::Equals((Get-EzVmRoot), $rootB, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Cold relocation requires the original root to be unavailable and the loaded module default to resolve to root B.'
+    }
     $moved = Test-EzVmPortableBundle -Root $Root
     $cloneChainAfter = Test-EzVmInstanceStorage -Root $Root -InstanceName $cloneName -BaseId $clone.baseId
     if (-not $moved.Valid -or [int]$moved.InstanceCount -ne [int]$before.InstanceCount -or $cloneChainAfter.BackingReference -cne $cloneChainBefore.BackingReference) {
@@ -384,5 +396,18 @@ finally {
     foreach ($name in @($active.ToArray())) {
         try { $null = Stop-EzVmInstance -Root $Root -InstanceName $name -ShutdownTimeoutSeconds 30 }
         catch { Write-Host ('EZVM010_GRACEFUL_CLEANUP_ERROR=' + $name + ': ' + $_.Exception.Message) }
+    }
+    if ($rootARenamed) {
+        try {
+            # One metadata-only restoration attempt, after B's diagnostics and
+            # bounded guest cleanup. Directory.Move refuses an occupied name;
+            # never remove either root or overwrite recovery evidence.
+            [IO.Directory]::Move($heldRootA, $rootA)
+            $rootARenamed = $false
+            Write-Host ('EZVM010_STEP=source_root_restored; at=' + [DateTime]::UtcNow.ToString('o'))
+        }
+        catch {
+            Write-Host ('EZVM010_SOURCE_ROOT_RESTORE_ERROR=source preserved at ' + $heldRootA + ': ' + $_.Exception.Message)
+        }
     }
 }
