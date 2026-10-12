@@ -192,10 +192,15 @@ the user's global known_hosts is neither trusted implicitly nor modified.
 For an untrusted first launch, `ssh-keyscan` material is written only to a
 temporary candidate file. The candidate is promoted to managed trust **after**
 controller-key authentication and the authenticated guest proves the requested
-ezvm identity, completed cloud-init and readiness marker. If a previously trusted
-instance presents different key material, EZVM-007 fails closed. Automatic
-replacement is intentionally reserved for a later explicit reset/rebuild flow
-that can prove an identity transition.
+ezvm identity, completed cloud-init and readiness marker.
+
+A changed key is also treated as untrusted candidate material: the existing
+managed entry stays untouched while the candidate is used for managed-key
+authentication and the authenticated identity/cloud-init/READY proof. Only after
+that proof succeeds is the single instance-scoped known-host entry atomically
+replaced. Failure or identity mismatch leaves the previous trust entry intact.
+This is the controlled reset/rebuild re-key path; keyscan observation alone never
+mutates durable trust.
 
 The configured 22000-22999 range is scanned under a bundle allocation lock and
 must also be bindable on loopback. This is sufficient for the EZVM-007 launch
