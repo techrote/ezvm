@@ -291,7 +291,8 @@ Add-EzVmTest -Name 'SSH: real OpenSSH parses SSH and SCP trust paths as one lite
     $socket = [Net.Sockets.Socket]::new([Net.Sockets.AddressFamily]::InterNetwork, [Net.Sockets.SocketType]::Stream, [Net.Sockets.ProtocolType]::Tcp)
     try {
         # Hold a loopback port without listening. The real client expands its
-        # configuration, then receives a refusal; no SSH server is contacted.
+        # configuration, then receives a refusal or a bounded Windows connect
+        # timeout; no SSH server is contacted.
         $socket.Bind([Net.IPEndPoint]::new([Net.IPAddress]::Loopback, 0))
         $port = ([Net.IPEndPoint]$socket.LocalEndPoint).Port
         $config = Join-Path $root 'empty config'
@@ -323,7 +324,7 @@ Add-EzVmTest -Name 'SSH: real OpenSSH parses SSH and SCP trust paths as one lite
             $expanded = @($result.StdErr -split '\r?\n' | Where-Object { $_ -match 'expanded UserKnownHostsFile' })
             Assert-EzVmEqual -Actual $expanded.Count -Expected 1 -Message "$($case.Name): $($result.StdErr)"
             Assert-EzVmTrue -Condition ($expanded[0].EndsWith((" -> '" + $case.Expected + "'"), [StringComparison]::Ordinal)) -Message "$($case.Name) did not preserve the complete literal trust path: $($expanded[0])"
-            Assert-EzVmTrue -Condition ($result.StdErr -match 'Connection refused') -Message "$($case.Name) must stop at the reserved, non-listening port: $($result.StdErr)"
+            Assert-EzVmTrue -Condition ($result.StdErr -match 'Connection (refused|timed out)') -Message "$($case.Name) must refuse or time out at the reserved, non-listening port: $($result.StdErr)"
         }
     }
     finally {
