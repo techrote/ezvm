@@ -142,3 +142,12 @@ PowerShell child-process helper. Use `-Data` to pass table-driven case data to a
 test's `param($case)`. Use `-SkipReason` only for an explicit unavailable platform
 capability; assertions and errors must remain failures. Keep the harness source
 version and `tooling.json` coherent when changing harness behavior.
+## EZVM-005 storage tests
+
+`Storage.Tests.ps1` owns deterministic thin-overlay, backing-chain, relocation,
+lifecycle-guard, integrity-check and reset-safety coverage. The separate
+`EZVM-005 real qemu-img qualification` Actions workflow bootstraps the reviewed
+portable QEMU runtime and exercises the same storage boundary with tiny generated
+QCOW2 images. These disk fixtures exist only in ignored runner/temp storage and
+are never committed.
+
