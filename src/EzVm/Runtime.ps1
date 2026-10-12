@@ -462,8 +462,14 @@ function Get-EzVmInstanceStatus {
         catch {
             return New-EzVmRuntimeStatusResult -InstanceName $InstanceName -State 'UNKNOWN' -Reason ($identity.Reason + ' ' + $_.Exception.Message) -Runtime $runtime
         }
-        if ($owners.Count -gt 0) {
-            return New-EzVmRuntimeStatusResult -InstanceName $InstanceName -State 'UNKNOWN' -Reason ($identity.Reason + " Found $($owners.Count) other QEMU owner candidate(s) for this instance.") -Runtime $runtime -Process $owners[0]
+        # The process that failed identity validation is not evidence of a
+        # second owner merely because its unchanged -name marker still matches.
+        # Only a distinct PID can turn stale recorded ownership into UNKNOWN.
+        $alternateOwners = @($owners | Where-Object {
+            $null -eq $identity.Process -or [int]$_.Pid -ne [int]$identity.Process.Pid
+        })
+        if ($alternateOwners.Count -gt 0) {
+            return New-EzVmRuntimeStatusResult -InstanceName $InstanceName -State 'UNKNOWN' -Reason ($identity.Reason + " Found $($alternateOwners.Count) other QEMU owner candidate(s) for this instance.") -Runtime $runtime -Process $alternateOwners[0]
         }
         return New-EzVmRuntimeStatusResult -InstanceName $InstanceName -State 'STALE' -Reason $identity.Reason -Runtime $runtime -Process $identity.Process
     }
