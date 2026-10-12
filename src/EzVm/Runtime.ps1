@@ -730,7 +730,7 @@ function Invoke-EzVmQmpCommand {
     )
 
     if ($HostAddress -cne '127.0.0.1') { throw 'QMP management must connect only to 127.0.0.1.' }
-    if ($Command -notin @('query-status', 'system_powerdown', 'quit')) { throw "QMP command '$Command' is not permitted by this control path." }
+    if ($Command -notin @('query-status', 'system_powerdown')) { throw "QMP command '$Command' is not permitted by this control path." }
 
     $client = New-Object Net.Sockets.TcpClient([Net.Sockets.AddressFamily]::InterNetwork)
     $reader = $null
