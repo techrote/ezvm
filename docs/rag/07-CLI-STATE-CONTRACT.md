@@ -475,4 +475,3 @@ Structured output returns one stable command envelope with `count` and
 Named-resource creation and start operations use the bounded SSH allocation lock.
 A stale lock file without a live handle is reusable; an active competing holder
 causes a bounded failure instead of an unbounded wait.
-
