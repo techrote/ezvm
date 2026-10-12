@@ -848,6 +848,16 @@ function Wait-EzVmSshReady {
     }
 }
 
+function Get-EzVmSeedServerLifetimeSeconds {
+    [CmdletBinding()]
+    param([ValidateRange(1, 3600)][int]$ReadyTimeoutSeconds)
+
+    # The seed transport is subordinate to the enclosing READY deadline. Give it
+    # a bounded grace period so its own deadline can never pre-empt and mask the
+    # parent readiness timeout/evidence due to scheduler or polling jitter.
+    return [int]$ReadyTimeoutSeconds + 30
+}
+
 function Start-EzVmReadyInstance {
     [CmdletBinding()]
     param(
@@ -877,7 +887,8 @@ function Start-EzVmReadyInstance {
     $profile = Get-EzVmIntentProfileName -Root $Root -Intent $intent
     $seed = New-EzVmInstanceSeedData -Root $Root -InstanceName $InstanceName -Intent $intent -ControllerPublicKey $ControllerIdentity.PublicKeyText -Profile $profile
     $deadline = [DateTime]::UtcNow.AddSeconds($ReadyTimeoutSeconds)
-    $seedServer = Start-EzVmSeedServer -UserData $seed.UserData -MetaData $seed.MetaData -TimeoutSeconds $ReadyTimeoutSeconds
+    $seedLifetimeSeconds = Get-EzVmSeedServerLifetimeSeconds -ReadyTimeoutSeconds $ReadyTimeoutSeconds
+    $seedServer = Start-EzVmSeedServer -UserData $seed.UserData -MetaData $seed.MetaData -TimeoutSeconds $seedLifetimeSeconds
     $allocationLock = $null
     try {
         $allocationLock = Enter-EzVmSshAllocationLock -Root $Root
