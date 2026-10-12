@@ -1,0 +1,255 @@
+function New-EzVmSshTestIntent {
+    param(
+        [string]$Name = 'ssh-agent',
+        [string]$BaseId = ('base-' + ('a' * 64)),
+        [int]$Cpus = 4,
+        [int]$MemoryMiB = 8192
+    )
+    return [pscustomobject][ordered]@{
+        schemaVersion = 1
+        name = $Name
+        baseId = $BaseId
+        cpus = $Cpus
+        memoryMiB = $MemoryMiB
+        createdAt = '2026-10-12T00:00:00.0000000Z'
+    }
+}
+
+function ConvertTo-EzVmSshTestBase64 {
+    param([AllowEmptyString()][string]$Text = '')
+    return [Convert]::ToBase64String((New-Object Text.UTF8Encoding($false)).GetBytes($Text))
+}
+
+Add-EzVmTest -Name 'SSH: QEMU networking binds hostfwd to loopback and constructs guestfwd NoCloud endpoint' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'ssh qemu args [spaces]'
+    try {
+        $intent = New-EzVmSshTestIntent
+        $dir = Join-Path $root 'runtime args'
+        [void][IO.Directory]::CreateDirectory($dir)
+        $args = New-EzVmRuntimeQemuArguments -InstanceName $intent.name -Intent $intent -Disk (Join-Path $dir 'disk.qcow2') -FirmwareCode (Join-Path $dir 'code.fd') -FirmwareVariables (Join-Path $dir 'vars.fd') -SerialLog (Join-Path $dir 'serial log.txt') -QemuLog (Join-Path $dir 'qemu log.txt') -QmpPort 32123 -Accelerator whpx -SshPort 22017 -SeedHostPort 43111 -SeedGuestAddress '10.0.2.100' -SeedGuestPort 8000
+        $netIndex = [Array]::IndexOf($args, '-netdev')
+        Assert-EzVmTrue -Condition ($netIndex -ge 0)
+        $netdev = $args[$netIndex + 1]
+        Assert-EzVmTrue -Condition ($netdev -match 'hostfwd=tcp:127\.0\.0\.1:22017-:22')
+        Assert-EzVmTrue -Condition ($netdev -match 'guestfwd=tcp:10\.0\.2\.100:8000-tcp:127\.0\.0\.1:43111')
+        Assert-EzVmTrue -Condition ($netdev -notmatch 'hostfwd=tcp:(?!127\.0\.0\.1)') -Message 'SSH host forwarding must never omit the loopback bind.'
+        $smbiosIndex = [Array]::IndexOf($args, '-smbios')
+        Assert-EzVmTrue -Condition ($smbiosIndex -ge 0)
+        Assert-EzVmEqual -Actual $args[$smbiosIndex + 1] -Expected 'type=1,serial=ds=nocloud;s=http://10.0.2.100:8000/'
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'SSH: instance NoCloud seed contains public authorization and exact identity but no private key' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'ssh seed'
+    try {
+        $intent = New-EzVmSshTestIntent
+        $publicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEzvmFixturePublicKey0123456789= ezvm-controller'
+        $seed = New-EzVmInstanceSeedData -Root $root -InstanceName $intent.name -Intent $intent -ControllerPublicKey $publicKey
+        Assert-EzVmEqual -Actual $seed.Profile -Expected 'normal'
+        Assert-EzVmTrue -Condition ($seed.UserData -match [regex]::Escape($publicKey))
+        Assert-EzVmTrue -Condition ($seed.UserData -match '"instanceName":"ssh-agent"')
+        Assert-EzVmTrue -Condition ($seed.UserData -match [regex]::Escape($intent.baseId))
+        Assert-EzVmTrue -Condition ($seed.UserData -match '"profile":"normal"')
+        Assert-EzVmTrue -Condition ($seed.UserData -match '/var/lib/ezvm/ready\.json')
+        Assert-EzVmTrue -Condition ($seed.MetaData -match 'instance-id:.*ezvm-ssh-agent-')
+        Assert-EzVmTrue -Condition (($seed.UserData + $seed.MetaData) -notmatch '(?i)PRIVATE KEY')
+        Assert-EzVmThrows -ScriptBlock {
+            New-EzVmInstanceSeedData -Root $root -InstanceName $intent.name -Intent $intent -ControllerPublicKey '-----BEGIN OPENSSH PRIVATE KEY-----'
+        } -MessagePattern 'must never receive private-key material' | Out-Null
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'SSH: command argv uses scoped strict host-key checking and preserves remote argument boundaries' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'ssh argv'
+    try {
+        $paths = Get-EzVmSshPaths -Root $root -InstanceName 'ssh-agent'
+        $args = New-EzVmSshCommandArguments -PrivateKey $paths.ControllerPrivateKey -KnownHosts $paths.InstanceKnownHosts -Port 22001 -Batch -RemoteCommand @('printf', 'a b', "x'y", '')
+        Assert-EzVmTrue -Condition ($args -ccontains 'StrictHostKeyChecking=yes')
+        Assert-EzVmTrue -Condition ($args -notcontains 'StrictHostKeyChecking=no')
+        Assert-EzVmTrue -Condition ($args -ccontains ('UserKnownHostsFile=' + $paths.InstanceKnownHosts))
+        Assert-EzVmTrue -Condition ($args -ccontains 'BatchMode=yes')
+        Assert-EzVmEqual -Actual $args[$args.Count - 2] -Expected 'coder@127.0.0.1'
+        $remote = $args[$args.Count - 1]
+        $module = Get-Module EzVm
+        $quotedSingle = & $module { ConvertTo-EzVmPosixArgument -Value "x'y" }
+        Assert-EzVmTrue -Condition ($remote -match "'a b'")
+        Assert-EzVmTrue -Condition ($remote.Contains($quotedSingle)) -Message 'Single quotes must be encoded without losing the argv boundary.'
+        Assert-EzVmTrue -Condition ($remote.EndsWith("''", [StringComparison]::Ordinal))
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'SSH: scp argv preserves host paths containing spaces as one token' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'scp spaces'
+    try {
+        $paths = Get-EzVmSshPaths -Root $root -InstanceName 'ssh-agent'
+        $hostPath = Join-Path $root 'host file with spaces.txt'
+        $remote = 'coder@127.0.0.1:/tmp/guest file.txt'
+        $args = New-EzVmScpCommandArguments -PrivateKey $paths.ControllerPrivateKey -KnownHosts $paths.InstanceKnownHosts -Port 22002 -Source $hostPath -Destination $remote
+        $separator = [Array]::IndexOf($args, '--')
+        Assert-EzVmTrue -Condition ($separator -ge 0)
+        Assert-EzVmEqual -Actual $args[$separator + 1] -Expected $hostPath
+        Assert-EzVmEqual -Actual $args[$separator + 2] -Expected $remote
+        Assert-EzVmTrue -Condition ($args -ccontains 'StrictHostKeyChecking=yes')
+        Assert-EzVmTrue -Condition ($args -notcontains 'StrictHostKeyChecking=no')
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'SSH: known-hosts state is bundle-scoped and one file per managed instance' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'known hosts'
+    try {
+        $paths = Get-EzVmSshPaths -Root $root -InstanceName 'agent-one'
+        $runtime = Get-EzVmPaths -Root $root
+        Assert-EzVmTrue -Condition ($paths.InstanceKnownHosts.StartsWith($runtime.Keys, [StringComparison]::OrdinalIgnoreCase))
+        Assert-EzVmTrue -Condition ($paths.InstanceKnownHosts -match 'known-hosts[\\/]+agent-one\.known_hosts$')
+        Assert-EzVmTrue -Condition ($paths.ControllerPrivateKey.StartsWith($runtime.Keys, [StringComparison]::OrdinalIgnoreCase))
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'SSH: host-key continuity accepts a port change but rejects unexpected key replacement' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'host key continuity'
+    try {
+        $paths = Get-EzVmSshPaths -Root $root -InstanceName 'agent-one'
+        [void][IO.Directory]::CreateDirectory($paths.KnownHostsDirectory)
+        [IO.File]::WriteAllText($paths.InstanceKnownHosts, ('[127.0.0.1]:22001 ssh-ed25519 AAAA' + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
+        $module = Get-Module EzVm
+        $candidate = & $module {
+            param($r)
+            New-EzVmCandidateKnownHosts -Root $r -InstanceName 'agent-one' -LaunchId ('a' * 32) -Port 22077 -ScannedLine '[127.0.0.1]:22077 ssh-ed25519 AAAA'
+        } $root
+        try {
+            Assert-EzVmTrue -Condition (Test-Path -LiteralPath $candidate.Candidate -PathType Leaf)
+        }
+        finally { Remove-Item -LiteralPath $candidate.Candidate -Force -ErrorAction SilentlyContinue }
+
+        Assert-EzVmThrows -ScriptBlock {
+            & $module {
+                param($r)
+                New-EzVmCandidateKnownHosts -Root $r -InstanceName 'agent-one' -LaunchId ('b' * 32) -Port 22078 -ScannedLine '[127.0.0.1]:22078 ssh-ed25519 BBBB'
+            } $root
+        } -MessagePattern 'host key changed unexpectedly' | Out-Null
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'SSH: readiness rejects authenticated identity mismatch' -ScriptBlock {
+    $expected = New-EzVmSshTestIntent
+    $wrong = [pscustomobject][ordered]@{
+        schemaVersion = 1
+        instanceName = 'other-agent'
+        baseId = $expected.baseId
+        profile = 'normal'
+        cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
+    } | ConvertTo-Json -Compress
+    $nl = [Environment]::NewLine
+    $output = 'EZVM_IDENTITY_B64=' + (ConvertTo-EzVmSshTestBase64 $wrong) + $nl + 'EZVM_CLOUD_B64=' + (ConvertTo-EzVmSshTestBase64 'status: done') + $nl + 'EZVM_READY=1' + $nl
+    Assert-EzVmThrows -ScriptBlock {
+        ConvertFrom-EzVmReadinessProbe -StdOut $output -ExpectedInstanceName 'ssh-agent' -ExpectedBaseId $expected.baseId -ExpectedProfile 'normal' -ExpectedCloudInstanceId 'ezvm-ssh-agent-123456789abc'
+    } -MessagePattern 'identity mismatch' | Out-Null
+}
+
+Add-EzVmTest -Name 'SSH: readiness distinguishes cloud-init incomplete and failed states from READY' -ScriptBlock {
+    $intent = New-EzVmSshTestIntent
+    $identity = [pscustomobject][ordered]@{
+        schemaVersion = 1
+        instanceName = 'ssh-agent'
+        baseId = $intent.baseId
+        profile = 'normal'
+        cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
+    } | ConvertTo-Json -Compress
+    $identity64 = ConvertTo-EzVmSshTestBase64 $identity
+    $nl = [Environment]::NewLine
+
+    $runningOutput = 'EZVM_IDENTITY_B64=' + $identity64 + $nl + 'EZVM_CLOUD_B64=' + (ConvertTo-EzVmSshTestBase64 'status: running') + $nl + 'EZVM_READY=0' + $nl
+    $running = ConvertFrom-EzVmReadinessProbe -StdOut $runningOutput -ExpectedInstanceName 'ssh-agent' -ExpectedBaseId $intent.baseId -ExpectedProfile 'normal' -ExpectedCloudInstanceId 'ezvm-ssh-agent-123456789abc'
+    Assert-EzVmEqual -Actual $running.Ready -Expected $false
+    Assert-EzVmEqual -Actual $running.CloudDone -Expected $false
+
+    $failedOutput = 'EZVM_IDENTITY_B64=' + $identity64 + $nl + 'EZVM_CLOUD_B64=' + (ConvertTo-EzVmSshTestBase64 'status: error') + $nl + 'EZVM_READY=0' + $nl
+    Assert-EzVmThrows -ScriptBlock {
+        ConvertFrom-EzVmReadinessProbe -StdOut $failedOutput -ExpectedInstanceName 'ssh-agent' -ExpectedBaseId $intent.baseId -ExpectedProfile 'normal' -ExpectedCloudInstanceId 'ezvm-ssh-agent-123456789abc'
+    } -MessagePattern 'cloud-init reports failed' | Out-Null
+
+    $readyOutput = 'EZVM_IDENTITY_B64=' + $identity64 + $nl + 'EZVM_CLOUD_B64=' + (ConvertTo-EzVmSshTestBase64 'status: done') + $nl + 'EZVM_READY=1' + $nl
+    $ready = ConvertFrom-EzVmReadinessProbe -StdOut $readyOutput -ExpectedInstanceName 'ssh-agent' -ExpectedBaseId $intent.baseId -ExpectedProfile 'normal' -ExpectedCloudInstanceId 'ezvm-ssh-agent-123456789abc'
+    Assert-EzVmEqual -Actual $ready.Ready -Expected $true
+}
+
+Add-EzVmTest -Name 'SSH: readiness wait has a bounded total timeout when TCP never opens' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'ssh readiness timeout'
+    try {
+        $intent = New-EzVmSshTestIntent
+        $access = [pscustomobject][ordered]@{
+            schemaVersion = 1
+            instanceName = 'ssh-agent'
+            launchId = ('a' * 32)
+            sshHost = '127.0.0.1'
+            sshPort = 22001
+            sshUser = 'coder'
+            state = 'PROVISIONING'
+            cloudInstanceId = 'ezvm-ssh-agent-123456789abc'
+            profile = 'normal'
+            readyAt = ''
+        }
+        $identity = [pscustomobject]@{ PrivateKey = (Join-Path $root 'unused-key') }
+        $tooling = [pscustomobject]@{ Ssh = 'unused-ssh'; Keyscan = 'unused-keyscan' }
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        Assert-EzVmThrows -ScriptBlock {
+            Wait-EzVmSshReady -Root $root -InstanceName 'ssh-agent' -Intent $intent -Access $access -Identity $identity -Tooling $tooling -TimeoutSeconds 1 -PortProbe { param($hostAddress, $port) return $false }
+        } -MessagePattern 'did not reach authenticated SSH READY within 1 seconds' | Out-Null
+        $clock.Stop()
+        Assert-EzVmTrue -Condition ($clock.Elapsed.TotalSeconds -lt 4) -Message 'Readiness timeout must remain bounded.'
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'SSH: exec process result preserves remote non-zero exit and reserves 255 for transport failure' -ScriptBlock {
+    $module = Get-Module EzVm
+    $resolved = & $module {
+        Resolve-EzVmExecProcessResult -Result ([pscustomobject]@{ ExitCode = 37; StdOut = 'partial output'; StdErr = 'remote error' })
+    }
+    Assert-EzVmEqual -Actual $resolved.exitCode -Expected 37
+    Assert-EzVmEqual -Actual $resolved.stdout -Expected 'partial output'
+    Assert-EzVmEqual -Actual $resolved.stderr -Expected 'remote error'
+    Assert-EzVmThrows -ScriptBlock {
+        & $module {
+            Resolve-EzVmExecProcessResult -Result ([pscustomobject]@{ ExitCode = 255; StdOut = ''; StdErr = 'host key failure' })
+        }
+    } -MessagePattern 'transport/authentication failed' | Out-Null
+}
+
+Add-EzVmTest -Name 'SSH: configured port allocation skips collisions and stays inside the reviewed range' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'ssh ports'
+    try {
+        $port = Get-EzVmAvailableSshPort -Root $root -PortProbe { param($candidate) return $candidate -eq 22003 }
+        Assert-EzVmEqual -Actual $port -Expected 22003
+        Assert-EzVmThrows -ScriptBlock {
+            Get-EzVmAvailableSshPort -Root $root -PortProbe { param($candidate) return $false }
+        } -MessagePattern 'No loopback SSH port is available.*22000-22999' | Out-Null
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'SSH: missing OpenSSH tools produce concrete remediation' -ScriptBlock {
+    $module = Get-Module EzVm
+    Assert-EzVmThrows -ScriptBlock {
+        & $module {
+            Assert-EzVmOpenSshTools -Tooling ([pscustomobject]@{
+                Valid = $false
+                Missing = @('ssh.exe', 'scp.exe')
+                Reason = 'Missing required OpenSSH application(s): ssh.exe, scp.exe.'
+            })
+        }
+    } -MessagePattern 'Install the Windows OpenSSH Client.*ssh\.exe.*scp\.exe.*ssh-keygen\.exe.*ssh-keyscan\.exe' | Out-Null
+}
+
+Add-EzVmTest -Name 'SSH: implementation never disables strict host-key checking' -ScriptBlock {
+    $source = [IO.File]::ReadAllText((Join-Path $script:EzVmRepositoryRoot 'src/EzVm/Ssh.ps1'))
+    Assert-EzVmTrue -Condition ($source -notmatch 'StrictHostKeyChecking=no') -Message 'Managed SSH must never use the global host-key bypass.'
+    Assert-EzVmTrue -Condition ($source -match 'StrictHostKeyChecking=yes')
+    Assert-EzVmTrue -Condition ($source -match 'UserKnownHostsFile=')
+}
