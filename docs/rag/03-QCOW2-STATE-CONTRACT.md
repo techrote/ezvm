@@ -192,3 +192,18 @@ the active disk is touched. The existing disk is moved to a recoverable backup,
 the validated candidate is atomically promoted, and the backup is restored if
 promotion fails. Normal storage code contains no `qemu-img commit` or automatic
 rebase path and never deliberately removes prepared-base write protection.
+
+## Runtime ownership integration (EZVM-006)
+
+Before start, EZVM-006 calls the EZVM-005 complete backing-chain validator and
+refuses launch on any missing, external, wrong-base, wrong-format or deeper chain.
+
+The runtime lifecycle subsystem is now the authority that produces EZVM-005
+storage guards. Only reconciled CREATED or STOPPED state yields
+`proven-safe`. STARTING, RUNNING and STOPPING map to active guard states;
+STALE, UNKNOWN and ambiguous ownership map to `unknown` and therefore refuse
+offline/destructive image operations.
+
+A graceful stop timeout deliberately leaves runtime state STOPPING and QEMU
+ownership active. It is not converted into STOPPED merely because the requested
+shutdown did not finish within the configured bound.
