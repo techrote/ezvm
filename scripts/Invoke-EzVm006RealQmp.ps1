@@ -35,7 +35,7 @@ try {
     $lastError = $null
     while ([DateTime]::UtcNow -lt $deadline) {
         try {
-            $query = Invoke-EzVmQmpCommand -PipeName $pipeName -Command 'query-status' -TimeoutMilliseconds 1000
+            $query = & $module { param($pipe) Invoke-EzVmQmpCommand -PipeName $pipe -Command 'query-status' -TimeoutMilliseconds 1000 } $pipeName
             break
         }
         catch {
@@ -58,7 +58,7 @@ try {
     $observedFingerprint = Get-EzVmArgumentFingerprint -ArgumentList ([string[]]$snapshot.Arguments)
     if ($observedFingerprint -cne $expectedFingerprint) { throw 'Real Windows process argv fingerprint did not round-trip through Win32_Process.' }
 
-    $null = Invoke-EzVmQmpCommand -PipeName $pipeName -Command 'system_powerdown' -TimeoutMilliseconds 3000
+    $null = & $module { param($pipe) Invoke-EzVmQmpCommand -PipeName $pipe -Command 'system_powerdown' -TimeoutMilliseconds 3000 } $pipeName
     Write-Host 'EZVM006_REAL_QMP_POWERDOWN_REQUEST=PASS'
 
     Start-Sleep -Milliseconds 500
@@ -70,7 +70,7 @@ try {
         # machine=none has no guest OS to complete an ACPI shutdown. The quit
         # command is test cleanup only; production Stop-EzVmInstance never
         # converts a powerdown timeout into quit/kill.
-        $null = Invoke-EzVmQmpCommand -PipeName $pipeName -Command 'quit' -TimeoutMilliseconds 3000
+        $null = & $module { param($pipe) Invoke-EzVmQmpCommand -PipeName $pipe -Command 'quit' -TimeoutMilliseconds 3000 } $pipeName
     }
 
     $exitDeadline = [DateTime]::UtcNow.AddSeconds(10)
