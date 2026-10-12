@@ -181,28 +181,30 @@ configuration.
 The controller Ed25519 key lives under `runtime/keys`; only its public half is
 served to cloud-init. Windows private-key creation is followed by an ACL
 restriction to the current user. The required command-line client boundary is
-`ssh.exe`, `scp.exe`, `ssh-keygen.exe` and `ssh-keyscan.exe`. Missing
-tools fail with OpenSSH Client remediation and are also reported by `doctor`.
+`ssh.exe`, `scp.exe` and `ssh-keygen.exe`. Missing tools fail with OpenSSH
+Client remediation and are also reported by `doctor`. `ssh-keyscan` is
+deliberately not in the runtime boundary because affected Win32-OpenSSH builds
+can negotiate a KEX they do not implement against modern OpenSSH servers.
 
 Host trust is bundle-scoped at
-`runtime/keys/known-hosts/<instance>.known_hosts`. SSH/scp always use
-`StrictHostKeyChecking=yes`, `UpdateHostKeys=no`, that managed file and an
-empty global-hosts source. This prevents the OpenSSH client itself from rewriting
-managed trust behind ezvm's state machine; the user's global known_hosts is
-neither trusted implicitly nor modified.
+`runtime/keys/known-hosts/<instance>.known_hosts`. Normal SSH/scp use
+`StrictHostKeyChecking=yes`, `UpdateHostKeys=no`, Ed25519 host keys, that
+managed file and an empty global-hosts source. This prevents the OpenSSH client
+itself from rewriting managed trust behind ezvm's state machine; the user's
+global known_hosts is neither trusted implicitly nor modified.
 
-For an untrusted first launch, `ssh-keyscan` material is written only to a
-temporary candidate file. The candidate is promoted to managed trust **after**
-controller-key authentication and the authenticated guest proves the requested
-ezvm identity, completed cloud-init and readiness marker.
+For an untrusted first launch or possible re-key, ezvm creates an empty
+launch-local candidate file and invokes `ssh.exe` with
+`StrictHostKeyChecking=accept-new` **only for that candidate**. Host-key
+selection is constrained to Ed25519 and `UpdateHostKeys=no` prevents additional
+keys being learned behind the state machine. This is not a global bypass: once a
+candidate exists, subsequent connections must match it.
 
-A changed key is also treated as untrusted candidate material: the existing
-managed entry stays untouched while the candidate is used for managed-key
-authentication and the authenticated identity/cloud-init/READY proof. Only after
-that proof succeeds is the single instance-scoped known-host entry atomically
-replaced. Failure or identity mismatch leaves the previous trust entry intact.
-This is the controlled reset/rebuild re-key path; keyscan observation alone never
-mutates durable trust.
+The candidate is promoted to managed trust **after** controller-key
+authentication and the authenticated guest proves the requested ezvm identity,
+completed cloud-init and readiness marker. Existing managed trust remains
+untouched until that proof succeeds; failure or identity mismatch leaves it
+intact. This is the controlled reset/rebuild re-key path.
 
 The configured 22000-22999 range is scanned under a bundle allocation lock and
 must also be bindable on loopback. This is sufficient for the EZVM-007 launch
