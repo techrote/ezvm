@@ -163,3 +163,45 @@ The seed server:
 The base-build path deliberately has no SSH host forwarding and no build SSH key.
 Outbound user-mode networking remains available so Ubuntu package acquisition can
 complete.
+
+
+## Implemented instance SSH transport and trust (EZVM-007)
+
+Normal instance launches extend the existing explicit QEMU user netdev with:
+
+~~~text
+hostfwd=tcp:127.0.0.1:<ssh-port>-:22
+guestfwd=tcp:10.0.2.100:8000-tcp:127.0.0.1:<seed-host-port>
+~~~
+
+and SMBIOS NoCloud discovery at `http://10.0.2.100:8000/`. Both host endpoints
+are loopback-only. There is no omitted hostfwd bind address and no TAP/bridge
+configuration.
+
+The controller Ed25519 key lives under `runtime/keys`; only its public half is
+served to cloud-init. Windows private-key creation is followed by an ACL
+restriction to the current user. The required command-line client boundary is
+`ssh.exe`, `scp.exe`, `ssh-keygen.exe` and `ssh-keyscan.exe`. Missing
+tools fail with OpenSSH Client remediation and are also reported by `doctor`.
+
+Host trust is bundle-scoped at
+`runtime/keys/known-hosts/<instance>.known_hosts`. SSH/scp always use
+`StrictHostKeyChecking=yes`, that managed file and an empty global-hosts source;
+the user's global known_hosts is neither trusted implicitly nor modified.
+
+For an untrusted first launch, `ssh-keyscan` material is written only to a
+temporary candidate file. The candidate is promoted to managed trust **after**
+controller-key authentication and the authenticated guest proves the requested
+ezvm identity, completed cloud-init and readiness marker. If a previously trusted
+instance presents different key material, EZVM-007 fails closed. Automatic
+replacement is intentionally reserved for a later explicit reset/rebuild flow
+that can prove an identity transition.
+
+The configured 22000-22999 range is scanned under a bundle allocation lock and
+must also be bindable on loopback. This is sufficient for the EZVM-007 launch
+path; EZVM-008 owns durable per-instance allocation, persisted collision
+accounting and full concurrent multi-instance resource management.
+
+Per-launch `access.json` records only instance/launch identity, localhost SSH
+endpoint, user/profile, provisioning state and READY timestamp. It is accepted
+only when its launch ID matches a safely RUNNING EZVM-006 runtime state.
