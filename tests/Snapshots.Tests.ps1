@@ -7,20 +7,23 @@ function Set-EzVmSnapshotFixtureInteger {
 }
 
 function Write-EzVmSnapshotFixtureImage {
-    param([string]$Path, [string]$Backing = '', [string]$Data = '', [long]$VirtualSize = 67108864)
+    param(
+        [string]$Path, [string]$Backing = '', [string]$Data = '', [long]$VirtualSize = 67108864,
+        [scriptblock]$IntegerWriter = ${function:Set-EzVmSnapshotFixtureInteger}
+    )
     $header = New-Object byte[] 512
     $header[0] = 0x51; $header[1] = 0x46; $header[2] = 0x49; $header[3] = 0xfb
-    Set-EzVmSnapshotFixtureInteger $header 4 4 3
-    Set-EzVmSnapshotFixtureInteger $header 20 4 9
-    Set-EzVmSnapshotFixtureInteger $header 24 8 $VirtualSize
-    Set-EzVmSnapshotFixtureInteger $header 96 4 4
-    Set-EzVmSnapshotFixtureInteger $header 100 4 104
+    & $IntegerWriter $header 4 4 3
+    & $IntegerWriter $header 20 4 9
+    & $IntegerWriter $header 24 8 $VirtualSize
+    & $IntegerWriter $header 96 4 4
+    & $IntegerWriter $header 100 4 104
     if ($Backing) {
         $backingBytes = [Text.Encoding]::UTF8.GetBytes($Backing)
-        Set-EzVmSnapshotFixtureInteger $header 8 8 128
-        Set-EzVmSnapshotFixtureInteger $header 16 4 $backingBytes.Length
-        Set-EzVmSnapshotFixtureInteger $header 104 4 0xe2792acaL
-        Set-EzVmSnapshotFixtureInteger $header 108 4 5
+        & $IntegerWriter $header 8 8 128
+        & $IntegerWriter $header 16 4 $backingBytes.Length
+        & $IntegerWriter $header 104 4 0xe2792acaL
+        & $IntegerWriter $header 108 4 5
         [Array]::Copy([Text.Encoding]::ASCII.GetBytes('qcow2'), 0, $header, 112, 5)
         [Array]::Copy($backingBytes, 0, $header, 128, $backingBytes.Length)
     }
@@ -43,6 +46,12 @@ function New-EzVmSnapshotFixture {
     $root = $baseFixture.Root
     $state = [pscustomobject]@{ Calls = New-Object 'System.Collections.Generic.List[object]'; Mode = 'normal' }
     $runnerState = $state
+    # GetNewClosure captures variables, not functions defined in Run-Tests.ps1's
+    # script scope. Carry each helper explicitly across the module callback so
+    # the fixture also works through Invoke-CiCheck.ps1's nested script entry.
+    $runnerPayloadReader = ${function:Get-EzVmSnapshotFixturePayload}
+    $runnerImageWriter = ${function:Write-EzVmSnapshotFixtureImage}
+    $runnerIntegerWriter = ${function:Set-EzVmSnapshotFixtureInteger}
     $runner = {
         param($argumentList)
         $arguments = @($argumentList)
@@ -51,7 +60,7 @@ function New-EzVmSnapshotFixture {
         $path = [IO.Path]::GetFullPath($arguments[-1])
         if ($command -ceq 'create') {
             $backing = $arguments[[Array]::IndexOf($arguments, '-b') + 1]
-            Write-EzVmSnapshotFixtureImage -Path $path -Backing $backing
+            & $runnerImageWriter -Path $path -Backing $backing -IntegerWriter $runnerIntegerWriter
             return [pscustomobject]@{ ExitCode = 0; StdOut = ''; StdErr = '' }
         }
         if ($command -ceq 'convert') {
@@ -60,15 +69,15 @@ function New-EzVmSnapshotFixture {
                 return [pscustomobject]@{ ExitCode = 1; StdOut = ''; StdErr = 'fixture interrupted conversion' }
             }
             $source = [IO.Path]::GetFullPath($arguments[-2])
-            $payload = Get-EzVmSnapshotFixturePayload -Path $source
+            $payload = & $runnerPayloadReader -Path $source
             $visibleData = $payload.data
             if (-not $visibleData -and $payload.backing) {
                 $back = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetDirectoryName($source)) $payload.backing))
-                $visibleData = (Get-EzVmSnapshotFixturePayload -Path $back).data
+                $visibleData = (& $runnerPayloadReader -Path $back).data
             }
             $size = if ($runnerState.Mode -ceq 'wrong-convert-size') { 33554432 } else { [long]$payload.size }
             $backing = if ($runnerState.Mode -ceq 'converted-backing') { '../outside.qcow2' } else { '' }
-            Write-EzVmSnapshotFixtureImage -Path $path -Data $visibleData -VirtualSize $size -Backing $backing
+            & $runnerImageWriter -Path $path -Data $visibleData -VirtualSize $size -Backing $backing -IntegerWriter $runnerIntegerWriter
             if ($runnerState.Mode -ceq 'source-changes') {
                 [IO.File]::AppendAllText($source, 'changed-during-convert')
             }
@@ -82,7 +91,7 @@ function New-EzVmSnapshotFixture {
         }
         if ($command -ceq 'info') {
             if ($runnerState.Mode -ceq 'malformed-info') { return [pscustomobject]@{ ExitCode = 0; StdOut = 'not-json'; StdErr = '' } }
-            $payload = Get-EzVmSnapshotFixturePayload -Path $path
+            $payload = & $runnerPayloadReader -Path $path
             $info = [ordered]@{ filename = $path; format = 'qcow2'; 'virtual-size' = [long]$payload.size }
             if ($payload.backing) {
                 $info['backing-filename'] = $payload.backing
@@ -225,9 +234,11 @@ Add-EzVmTest -Name 'Snapshots: extension bounds duplicates missing terminators a
 Add-EzVmTest -Name 'Snapshots: imported symlink ancestors and oversized sidecars refuse before tool invocation' -ScriptBlock {
     $fixture = New-EzVmSnapshotFixture -WithoutInstance
     $link = $null
+    $target = $null
     try {
-        $target = Join-Path $fixture.Root 'actual imports'
-        [void][IO.Directory]::CreateDirectory($target)
+        # PS5.1 resolves New-Item -Target through wildcard semantics. Keep the
+        # bracketed source/link path, but use a literal-safe target with spaces.
+        $target = New-EzVmTestDirectory -Prefix 'snapshot junction target with spaces'
         Copy-Item -LiteralPath $fixture.InputPath -Destination (Join-Path $target 'disk.qcow2')
         $link = Join-Path $fixture.Root 'redirected imports'
         $itemType = if ($script:EzVmIsWindowsHost) { 'Junction' } else { 'SymbolicLink' }
@@ -244,6 +255,7 @@ Add-EzVmTest -Name 'Snapshots: imported symlink ancestors and oversized sidecars
     }
     finally {
         if ($null -ne $link -and (Test-Path -LiteralPath $link)) { [IO.Directory]::Delete($link) }
+        if ($null -ne $target) { Remove-EzVmTestDirectory -Path $target }
         Remove-EzVmSnapshotFixture $fixture
     }
 }

@@ -179,7 +179,9 @@ Add-EzVmTest -Name 'Portability CLI: ambiguous destructive syntax is refused bef
         $run = Invoke-EzVmTestPowerShell -CommandText $command
         Assert-EzVmEqual -Actual $run.ExitCode -Expected 0
         Assert-EzVmEqual -Actual $run.StandardError -Expected ''
-        $results = @($run.StandardOutput | ConvertFrom-Json -ErrorAction Stop)
+        # Windows PowerShell 5.1 emits a JSON array as one pipeline object.
+        # Direct assignment keeps that array instead of nesting it in @(...).
+        $results = $run.StandardOutput | ConvertFrom-Json -ErrorAction Stop
         Assert-EzVmEqual -Actual $results.Count -Expected $cases.Count
         foreach ($result in $results) {
             Assert-EzVmEqual -Actual $result.success -Expected $false
