@@ -46,6 +46,7 @@
         'New-EzVmInstanceIntent',
         'Get-EzVmInstanceIntent',
         'Get-EzVmArgumentFingerprint',
+        'Get-EzVmRuntimeFirmwarePaths',
         'New-EzVmRuntimeQemuArguments',
         'Invoke-EzVmQmpCommand',
         'Get-EzVmInstanceStatus',
