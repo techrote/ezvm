@@ -42,6 +42,16 @@
         'New-EzVmInstanceOverlay',
         'Test-EzVmStoppedImageIntegrity',
         'Reset-EzVmInstanceOverlayStorage',
+        'Get-EzVmInstanceRuntimePaths',
+        'New-EzVmInstanceIntent',
+        'Get-EzVmInstanceIntent',
+        'Get-EzVmArgumentFingerprint',
+        'New-EzVmRuntimeQemuArguments',
+        'Invoke-EzVmQmpCommand',
+        'Get-EzVmInstanceStatus',
+        'Get-EzVmInstanceStorageLifecycleGuard',
+        'Start-EzVmInstance',
+        'Stop-EzVmInstance',
         'Invoke-EzVmCommand',
         'Write-EzVmResult'
     )
