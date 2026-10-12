@@ -4,7 +4,12 @@
 # those at the source before any cmdlet import can contaminate captured output.
 $ProgressPreference = 'SilentlyContinue'
 $ErrorActionPreference = 'Stop'
-$jsonRequested = @($args | Where-Object { $_ -ieq '-Json' }).Count -gt 0
+$jsonRequested = $false
+$afterCommandSeparator = $false
+foreach ($argument in $args) {
+    if ($argument -ceq '--') { $afterCommandSeparator = $true; continue }
+    if (-not $afterCommandSeparator -and $argument -ieq '-Json') { $jsonRequested = $true }
+}
 
 try {
     Import-Module (Join-Path $PSScriptRoot 'src/EzVm/EzVm.psd1') -Force -ErrorAction Stop
