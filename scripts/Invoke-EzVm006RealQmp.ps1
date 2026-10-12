@@ -17,8 +17,7 @@ $arguments = @(
     '-accel', 'tcg,thread=multi',
     '-display', 'none',
     '-monitor', 'none',
-    '-chardev', ('pipe,id=qmp,path=' + $pipeName),
-    '-mon', 'chardev=qmp,mode=control,pretty=off',
+    '-qmp', ('pipe:' + $pipeName),
     '-no-user-config',
     '-nodefaults'
 )
@@ -34,6 +33,9 @@ try {
     $query = $null
     $lastError = $null
     while ([DateTime]::UtcNow -lt $deadline) {
+        if ($null -ne $launch.Process -and $launch.Process.HasExited) {
+            throw "Real QEMU smoke process exited before QMP became ready with code $($launch.Process.ExitCode)."
+        }
         try {
             $query = & $module { param($pipe) Invoke-EzVmQmpCommand -PipeName $pipe -Command 'query-status' -TimeoutMilliseconds 1000 } $pipeName
             break
