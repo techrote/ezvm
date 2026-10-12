@@ -178,7 +178,7 @@ The shared firmware code image is opened read-only. Writable UEFI variable state
 is copied from the managed QEMU firmware template into each instance directory
 and is validated as managed generated state before use.
 
-Runtime management uses QMP over a Windows host-local transport rather than SSH.
+Runtime management uses QMP over a TCP listener bound explicitly to `127.0.0.1` rather than SSH or a LAN-exposed management socket.
 The control path performs the QMP greeting and `qmp_capabilities` negotiation
 before issuing commands. Production graceful stop sends `system_powerdown` and
 waits for process exit; timeout is reported without silently killing QEMU.
