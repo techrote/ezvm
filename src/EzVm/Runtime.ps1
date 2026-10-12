@@ -2889,7 +2889,7 @@ function Stop-EzVmInstance {
 
     if ([string]::IsNullOrWhiteSpace($Profile)) {
         $configuration = Get-EzVmConfiguration -Root $Root
-        $matches = @('light', 'normal', 'heavy' | Where-Object {
+        $matches = @(@('light', 'normal', 'heavy') | Where-Object {
             [int]$configuration.profiles.$_.cpus -eq $Cpus -and
             [int]$configuration.profiles.$_.memoryMiB -eq $MemoryMiB
         })
