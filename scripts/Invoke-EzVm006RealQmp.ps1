@@ -7,6 +7,7 @@ $ProgressPreference = 'SilentlyContinue'
 Import-Module (Join-Path $Root 'src/EzVm/EzVm.psd1') -Force -ErrorAction Stop
 
 $bootstrap = Install-EzVmQemuRuntime -Root $Root
+$module = Get-Module EzVm
 $qemu = [IO.Path]::GetFullPath($bootstrap.qemuSystem)
 $qemuRoot = Split-Path -Parent $qemu
 $launchId = [Guid]::NewGuid().ToString('N')
@@ -22,7 +23,6 @@ $arguments = @(
     '-no-user-config',
     '-nodefaults'
 )
-$module = Get-Module EzVm
 $launch = $null
 $stderrTask = $null
 $stdoutTask = $null
