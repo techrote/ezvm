@@ -1,0 +1,38 @@
+name: EZVM-011 temporary Windows path probe
+on:
+  push:
+    branches: [ezvm-011-workspace-export]
+    paths: [.github/workflows/ezvm-011-path-probe.yml]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - name: Compare provider and literal filesystem attribute reads
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $root = Join-Path $env:RUNNER_TEMP ('ezvm probe [literal] ' + [Guid]::NewGuid().ToString('N'))
+          [void][IO.Directory]::CreateDirectory($root)
+          [IO.File]::WriteAllText((Join-Path $root 'present.txt'), 'fixture')
+          $link = Join-Path $root 'junction [link]'
+          $target = Join-Path $root 'target'
+          [void][IO.Directory]::CreateDirectory($target)
+          New-Item -ItemType Junction -Path $link -Target $target | Out-Null
+          foreach ($path in @($root, (Join-Path $root 'present.txt'), (Join-Path $root 'missing'), (Join-Path $root 'missing/deeper'), $link, (Join-Path $link 'missing'))) {
+            Write-Host ('PATH=' + $path)
+            try {
+              $items = @(Get-Item -LiteralPath $path -Force -ErrorAction Stop)
+              Write-Host ('PROVIDER_COUNT=' + $items.Count)
+              foreach ($item in $items) { Write-Host ('TYPE=' + $item.GetType().FullName + '; ATTR=' + $item.Attributes) }
+            } catch { Write-Host ('PROVIDER_ERROR=' + $_.Exception.GetType().FullName + ': ' + $_.Exception.Message) }
+            try { Write-Host ('LITERAL_ATTRIBUTES=' + [IO.File]::GetAttributes($path)) }
+            catch { Write-Host ('LITERAL_ERROR=' + $_.Exception.GetType().FullName + '; INNER=' + $_.Exception.InnerException.GetType().FullName) }
+          }
+          [IO.Directory]::Delete($target)
+          Write-Host ('DANGLING_JUNCTION_ATTRIBUTES=' + [IO.File]::GetAttributes($link))
+          [IO.Directory]::Delete($link)
+          [IO.Directory]::Delete($root, $true)
