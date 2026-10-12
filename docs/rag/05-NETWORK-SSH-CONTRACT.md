@@ -234,4 +234,3 @@ managed endpoint.
 The temporary NoCloud listener remains an already-bound ephemeral loopback port,
 and QMP continues to use an independently locked ephemeral port. Neither is
 persisted as portable instance intent.
-
