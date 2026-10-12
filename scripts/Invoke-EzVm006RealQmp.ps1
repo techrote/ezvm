@@ -102,26 +102,19 @@ try {
         Get-EzVmObservedQemuProcesses -ProcessId ([Nullable[int]]$pidValue) -ProcessProvider $null
     } $launch.Pid)
     if ($remaining.Count -gt 0) {
-        # machine=none has no guest OS to complete an ACPI shutdown. The quit
-        # command is test cleanup only; production Stop-EzVmInstance never
-        # converts a powerdown timeout into quit/kill.
-        $null = & $module { param($hostAddress, $port) Invoke-EzVmQmpCommand -HostAddress $hostAddress -Port $port -Command 'quit' -TimeoutMilliseconds 3000 } $qmpHost $qmpPort
+        # machine=none has no guest OS to complete ACPI shutdown. This is
+        # qualification-process cleanup only, using the exact Process object
+        # created by this script. Production runtime code has no QMP quit path
+        # and never converts graceful-stop timeout into kill.
+        if (-not $launch.Process.HasExited) { $launch.Process.Kill() }
+        [void]$launch.Process.WaitForExit(5000)
     }
 
-    $exitDeadline = [DateTime]::UtcNow.AddSeconds(10)
-    while ([DateTime]::UtcNow -lt $exitDeadline) {
-        $left = @(& $module {
-            param($pidValue)
-            Get-EzVmObservedQemuProcesses -ProcessId ([Nullable[int]]$pidValue) -ProcessProvider $null
-        } $launch.Pid)
-        if ($left.Count -eq 0) { break }
-        Start-Sleep -Milliseconds 100
-    }
     $left = @(& $module {
         param($pidValue)
         Get-EzVmObservedQemuProcesses -ProcessId ([Nullable[int]]$pidValue) -ProcessProvider $null
     } $launch.Pid)
-    if ($left.Count -ne 0) { throw 'Real QEMU smoke process did not exit after QMP cleanup.' }
+    if ($left.Count -ne 0) { throw 'Real QEMU smoke process did not exit after bounded test cleanup.' }
 
     Write-Host ('EZVM006_REAL_QMP_ENDPOINT=' + $qmpHost + ':' + $qmpPort)
     Write-Host ('EZVM006_REAL_PID=' + $launch.Pid)
