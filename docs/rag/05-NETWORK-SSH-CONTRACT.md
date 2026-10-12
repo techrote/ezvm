@@ -214,3 +214,24 @@ accounting and full concurrent multi-instance resource management.
 Per-launch `access.json` records only instance/launch identity, localhost SSH
 endpoint, user/profile, provisioning state and READY timestamp. It is accepted
 only when its launch ID matches a safely RUNNING EZVM-006 runtime state.
+
+## Durable SSH allocation (EZVM-008)
+
+The host SSH port is now assigned during instance creation and persisted in
+`instance.json`; normal starts do not choose a fresh port. Allocation is
+serialized by the bundle SSH-allocation lock and excludes both ports reserved by
+other valid instance intents and ports that cannot be bound on
+`127.0.0.1`.
+
+Before start, ezvm reconstructs allocation authority, proves that the persisted
+port is not reserved by another instance, and verifies current loopback
+availability while still holding the allocation lock. The lock remains held
+through QEMU startup until QEMU reaches RUNNING, at which point the QEMU
+`hostfwd` owns the reservation. A race with an unrelated non-ezvm process can
+therefore still make QEMU fail, but it cannot silently redirect or share the
+managed endpoint.
+
+The temporary NoCloud listener remains an already-bound ephemeral loopback port,
+and QMP continues to use an independently locked ephemeral port. Neither is
+persisted as portable instance intent.
+
