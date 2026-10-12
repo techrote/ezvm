@@ -67,6 +67,7 @@ Add-EzVmTest -Name 'SSH: command argv uses scoped strict host-key checking and p
         $paths = Get-EzVmSshPaths -Root $root -InstanceName 'ssh-agent'
         $args = New-EzVmSshCommandArguments -PrivateKey $paths.ControllerPrivateKey -KnownHosts $paths.InstanceKnownHosts -Port 22001 -Batch -RemoteCommand @('printf', 'a b', "x'y", '')
         Assert-EzVmTrue -Condition ($args -ccontains 'StrictHostKeyChecking=yes')
+        Assert-EzVmTrue -Condition ($args -ccontains 'UpdateHostKeys=no')
         Assert-EzVmTrue -Condition ($args -notcontains 'StrictHostKeyChecking=no')
         Assert-EzVmTrue -Condition ($args -ccontains ('UserKnownHostsFile=' + $paths.InstanceKnownHosts))
         Assert-EzVmTrue -Condition ($args -ccontains 'BatchMode=yes')
@@ -337,5 +338,42 @@ Add-EzVmTest -Name 'SSH: implementation never disables strict host-key checking'
     $source = [IO.File]::ReadAllText((Join-Path $script:EzVmRepositoryRoot 'src/EzVm/Ssh.ps1'))
     Assert-EzVmTrue -Condition ($source -notmatch 'StrictHostKeyChecking=no') -Message 'Managed SSH must never use the global host-key bypass.'
     Assert-EzVmTrue -Condition ($source -match 'StrictHostKeyChecking=yes')
+    Assert-EzVmTrue -Condition ($source -match 'UpdateHostKeys=no')
     Assert-EzVmTrue -Condition ($source -match 'UserKnownHostsFile=')
+}
+
+
+Add-EzVmTest -Name 'SSH: a newly generated controller key is removed if Windows ACL hardening fails' -ScriptBlock {
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return }
+    $root = New-EzVmCheckoutFixture -Prefix 'controller key acl failure'
+    try {
+        $tooling = [pscustomobject]@{
+            Valid = $true
+            Ssh = 'fake-ssh'
+            Scp = 'fake-scp'
+            Keygen = 'fake-keygen'
+            Keyscan = 'fake-keyscan'
+            Missing = @()
+            Reason = 'fixture'
+        }
+        $runner = {
+            param($exe, $arguments, $timeout)
+            if ($exe -ceq 'fake-keygen') {
+                $index = [Array]::IndexOf([object[]]$arguments, '-f')
+                if ($index -lt 0) { throw 'fixture did not receive key destination' }
+                $private = [string]$arguments[$index + 1]
+                [IO.File]::WriteAllText($private, 'fixture-private', (New-Object Text.UTF8Encoding($false)))
+                [IO.File]::WriteAllText(($private + '.pub'), 'ssh-ed25519 AAAA fixture', (New-Object Text.UTF8Encoding($false)))
+                return [pscustomobject]@{ ExitCode = 0; StdOut = ''; StdErr = '' }
+            }
+            return [pscustomobject]@{ ExitCode = 5; StdOut = ''; StdErr = 'fixture ACL failure' }
+        }
+        Assert-EzVmThrows -ScriptBlock {
+            Get-EzVmControllerSshIdentity -Root $root -Tooling $tooling -ProcessRunner $runner
+        } -MessagePattern 'Failed to restrict.*private-key ACL' | Out-Null
+        $paths = Get-EzVmSshPaths -Root $root
+        Assert-EzVmTrue -Condition (-not (Test-Path -LiteralPath $paths.ControllerPrivateKey)) -Message 'Unsafe freshly generated private key must be removed.'
+        Assert-EzVmTrue -Condition (-not (Test-Path -LiteralPath $paths.ControllerPublicKey)) -Message 'Orphan public half from failed fresh generation must also be removed.'
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
 }

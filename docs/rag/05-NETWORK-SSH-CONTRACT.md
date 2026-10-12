@@ -186,8 +186,10 @@ tools fail with OpenSSH Client remediation and are also reported by `doctor`.
 
 Host trust is bundle-scoped at
 `runtime/keys/known-hosts/<instance>.known_hosts`. SSH/scp always use
-`StrictHostKeyChecking=yes`, that managed file and an empty global-hosts source;
-the user's global known_hosts is neither trusted implicitly nor modified.
+`StrictHostKeyChecking=yes`, `UpdateHostKeys=no`, that managed file and an
+empty global-hosts source. This prevents the OpenSSH client itself from rewriting
+managed trust behind ezvm's state machine; the user's global known_hosts is
+neither trusted implicitly nor modified.
 
 For an untrusted first launch, `ssh-keyscan` material is written only to a
 temporary candidate file. The candidate is promoted to managed trust **after**
