@@ -15,7 +15,7 @@ function New-EzVmCommandResult {
     )
     $errorDetail = $null
     if (-not $Success) {
-        $errorDetail = [pscustomobject][ordered]@{ code = $ErrorCode; message = $Message }
+        $errorDetail = [pscustomobject][ordered]@{ code = $ErrorCode; message = (Protect-EzVmDiagnosticText -Text $Message) }
     }
     return [pscustomobject][ordered]@{
         schemaVersion = 1
@@ -39,8 +39,8 @@ function New-EzVmRemoteCommandFailureResult {
         [AllowEmptyString()][string]$StdErr = ''
     )
     if ($ExitCode -eq 0) { throw 'A remote-command failure result requires a non-zero exit code.' }
-    $stderrText = $StdErr.Trim()
-    $stdoutText = $StdOut.Trim()
+    $stderrText = (Protect-EzVmDiagnosticText -Text $StdErr).Trim()
+    $stdoutText = (Protect-EzVmDiagnosticText -Text $StdOut).Trim()
     if ($stderrText.Length -gt 1536) { $stderrText = $stderrText.Substring(0, 1536) + '...' }
     if ($stdoutText.Length -gt 512) { $stdoutText = $stdoutText.Substring(0, 512) + '...' }
     $message = "Remote command exited with code $ExitCode."
@@ -84,6 +84,7 @@ function Invoke-EzVmCommand {
     $destinationName = $null
     $cloneMode = $null
     $manifestPath = ''
+    $checkImage = $false
     if ($tokens.Count -gt 0) {
         $verb = $tokens[0].ToLowerInvariant()
         switch ($verb) {
@@ -187,6 +188,16 @@ function Invoke-EzVmCommand {
                 $hostPath = $tokens[2]
                 $command = 'export'
             }
+            'diagnose' {
+                if ($tokens.Count -lt 2 -or $tokens.Count -gt 3 -or ($tokens.Count -eq 3 -and $tokens[2] -ine '-CheckImage')) {
+                    return New-EzVmCliArgumentError -Command 'diagnose' -Message 'Use diagnose <name> [-CheckImage]. No repair or force options exist.'
+                }
+                $instanceName = $tokens[1]
+                try { Assert-EzVmStorageInstanceName -Name $instanceName }
+                catch { return New-EzVmCliArgumentError -Command 'diagnose' -Message $_.Exception.Message }
+                $checkImage = $tokens.Count -eq 3
+                $command = 'diagnose'
+            }
             'portability' {
                 if ($tokens.Count -ne 2 -or $tokens[1] -ine 'check') {
                     return New-EzVmCliArgumentError -Command 'portability' -Message 'Portability requires exactly one subcommand: check.'
@@ -247,6 +258,9 @@ function Invoke-EzVmCommand {
         }
         'bootstrap' {
             $data = Install-EzVmQemuRuntime -Root $Root
+        }
+        'diagnose' {
+            $data = Get-EzVmInstanceDiagnosis -Root $Root -InstanceName $instanceName -CheckImage:$checkImage
         }
         'doctor' {
             $data = Get-EzVmDoctorReport -Root $Root
@@ -319,6 +333,7 @@ function Invoke-EzVmCommand {
                 commands = @(
                     [pscustomobject]@{ name = 'help'; description = 'Show available commands and usage.' }
                     [pscustomobject]@{ name = 'version'; description = 'Show the control-plane version.' }
+                    [pscustomobject]@{ name = 'diagnose <name> [-CheckImage]'; description = 'Inspect failure and recovery evidence without repair; image checks require stopped ownership.' }
                     [pscustomobject]@{ name = 'doctor'; description = 'Report Windows, WHPX, storage and managed-QEMU prerequisites.' }
                     [pscustomobject]@{ name = 'bootstrap'; description = 'Install the reviewed QEMU runtime into this ezvm root without system installation.' }
                     [pscustomobject]@{ name = 'base acquire'; description = 'Acquire and verify the pinned Ubuntu Noble amd64 source image.' }
@@ -365,6 +380,15 @@ function Write-EzVmResult {
             Write-Output ("  runtime: $($Result.data.runtimePath)")
             Write-Output ("  qemu-system-x86_64: $($Result.data.qemuSystem)")
             Write-Output ("  qemu-img: $($Result.data.qemuImg)")
+        }
+        'diagnose' {
+            Write-Output ("ezvm diagnose: $($Result.data.instanceName); state=$($Result.data.lifecycleState); imageCheck=$($Result.data.imageCheck); repairs=none")
+            foreach ($finding in $Result.data.findings) {
+                Write-Output ("  [$($finding.code)] $($finding.message)")
+                Write-Output ("    $($finding.remediation)")
+            }
+            foreach ($artifact in $Result.data.recoveryArtifacts) { Write-Output ("  preserved artifact: $artifact") }
+            Write-Output $Result.data.scope
         }
         'doctor' {
             Write-Output ("ezvm doctor: $($Result.data.status)")

@@ -112,8 +112,8 @@ function New-EzVmBaseSeedData {
 
     $paths = Get-EzVmPaths -Root $Root
     $recipe = Get-EzVmBaseRecipe -Root $Root
-    $userTemplate = [IO.File]::ReadAllText($paths.BaseUserDataTemplate, (New-Object Text.UTF8Encoding($false, $true)))
-    $metaTemplate = [IO.File]::ReadAllText($paths.BaseMetaDataTemplate, (New-Object Text.UTF8Encoding($false, $true)))
+    $userTemplate = (Read-EzVmBoundedText -Path $paths.BaseUserDataTemplate -MaximumBytes 1048576)
+    $metaTemplate = (Read-EzVmBoundedText -Path $paths.BaseMetaDataTemplate -MaximumBytes 65536)
 
     $packageLines = @($recipe.packages | ForEach-Object { '  - ' + $_ }) -join [Environment]::NewLine
     $requiredCommands = @($recipe.requiredCommands) -join ' '
@@ -126,6 +126,7 @@ function New-EzVmBaseSeedData {
     if ($userData -match '__[A-Z0-9_]+__' -or $metaData -match '__[A-Z0-9_]+__') {
         throw 'Prepared-base cloud-init generation left an unresolved template placeholder.'
     }
+    Assert-EzVmCredentialFreeText -Text ($userData + $metaData) -Description 'Prepared-base cloud-init'
     if ($userData -match '(?im)BEGIN .*PRIVATE KEY|github_pat_|ghp_[A-Za-z0-9]') {
         throw 'Prepared-base cloud-init unexpectedly contains credential-like material.'
     }

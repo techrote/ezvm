@@ -20,6 +20,7 @@
         'Get-EzVmManagedQemuStatus',
         'Get-EzVmQemuToolPath',
         'Get-EzVmDoctorReport',
+        'Get-EzVmInstanceDiagnosis',
         'Get-EzVmSourceImageManifest',
         'Invoke-EzVmSourceImageAcquire',
         'Get-EzVmVerifiedSourceImage',

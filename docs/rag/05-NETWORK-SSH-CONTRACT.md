@@ -306,3 +306,26 @@ Destination provisioning replaces the managed inbound
 Outgoing SSH identities/known-hosts and vendor-agent authentication remain guest
 data and can be preserved in a stateful clone or export. No controller private
 key enters the guest seed, snapshot provenance or readiness logs.
+
+## Host key storage, seed bounds and file transfers (EZVM-011)
+
+Controller key operations serialize with a bounded bundle lock. The keys directory
+is restricted before generation, and the private key receives an exact verified
+current-user-only Windows ACL, including removal of broad explicit ACEs.
+Permission changes reject reparse points and multiply hard-linked key files.
+Existing public/private pairs are compared by deriving the public material with
+bounded noninteractive ssh-keygen; a mismatch preserves both existing files.
+Failure cleanup removes only a new pair created by that invocation.
+
+Seed payload sizes, accepted clients and recorded request counts are bounded.
+Unknown requests are logged only as a rejection category, never a supplied query
+or token. Closing/expiring the server closes client sockets and clears retained
+payload/buffer references. There is no generic host-file serving endpoint.
+
+SCP remains strict and noninteractive. copy-to refuses the managed keys tree.
+copy-from requires a single explicit host filename outside managed runtime,
+downloads to a unique same-directory temporary file, then atomically promotes
+only a completed transfer. Failure leaves an existing destination unchanged.
+No copy command can implicitly overwrite managed keys, VM disks or receipts.
+Explicit command output remains user-requested output, not guaranteed secret-free;
+CLI error summaries redact recognized credentials and are bounded.

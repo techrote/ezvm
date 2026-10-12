@@ -92,7 +92,7 @@ Add-EzVmTest -Name 'Seed server: binds exclusively to loopback and serves only a
         $unknown = Invoke-EzVmSeedHttpFixture -Server $server -RequestLine 'GET /unexpected HTTP/1.1'
         Assert-EzVmTrue -Condition ($unknown -match '^HTTP/1\.1 404 Not Found')
         Assert-EzVmTrue -Condition ($unknown -notmatch 'user fixture|meta fixture')
-        Assert-EzVmEqual -Actual @($server.RequestPaths.ToArray()) -Expected @('/user-data', '/meta-data', '/vendor-data', '/network-config', '/unexpected')
+        Assert-EzVmEqual -Actual @($server.RequestPaths.ToArray()) -Expected @('/user-data', '/meta-data', '/vendor-data', '/network-config', '<rejected>')
     }
     finally { Stop-EzVmSeedServer -Server $server }
 }

@@ -357,7 +357,7 @@ function Read-EzVmPreparedBaseManifest {
     if ((Get-Item -LiteralPath $Path -Force -ErrorAction Stop).Length -gt 65536) {
         throw 'Base provenance manifest exceeds the supported 64-KiB bound.'
     }
-    $text = [IO.File]::ReadAllText($Path, (New-Object Text.UTF8Encoding($false, $true)))
+    $text = (Read-EzVmBoundedText -Path $Path)
     try { $probe = $text | ConvertFrom-Json -ErrorAction Stop }
     catch { throw "Base provenance manifest is malformed JSON: $($_.Exception.Message)" }
     $version = Get-EzVmObjectProperty $probe 'schemaVersion'
@@ -458,7 +458,7 @@ function Write-EzVmBaseFailureEvidence {
             schemaVersion = 1
             buildId = $BuildId
             failedAt = [DateTime]::UtcNow.ToString('o')
-            message = [string]$Failure.Exception.Message
+            message = (Protect-EzVmDiagnosticText -Text $Failure.Exception.Message)
         }
         Write-EzVmJson -Path (Join-Path $StagingDirectory 'failure.json') -Value $value -SchemaVersion 1
     }
@@ -504,10 +504,13 @@ function Invoke-EzVmBaseBuild {
 
     $recipe = Get-EzVmBaseRecipe -Root $Root
     $buildId = [Guid]::NewGuid().ToString('N')
+    $null = Assert-EzVmSafePath -Path $paths.Bases -Description 'Managed directory'
     [void][IO.Directory]::CreateDirectory($paths.Bases)
     $stage = Join-Path $paths.Bases ('.build-' + $buildId)
+    $null = Assert-EzVmSafePath -Path $stage -Description 'Managed directory'
     [void][IO.Directory]::CreateDirectory($stage)
     $seedDirectory = Join-Path $stage 'seed'
+    $null = Assert-EzVmSafePath -Path $seedDirectory -Description 'Managed directory'
     [void][IO.Directory]::CreateDirectory($seedDirectory)
     $seedServer = $null
     $publish = $null
@@ -605,6 +608,7 @@ function Invoke-EzVmBaseBuild {
         Assert-EzVmPreparedBaseManifest -Manifest $manifest
 
         $publish = Join-Path $paths.Bases ('.publish-' + [Guid]::NewGuid().ToString('N'))
+        $null = Assert-EzVmSafePath -Path $publish -Description 'Managed directory'
         [void][IO.Directory]::CreateDirectory($publish)
         $publishImage = Join-Path $publish 'base.qcow2'
         [IO.File]::Move($flat, $publishImage)
@@ -626,9 +630,9 @@ function Invoke-EzVmBaseBuild {
             if ($existing.Manifest.baseSha256 -cne $baseDigest) {
                 throw "Content-addressed prepared-base collision at '$baseId'. Refusing replacement."
             }
-            Remove-Item -LiteralPath $publish -Recurse -Force
+            Remove-EzVmSafeTree -Path $publish
             $publish = $null
-            try { Remove-Item -LiteralPath $stage -Recurse -Force } catch { }
+            try { Remove-EzVmSafeTree -Path $stage } catch { }
             return [pscustomobject][ordered]@{
                 baseId = $baseId
                 path = $existing.Image
@@ -642,7 +646,7 @@ function Invoke-EzVmBaseBuild {
 
         Move-EzVmDirectoryAtomically -Source $publish -Destination $final
         $publish = $null
-        try { Remove-Item -LiteralPath $stage -Recurse -Force } catch { }
+        try { Remove-EzVmSafeTree -Path $stage } catch { }
 
         return [pscustomobject][ordered]@{
             baseId = $baseId
@@ -659,11 +663,17 @@ function Invoke-EzVmBaseBuild {
             try { Stop-EzVmSeedServer -Server $seedServer } catch { }
         }
         if ($null -ne $publish -and (Test-Path -LiteralPath $publish -PathType Container)) {
-            try { Remove-Item -LiteralPath $publish -Recurse -Force } catch { }
+            try { Remove-EzVmSafeTree -Path $publish } catch { }
         }
         Write-EzVmBaseFailureEvidence -StagingDirectory $stage -BuildId $buildId -Failure $_
         throw [InvalidOperationException]::new(
             "Prepared-base build failed. No authoritative base was promoted. Diagnostic staging evidence is retained at '$stage'. $($_.Exception.Message)",
             $_.Exception)
+    }
+    finally {
+        # Retain disk/log/failure evidence, not transport input files. Seeds are
+        # regenerated from reviewed source; no seed body is copied into logs.
+        if ($null -ne $seedServer) { try { Stop-EzVmSeedServer -Server $seedServer } catch { } }
+        if (Test-Path -LiteralPath $seedDirectory) { try { Remove-EzVmSafeTree -Path $seedDirectory } catch { } }
     }
 }

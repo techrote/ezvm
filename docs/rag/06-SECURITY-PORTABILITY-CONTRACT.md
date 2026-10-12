@@ -159,10 +159,10 @@ Before READY, guest finalization removes generated SSH host keys and
 resulting prepared base therefore carries neither controller authentication nor a
 build-specific SSH identity.
 
-Failed build staging may retain seed text and serial diagnostics under
-`runtime/bases/.build-*` for diagnosis. The reviewed base-build seed is
-credential-free by construction; future work must not reuse this retention policy
-for secret-bearing instance seeds without explicit redaction/cleanup rules.
+Failed build staging retains disks and raw serial diagnostics under
+`runtime/bases/.build-*` for diagnosis. EZVM-011 removes its generated seed files
+after success or failure. The reviewed base-build seed is credential-free by
+construction; retained logs must still be reviewed before sharing.
 
 Prepared-base manifests store artifact/provisioning hashes and version identities,
 not host absolute paths or credentials. Normal cold relocation therefore derives
@@ -270,3 +270,39 @@ the user's copy. It revalidates stopped ownership and regenerates launch paths,
 without weakening the existing stale/unknown process refusal. Copying a complete
 bundle does not give its instances new names or reservations; keep the original
 copy stopped while using the moved copy on the same host.
+
+## Host-side hardening and diagnosis (EZVM-011)
+
+Filesystem mutation uses a common regular-local-path guard. On Windows it rejects
+device/UNC namespaces, drive-relative spelling, alternate streams, device names,
+trailing dots/spaces and control characters before normalization. Existing
+ancestors are checked all the way to the volume root, including dangling links
+and links above the selected bundle. Storage containment checks remain separate.
+Recursive cleanup preflights a bounded tree and deletes bottom-up without
+following a reparse point. Read-only attribute changes refuse shared hard-link
+targets. These checks address malformed or redirected layouts; they are not
+race-proof against a malicious local administrator changing every syscall target.
+
+JSON and other control files use bounded reads. Download URLs and filenames are
+validated before cache deletion. Download transactions serialize by destination;
+cleanup owns only its temporary file and never deletes another publisher's
+final destination. Redirects remain HTTPS, exclude embedded credentials, have a
+five-hop bound and share a total transfer deadline and byte cap. All reviewed
+hash/size checks still precede extraction or boot. Installed QEMU payloads now
+have a manifest-bound inventory verified before execution; see the host contract.
+
+Controller private keys remain host-side, with verified exact Windows ACLs and
+public/private pairing. Source/build/profile guards reject high-confidence token
+formats without echoing them. Structured error/failure summaries redact known
+credential formats, authorization headers and sensitive URL fields before
+truncation. This is not a universal secret detector: raw guest output, explicit
+exec stdout/stderr, underlying exception data and retained raw diagnostic logs
+still require manual review before sharing. No real credentials are test fixtures.
+
+`diagnose <name>` provides bounded host-only findings and recovery guidance.
+`-CheckImage` adds locked, stopped-only header/provenance/digest/integrity checks,
+never automatic repair or a STALE-to-STOPPED rewrite. Default inspection is
+read-only; deep inspection may create/reuse a coordination lock. Reset barriers,
+original disks and staging are preserved when recovery is ambiguous. Detailed
+recovery procedures and legacy-QEMU rebootstrap are in
+[TROUBLESHOOTING.md](../TROUBLESHOOTING.md).

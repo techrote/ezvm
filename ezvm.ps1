@@ -20,6 +20,11 @@ try {
 catch {
     # This fallback also covers a broken/missing module. Never mix diagnostics into JSON.
     $message = "ezvm could not complete the command: $($_.Exception.Message) Restore a complete checkout or correct the reported configuration, then retry."
+    $module = Get-Module EzVm
+    if ($null -ne $module) {
+        $message = & $module { param($text) Protect-EzVmDiagnosticText -Text $text } $message
+    }
+    else { $message = 'ezvm could not load its control plane. Restore a complete checkout; raw loader diagnostics are not included in structured output.' }
     if ($jsonRequested) {
         $failure = [ordered]@{
             schemaVersion = 1

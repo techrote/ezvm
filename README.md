@@ -314,3 +314,11 @@ resource-profile and coding-profile identity, including the provisioning version
 and digest. It contains no relocatable absolute path and is valid only while its
 launch ID matches the current RUNNING QEMU process. Durable SSH reservations and
 resource profiles are reconstructed from `instance.json` by the EZVM-008 registry.
+
+## Security hardening and recovery
+
+Use `diagnose <name>` for bounded host-side findings and `diagnose <name>
+-CheckImage` for explicit stopped-only integrity inspection. Neither repairs disks
+nor discards uncertain process evidence. Read [troubleshooting and migration](docs/TROUBLESHOOTING.md)
+before upgrading an existing bundle: older QEMU runtimes need a verified
+rebootstrap; instance disks, immutable bases and controller keys are preserved.

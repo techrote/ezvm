@@ -6,6 +6,9 @@ function Start-EzVmSeedServer {
         [ValidateRange(1, 86400)][int]$TimeoutSeconds = 1800
     )
 
+    if ([Text.Encoding]::UTF8.GetByteCount($UserData) -gt 1048576 -or [Text.Encoding]::UTF8.GetByteCount($MetaData) -gt 65536) {
+        throw 'Cloud-init seed exceeds the bounded user-data or metadata size.'
+    }
     $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
     $listener.Server.ExclusiveAddressUse = $true
     $listener.Start()
@@ -36,6 +39,7 @@ function Stop-EzVmSeedServer {
             try {
                 if ($null -ne $state.Stream) { $state.Stream.Dispose() }
                 $state.Client.Dispose()
+                [Array]::Clear($state.Buffer.GetBuffer(), 0, $state.Buffer.Capacity)
                 $state.Buffer.Dispose()
             }
             catch { }
@@ -43,7 +47,11 @@ function Stop-EzVmSeedServer {
         $Server.Clients.Clear()
         $Server.Listener.Stop()
     }
-    finally { $Server.Closed = $true }
+    finally {
+        $Server.UserData = ''
+        $Server.MetaData = ''
+        $Server.Closed = $true
+    }
 }
 
 function Write-EzVmSeedHttpResponse {
@@ -77,7 +85,10 @@ function Add-EzVmSeedPendingClients {
     $accepted = 0
     while ($accepted -lt $Maximum -and $Server.Listener.Pending()) {
         $client = $Server.Listener.AcceptTcpClient()
+        if ($Server.Clients.Count -ge 16) { $client.Dispose(); $accepted++; continue }
         $client.NoDelay = $true
+        $client.ReceiveTimeout = 1000
+        $client.SendTimeout = 1000
         $Server.Clients.Add([pscustomobject]@{
             Client = $client
             Stream = $client.GetStream()
@@ -96,6 +107,7 @@ function Close-EzVmSeedPendingClient {
     try {
         if ($null -ne $State.Stream) { $State.Stream.Dispose() }
         $State.Client.Dispose()
+        [Array]::Clear($State.Buffer.GetBuffer(), 0, $State.Buffer.Capacity)
         $State.Buffer.Dispose()
     }
     finally { $State.Closed = $true }
@@ -148,7 +160,10 @@ function Complete-EzVmSeedPendingRequest {
         return $true
     }
 
-    $Server.RequestPaths.Add($target)
+    if ($Server.RequestPaths.Count -lt 64) {
+        $recorded = if ($target -cin @('/user-data', '/meta-data', '/vendor-data', '/network-config')) { $target } else { '<rejected>' }
+        $Server.RequestPaths.Add($recorded)
+    }
     if ($target -ceq '/user-data') {
         Write-EzVmSeedHttpResponse -Stream $State.Stream -StatusCode 200 -Reason 'OK' -Method $method -Body $Server.UserData
     }
@@ -175,6 +190,7 @@ function Invoke-EzVmSeedServerPending {
 
     if ($Server.Closed) { throw 'The cloud-init seed server is already closed.' }
     if ([DateTime]::UtcNow -gt $Server.DeadlineUtc) {
+        Stop-EzVmSeedServer -Server $Server
         throw 'The cloud-init seed server exceeded its bounded lifetime.'
     }
 

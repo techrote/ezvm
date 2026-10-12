@@ -209,6 +209,7 @@ function New-EzVmManagedInstance {
     if ($null -ne $Origin) { Assert-EzVmInstanceOrigin -Origin $Origin -ExpectedBaseId $base.BaseId }
 
     $null = Assert-EzVmStorageManagedPath -Path $paths.Instances -ContainmentRoot $paths.Runtime -SafetyRoot $paths.Root -Description 'Managed instance root'
+    $null = Assert-EzVmSafePath -Path $paths.Instances -Description 'Managed directory'
     [void][IO.Directory]::CreateDirectory($paths.Instances)
     $lock = Enter-EzVmSshAllocationLock -Root $Root
     $instanceLock = $null
@@ -230,6 +231,8 @@ function New-EzVmManagedInstance {
 
         $reserved = [int[]]@($registry | ForEach-Object { [int]$_.sshPort })
         $sshPort = Get-EzVmAvailableSshPort -Root $Root -PortProbe $PortProbe -ReservedPorts $reserved
+
+        $null = Assert-EzVmSafePath -Path $runtimePaths.Directory -Description 'Managed directory'
 
         [void][IO.Directory]::CreateDirectory($runtimePaths.Directory)
         $createdDirectory = $true
@@ -260,7 +263,7 @@ function New-EzVmManagedInstance {
         if ($createdDirectory -and (Test-Path -LiteralPath $runtimePaths.Directory -PathType Container)) {
             try {
                 $null = Assert-EzVmStorageManagedPath -Path $runtimePaths.Directory -ContainmentRoot $paths.Instances -SafetyRoot $paths.Root -Description 'Failed create cleanup directory' -RequireDirectory
-                Remove-Item -LiteralPath $runtimePaths.Directory -Recurse -Force -ErrorAction Stop
+                Remove-EzVmSafeTree -Path $runtimePaths.Directory
             }
             catch {
                 throw [InvalidOperationException]::new(

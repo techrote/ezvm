@@ -10,7 +10,7 @@ function Get-EzVmRoot {
         if ($directory -isnot [System.IO.DirectoryInfo]) {
             throw 'The root is not a filesystem directory.'
         }
-        $root = $directory.FullName
+        $root = Assert-EzVmSafePath -Path $directory.FullName -Description 'ezvm root'
         foreach ($marker in @('ezvm.ps1', 'config/defaults.json')) {
             if (-not (Test-Path -LiteralPath (Join-Path $root $marker) -PathType Leaf)) {
                 throw "Missing checkout file: $marker"

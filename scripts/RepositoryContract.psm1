@@ -1,4 +1,5 @@
 Set-StrictMode -Version 2.0
+. (Join-Path $PSScriptRoot '../src/EzVm/Security.ps1')
 
 function Invoke-EzVmRepositoryGit {
     param(
@@ -57,6 +58,7 @@ function Test-EzVmRepositoryContract {
         'ezvm.ps1',
         'src/EzVm/EzVm.psd1',
         'src/EzVm/EzVm.psm1',
+        'src/EzVm/Security.ps1',
         'config/defaults.json',
         'manifests/qemu-windows.json',
         'manifests/ubuntu-noble-amd64.json',
@@ -119,6 +121,7 @@ function Test-EzVmRepositoryContract {
         if ($content -match $privateKeyContent) {
             throw "Private-key content is tracked in $file. Remove it from Git and replace any exposed credential."
         }
+        Assert-EzVmCredentialFreeText -Text $content -Description ('Tracked source ' + $file)
         $extension = [IO.Path]::GetExtension($file)
         if ($extension -ieq '.json') {
             if ([string]::IsNullOrWhiteSpace($content)) { throw "Tracked JSON file is empty: $file" }

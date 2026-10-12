@@ -58,26 +58,7 @@ function Assert-EzVmStorageManagedPath {
         throw "$Description directory is missing at '$fullPath'. Restore the expected managed directory and retry."
     }
 
-    $comparison = Get-EzVmStoragePathComparison
-    $cursor = $fullPath
-    while ($true) {
-        if (Test-Path -LiteralPath $cursor) {
-            $item = Get-Item -LiteralPath $cursor -Force -ErrorAction Stop
-            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-                throw "$Description traverses a reparse point at '$cursor'. Managed storage mutation and validation refuse junction/symlink redirection."
-            }
-        }
-        if ([string]::Equals($cursor, $safety, $comparison)) { break }
-        $parent = [IO.Path]::GetDirectoryName($cursor)
-        if ([string]::IsNullOrWhiteSpace($parent) -or [string]::Equals($parent, $cursor, $comparison)) {
-            break
-        }
-        if (-not (Test-EzVmStoragePathInside -Path $parent -Directory $safety) -and
-            -not [string]::Equals($parent, $safety, $comparison)) {
-            break
-        }
-        $cursor = $parent
-    }
+    $null = Assert-EzVmSafePath -Path $fullPath -Description $Description
     return $fullPath
 }
 
@@ -292,6 +273,14 @@ function Test-EzVmInstanceOverlay {
     if ($BaseId -cnotmatch '^base-[a-f0-9]{64}$') { throw "Expected base ID '$BaseId' is invalid." }
     $paths = Get-EzVmPaths -Root $Root
     $overlay = Assert-EzVmStorageManagedPath -Path $OverlayPath -ContainmentRoot $paths.Instances -SafetyRoot $paths.Root -Description 'Instance overlay' -RequireFile
+    if ($null -eq $QemuImgRunner) {
+        # Production must reject dependencies in mutable bytes BEFORE invoking
+        # qemu-img. Injected metadata runners are trusted test boundaries only.
+        $expectedBase = Join-Path (Join-Path $paths.Bases $BaseId) 'base.qcow2'
+        $relative = Get-EzVmStorageRelativePath -FromDirectory ([IO.Path]::GetDirectoryName($overlay)) -TargetPath $expectedBase
+        $null = Test-EzVmQcow2Header -Path $overlay -ExpectedBacking $relative
+        $null = Test-EzVmQcow2Header -Path $expectedBase
+    }
     $base = Test-EzVmPreparedBase -Root $Root -BaseId $BaseId -QemuImgRunner $QemuImgRunner
     $baseImage = Assert-EzVmStorageManagedPath -Path $base.Image -ContainmentRoot $paths.Bases -SafetyRoot $paths.Root -Description "Prepared base '$BaseId'" -RequireFile
 
@@ -382,13 +371,15 @@ function Move-EzVmStorageFile {
         [scriptblock]$Mover
     )
 
-    $sourcePath = [IO.Path]::GetFullPath($Source)
-    $destinationPath = [IO.Path]::GetFullPath($Destination)
+    $sourcePath = Assert-EzVmSafePath -Path $Source -Description 'Atomic disk source'
+    $destinationPath = Assert-EzVmSafePath -Path $Destination -Description 'Atomic disk destination'
     if (-not [string]::Equals([IO.Path]::GetPathRoot($sourcePath), [IO.Path]::GetPathRoot($destinationPath), (Get-EzVmStoragePathComparison))) {
         throw "Atomic storage promotion requires one filesystem root: '$sourcePath' -> '$destinationPath'."
     }
 
     for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+        $null = Assert-EzVmSafePath -Path $sourcePath -Description 'Atomic disk source'
+        $null = Assert-EzVmSafePath -Path $destinationPath -Description 'Atomic disk destination'
         if (-not [IO.File]::Exists($sourcePath)) { throw "Storage promotion source is missing: '$sourcePath'." }
         if ([IO.File]::Exists($destinationPath) -or [IO.Directory]::Exists($destinationPath)) {
             throw "Storage promotion destination already exists: '$destinationPath'."
