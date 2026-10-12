@@ -415,3 +415,24 @@ Add-EzVmTest -Name 'Storage: junction instance directory is refused before overl
     }
 }
 
+Add-EzVmTest -Name 'Storage: integrity checks and reset refuse running or ambiguous lifecycle evidence before qemu-img mutation' -ScriptBlock {
+    $fixture = New-EzVmStorageFixture
+    try {
+        $null = New-EzVmInstanceOverlay -Root $fixture.Root -InstanceName 'guard-existing' -BaseId $fixture.BaseId -LifecycleGuard $fixture.SafeGuard -QemuImgRunner $fixture.Runner
+        foreach ($state in @('running', 'unknown')) {
+            $guard = New-EzVmStorageLifecycleGuard -State $state -Source 'fixture process-state evidence'
+            $before = $fixture.State.Calls.Count
+            Assert-EzVmThrows -ScriptBlock {
+                Test-EzVmStoppedImageIntegrity -Root $fixture.Root -InstanceName 'guard-existing' -BaseId $fixture.BaseId -LifecycleGuard $guard -QemuImgRunner $fixture.Runner
+            } -MessagePattern 'requires positively proven' | Out-Null
+            Assert-EzVmEqual -Actual $fixture.State.Calls.Count -Expected $before -Message 'Unsafe integrity guard must refuse before qemu-img is invoked.'
+
+            Assert-EzVmThrows -ScriptBlock {
+                Reset-EzVmInstanceOverlayStorage -Root $fixture.Root -InstanceName 'guard-existing' -BaseId $fixture.BaseId -LifecycleGuard $guard -QemuImgRunner $fixture.Runner
+            } -MessagePattern 'requires positively proven' | Out-Null
+            Assert-EzVmEqual -Actual $fixture.State.Calls.Count -Expected $before -Message 'Unsafe reset guard must refuse before qemu-img or filesystem mutation.'
+        }
+    }
+    finally { Remove-EzVmStorageFixture $fixture }
+}
+
