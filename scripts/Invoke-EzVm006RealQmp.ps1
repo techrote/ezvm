@@ -23,18 +23,50 @@ $arguments = @(
 )
 $module = Get-Module EzVm
 $launch = $null
+$stderrTask = $null
+$stdoutTask = $null
 try {
-    $launch = & $module {
-        param($file, $argumentTokens, $working)
-        Start-EzVmRuntimeProcess -FilePath $file -ArgumentList ([string[]]$argumentTokens) -WorkingDirectory $working
-    } $qemu (,([string[]]$arguments)) $qemuRoot
+    # Use the same tokenized argument construction as production but redirect
+    # this bounded smoke process so startup errors from the reviewed QEMU build
+    # become actionable qualification evidence.
+    $start = New-Object Diagnostics.ProcessStartInfo
+    $start.FileName = $qemu
+    $start.WorkingDirectory = $qemuRoot
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    if ($null -ne $start.PSObject.Properties['ArgumentList']) {
+        foreach ($argument in $arguments) { $start.ArgumentList.Add($argument) }
+    }
+    else {
+        $escaped = New-Object 'System.Collections.Generic.List[string]'
+        foreach ($argument in $arguments) {
+            $escaped.Add((& $module { param($value) ConvertTo-EzVmWindowsArgument -Argument $value } $argument))
+        }
+        $start.Arguments = [string]::Join(' ', $escaped.ToArray())
+    }
+    $process = New-Object Diagnostics.Process
+    $process.StartInfo = $start
+    if (-not $process.Start()) { throw 'The operating system did not create the real QEMU smoke process.' }
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
+    $launch = [pscustomobject]@{
+        Process = $process
+        Pid = $process.Id
+        StartTimeUtc = $process.StartTime.ToUniversalTime().ToString('o')
+    }
 
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
     $query = $null
     $lastError = $null
     while ([DateTime]::UtcNow -lt $deadline) {
         if ($null -ne $launch.Process -and $launch.Process.HasExited) {
-            throw "Real QEMU smoke process exited before QMP became ready with code $($launch.Process.ExitCode)."
+            $stderr = ''
+            $stdout = ''
+            if ($null -ne $stderrTask -and $stderrTask.Wait(3000)) { $stderr = $stderrTask.Result.Trim() }
+            if ($null -ne $stdoutTask -and $stdoutTask.Wait(3000)) { $stdout = $stdoutTask.Result.Trim() }
+            throw "Real QEMU smoke process exited before QMP became ready with code $($launch.Process.ExitCode). stderr=<$stderr> stdout=<$stdout>"
         }
         try {
             $query = & $module { param($pipe) Invoke-EzVmQmpCommand -PipeName $pipe -Command 'query-status' -TimeoutMilliseconds 1000 } $pipeName
