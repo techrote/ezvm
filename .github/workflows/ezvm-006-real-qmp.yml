@@ -31,7 +31,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Qualify named-pipe QMP and process identity
+      - name: Qualify loopback QMP and process identity
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
