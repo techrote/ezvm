@@ -1,0 +1,47 @@
+name: EZVM-011 real security and portability qualification
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/ezvm-011-real-security.yml
+      - scripts/Invoke-EzVm010RealPortability.ps1
+      - src/EzVm/**
+      - guest/**
+      - manifests/qemu-windows.json
+      - manifests/ubuntu-noble-amd64.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ezvm-011-real-security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-security:
+    # Owner-authorized expensive lane; ordinary Windows CI remains GitHub-hosted.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    name: Real security and portability (Avrea 8-core Windows TCG; WHPX SKIP)
+    runs-on: avrea-windows-2025-8-vcpu
+    timeout-minutes: 150
+    steps:
+      - name: Checkout candidate source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Record runner and exact source identity
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git rev-parse HEAD 'HEAD^{tree}'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host ('EZVM011_REQUESTED_RUNNER=avrea-windows-2025-8-vcpu; observedCPU=' + [Environment]::ProcessorCount)
+          $PSVersionTable
+      - name: Qualify verified bootstrap, keys, transfers, refusals and complete cold portability
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\scripts\Invoke-EzVm010RealPortability.ps1 -SecurityQualification
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
