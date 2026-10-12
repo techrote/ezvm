@@ -45,7 +45,8 @@ Add-EzVmTest -Name 'CLI: help and empty input provide human usage' -ScriptBlock 
         Assert-EzVmTrue -Condition ($result.StandardOutput -match 'help' -and $result.StandardOutput -match 'version')
         Assert-EzVmTrue -Condition ($result.StandardOutput -match 'doctor' -and $result.StandardOutput -match 'bootstrap' -and $result.StandardOutput -match 'base acquire' -and $result.StandardOutput -match 'base build') -Message 'Help must list all implemented host, source and prepared-base commands.'
         Assert-EzVmTrue -Condition ($result.StandardOutput -match 'status <name>' -and $result.StandardOutput -match 'start <name>' -and $result.StandardOutput -match 'stop <name>') -Message 'Help must list implemented lifecycle commands.'
-        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'instance creation.*follow') -Message 'Help must distinguish implemented lifecycle control from later instance creation/registry work.'
+        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'ssh <name>' -and $result.StandardOutput -match 'exec <name> -- <command>' -and $result.StandardOutput -match 'copy-to <name>' -and $result.StandardOutput -match 'copy-from <name>') -Message 'Help must list implemented SSH control commands.'
+        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'instance creation/registry allocation follows') -Message 'Help must distinguish implemented SSH control from later instance creation/registry work.'
     }
 }
 
@@ -124,6 +125,9 @@ Add-EzVmTest -Name 'CLI: direct File invocation produces clean JSON without a wr
 $invalidCliCases = @(
     @{ Name = 'unknown command'; Arguments = @('not-a-command') },
     @{ Name = 'future command'; Arguments = @('create') },
+    @{ Name = 'malformed exec without separator'; Arguments = @('exec', 'agent', 'echo') },
+    @{ Name = 'empty exec payload'; Arguments = @('exec', 'agent', '--') },
+    @{ Name = 'malformed copy-to'; Arguments = @('copy-to', 'agent', 'only-one-path') },
     @{ Name = 'extra positional argument'; Arguments = @('help', 'extra') },
     @{ Name = 'unsupported switch'; Arguments = @('version', '-Unexpected') },
     @{ Name = 'missing command value'; Arguments = @('') }
@@ -243,4 +247,22 @@ Add-EzVmTest -Name 'CLI: lifecycle commands require exactly one portable instanc
         Assert-EzVmEqual -Actual $result.ExitCode -Expected 2
         Assert-EzVmTrue -Condition ($result.StandardError -match 'help')
     }
+}
+
+
+Add-EzVmTest -Name 'CLI: exec separator keeps remote -Json token out of global switch parsing' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'exec remote Json token'
+    try {
+        $result = Invoke-EzVmCliForTest -ArgumentList @('exec', 'missing-agent', '--', 'printf', '-Json') -Root $root
+        Assert-EzVmEqual -Actual $result.ExitCode -Expected 1
+        Assert-EzVmEqual -Actual $result.StandardOutput -Expected ''
+        Assert-EzVmTrue -Condition ($result.StandardError -match 'SSH access state|does not exist|no SSH access state') -Message 'Remote -Json must not switch the ezvm wrapper into structured-output mode.'
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'CLI: interactive ssh explicitly rejects structured output' -ScriptBlock {
+    $result = Invoke-EzVmCliForTest -ArgumentList @('ssh', 'agent-one', '-Json')
+    $value = Assert-EzVmJsonEnvelope -Result $result -Command 'ssh' -ExitCode 2
+    Assert-EzVmTrue -Condition ($value.error.message -match 'Interactive ssh cannot be combined with -Json')
 }
