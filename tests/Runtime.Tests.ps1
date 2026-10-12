@@ -7,6 +7,7 @@ function New-EzVmRuntimeFixture {
         LaunchCount = 0
         NextPid = 41000
         QmpReady = $true
+        QmpRunning = $true
         PowerdownExits = $true
         QmpFailure = $null
     }
@@ -98,7 +99,8 @@ function New-EzVmRuntimeFixture {
         if ($null -ne $processState.QmpFailure) { throw [InvalidOperationException]::new([string]$processState.QmpFailure) }
         if ($command -ceq 'query-status') {
             if (-not $processState.QmpReady) { throw 'synthetic QMP not ready' }
-            return [pscustomobject]@{ status = 'running'; running = $true }
+            if ($processState.QmpRunning) { return [pscustomobject]@{ status = 'running'; running = $true } }
+            return [pscustomobject]@{ status = 'paused'; running = $false }
         }
         if ($command -ceq 'system_powerdown') {
             if ($processState.PowerdownExits) { $processState.Processes.Clear() }
@@ -340,6 +342,17 @@ Add-EzVmTest -Name 'Runtime: untracked QEMU owner makes missing runtime evidence
         Assert-EzVmEqual -Actual $status.state -Expected 'UNKNOWN'
         Assert-EzVmTrue -Condition ($status.reason -match 'without matching active runtime ownership evidence')
         Assert-EzVmEqual -Actual (Get-EzVmInstanceStorageLifecycleGuard -Root $fixture.Root -InstanceName $fixture.InstanceName -ProcessProvider $fixture.ProcessProvider).state -Expected 'unknown'
+    }
+    finally { Remove-EzVmRuntimeFixture $fixture }
+}
+
+Add-EzVmTest -Name 'Runtime: reachable but non-running QMP never becomes RUNNING' -ScriptBlock {
+    $fixture = New-EzVmRuntimeFixture
+    try {
+        $fixture.State.QmpRunning = $false
+        Assert-EzVmThrows -ScriptBlock { Start-EzVmRuntimeFixtureInstance -Fixture $fixture -Timeout 1 } -MessagePattern "startup timeout.*QMP is reachable but reports status 'paused'" | Out-Null
+        Assert-EzVmEqual -Actual $fixture.State.Processes.Count -Expected 1
+        Assert-EzVmEqual -Actual (Get-EzVmRuntimeFixtureState -Fixture $fixture).state -Expected 'STARTING'
     }
     finally { Remove-EzVmRuntimeFixture $fixture }
 }
