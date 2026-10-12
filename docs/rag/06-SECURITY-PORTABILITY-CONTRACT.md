@@ -170,4 +170,3 @@ Reset promotion uses same-filesystem file renames and preserves the old overlay
 until a replacement chain has fully validated. If promotion cannot complete, the
 implementation restores the original where possible and otherwise reports the
 exact recovery artifact instead of guessing or deleting evidence.
-
