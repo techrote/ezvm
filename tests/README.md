@@ -150,3 +150,13 @@ lifecycle-guard, integrity-check and reset-safety coverage. The separate
 portable QEMU runtime and exercises the same storage boundary with tiny generated
 QCOW2 images. These disk fixtures exist only in ignored runner/temp storage and
 are never committed.
+
+## EZVM-006 runtime tests
+
+`Runtime.Tests.ps1` owns deterministic lifecycle, process-identity, QEMU argv,
+QMP orchestration, timeout and locking coverage. `Cli.Tests.ps1` covers the
+public status/start/stop parsing and absent/error behavior.
+
+The `EZVM-006 real QMP qualification` workflow bootstraps the reviewed Windows
+QEMU runtime and exercises the actual host management/process-observation boundary
+under explicit TCG. It does not claim WHPX execution on a hosted runner.
