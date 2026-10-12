@@ -150,4 +150,3 @@ lifecycle-guard, integrity-check and reset-safety coverage. The separate
 portable QEMU runtime and exercises the same storage boundary with tiny generated
 QCOW2 images. These disk fixtures exist only in ignored runner/temp storage and
 are never committed.
-
