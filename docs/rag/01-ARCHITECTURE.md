@@ -221,3 +221,32 @@ is considered proven.
 Per-instance start/stop mutation is serialized by an exclusive lifecycle lock.
 EZVM-005 storage mutation receives `proven-safe` evidence only from a reconciled
 CREATED or STOPPED instance. STALE and UNKNOWN never become implicit STOPPED.
+
+## Implemented multi-instance registry and allocation (EZVM-008)
+
+EZVM-008 makes each `runtime/instances/<name>/instance.json` the recoverable
+durable authority for a named instance. The control plane reconstructs the
+instance registry by enumerating those directories and validating each intent;
+there is no separate authoritative global index that can drift silently from the
+instance directories.
+
+Durable intent records the selected resource profile, resolved CPU/RAM values,
+the prepared-base ID, one persistent localhost SSH reservation, creation time and
+the current provisioning-profile identity. No relocatable absolute host path is
+stored in this file.
+
+Create and start operations serialize SSH allocation with a bounded bundle lock.
+Create excludes ports already reserved by any valid instance and ports already
+bound by unrelated host listeners before atomically publishing the new intent.
+Start revalidates that the persisted reservation is still unique and bindable,
+then holds the allocation lock until QEMU has reached RUNNING and owns the
+forward. QMP ports remain OS-selected ephemeral ports protected by their own
+allocation lock; the NoCloud seed port is protected by the live loopback listener
+itself.
+
+Multiple named instances may therefore run concurrently with independent QEMU
+process identity, storage and localhost SSH resources. Malformed/incomplete
+instance directories, case-insensitive name collisions and directory/intent
+identity disagreement fail registry reconstruction clearly rather than being
+ignored.
+
