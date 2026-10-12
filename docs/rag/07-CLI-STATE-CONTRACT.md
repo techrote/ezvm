@@ -414,11 +414,15 @@ relocatable path and is stale if its launch ID no longer matches the current
 runtime state.
 
 `exec` treats SSH exit 255 as a transport/authentication failure. Other non-zero
-exit codes are the remote command result and are propagated to the ezvm process
-while preserving remote stdout/stderr. The `--` separator ends ezvm global
-switch parsing, so a remote argument literally named `-Json` stays a guest
-argument. Interactive `ssh` rejects ezvm `-Json` because the child owns the
-console streams.
+exit codes are the remote command result and are propagated to the ezvm process.
+The module API preserves the captured remote stdout/stderr. At the CLI boundary a
+remote non-zero result uses the normal failure envelope
+(`success: false`, `data: null`, `error.code: remote_command_failed`) while
+retaining the guest exit code and bounded stdout/stderr evidence in the error
+message; it is never represented as successful execution. The `--` separator
+ends ezvm global switch parsing, so a remote argument literally named `-Json`
+stays a guest argument. Interactive `ssh` rejects ezvm `-Json` because the
+child owns the console streams.
 
 The copy commands are intentionally directional and transfer one file in
 EZVM-007. All SSH/scp commands use the managed controller key and scoped
