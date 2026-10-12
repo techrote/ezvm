@@ -207,3 +207,16 @@ offline/destructive image operations.
 A graceful stop timeout deliberately leaves runtime state STOPPING and QEMU
 ownership active. It is not converted into STOPPED merely because the requested
 shutdown did not finish within the configured bound.
+
+## Instance creation ownership (EZVM-008)
+
+Public `create` validates the selected immutable prepared base before publishing
+a durable instance. It then creates exactly one thin overlay using the existing
+prepared-base -> instance-overlay invariant. The instance directory is new for
+the transaction; if create fails before completion, ezvm attempts to remove only
+that newly-created managed directory rather than leaving a partially authoritative
+instance.
+
+The recoverable durable authority remains `instance.json` plus the one-level
+overlay. Registry enumeration does not infer a valid instance from a stray disk
+or directory that lacks valid intent metadata.

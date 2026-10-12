@@ -9,9 +9,13 @@ function New-EzVmSshTestIntent {
         schemaVersion = 1
         name = $Name
         baseId = $BaseId
+        profile = $(if ($Cpus -eq 4 -and $MemoryMiB -eq 8192) { 'normal' } elseif ($Cpus -eq 2 -and $MemoryMiB -eq 4096) { 'light' } else { 'custom' })
         cpus = $Cpus
         memoryMiB = $MemoryMiB
+        sshPort = 22001
         createdAt = '2026-10-12T00:00:00.0000000Z'
+        provisioningProfile = 'ezvm-core'
+        provisioningVersion = 1
     }
 }
 
@@ -393,7 +397,7 @@ Add-EzVmTest -Name 'SSH: configured port allocation skips collisions and stays i
         Assert-EzVmEqual -Actual $port -Expected 22003
         Assert-EzVmThrows -ScriptBlock {
             Get-EzVmAvailableSshPort -Root $root -PortProbe { param($candidate) return $false }
-        } -MessagePattern 'No loopback SSH port is available.*22000-22999' | Out-Null
+        } -MessagePattern 'No (?:unreserved )?loopback SSH port is available.*22000-22999' | Out-Null
     }
     finally { Remove-EzVmTestDirectory -Path $root }
 }

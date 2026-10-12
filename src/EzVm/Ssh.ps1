@@ -247,6 +247,13 @@ function Get-EzVmIntentProfileName {
         [string]$Root,
         [Parameter(Mandatory = $true)][object]$Intent
     )
+    $profileProperty = $Intent.PSObject.Properties['profile']
+    if ($null -ne $profileProperty -and
+        $profileProperty.Value -is [string] -and
+        @('light', 'normal', 'heavy', 'custom') -ccontains [string]$profileProperty.Value) {
+        return [string]$profileProperty.Value
+    }
+
     $configuration = Get-EzVmConfiguration -Root $Root
     foreach ($name in @('light', 'normal', 'heavy')) {
         $profile = $configuration.profiles.$name
@@ -408,17 +415,22 @@ function Get-EzVmAvailableSshPort {
     [CmdletBinding()]
     param(
         [string]$Root = $script:EzVmDefaultRoot,
-        [scriptblock]$PortProbe
+        [scriptblock]$PortProbe,
+        [AllowEmptyCollection()][int[]]$ReservedPorts = @()
     )
 
     $configuration = Get-EzVmConfiguration -Root $Root
     $start = [int]$configuration.ssh.portRangeStart
     $end = [int]$configuration.ssh.portRangeEnd
+    $reserved = @{}
+    foreach ($value in @($ReservedPorts)) { $reserved[[int]$value] = $true }
+
     for ($port = $start; $port -le $end; $port++) {
+        if ($reserved.ContainsKey($port)) { continue }
         $available = if ($null -ne $PortProbe) { [bool](& $PortProbe $port) } else { Test-EzVmLoopbackPortAvailable -Port $port }
         if ($available) { return $port }
     }
-    throw "No loopback SSH port is available in configured range $start-$end. Stop an unused instance, free a conflicting local listener, or configure a different ezvm SSH range."
+    throw "No unreserved loopback SSH port is available in configured range $start-$end. Stop an unused instance, free a conflicting local listener, or configure a different ezvm SSH range."
 }
 
 function Get-EzVmNullKnownHostsPath {
@@ -919,7 +931,7 @@ function Start-EzVmReadyInstance {
     $allocationLock = $null
     try {
         $allocationLock = Enter-EzVmSshAllocationLock -Root $Root
-        $sshPort = Get-EzVmAvailableSshPort -Root $Root -PortProbe $PortProbe
+        $sshPort = Assert-EzVmInstanceSshPortReservation -Root $Root -Intent $intent -PortProbe $PortProbe
         $remaining = [Math]::Max(1, [int][Math]::Ceiling(($deadline - [DateTime]::UtcNow).TotalSeconds))
         $started = Start-EzVmInstance -Root $Root -InstanceName $InstanceName -Accelerator $Accelerator -StartupTimeoutSeconds $remaining -QemuImgRunner $QemuImgRunner -QemuStatusProvider $QemuStatusProvider -ProcessProvider $ProcessProvider -ProcessLauncher $ProcessLauncher -QmpInvoker $QmpInvoker -SshPort $sshPort -SeedHostPort ([int]$seedServer.Port) -SeedGuestAddress '10.0.2.100' -SeedGuestPort 8000
         $allocationLock.Dispose()

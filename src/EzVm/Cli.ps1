@@ -77,6 +77,10 @@ function Invoke-EzVmCommand {
     $remoteCommand = @()
     $hostPath = $null
     $guestPath = $null
+    $createProfile = ''
+    $createBaseId = ''
+    $createCpus = $null
+    $createMemoryMiB = $null
     if ($tokens.Count -gt 0) {
         $verb = $tokens[0].ToLowerInvariant()
         switch ($verb) {
@@ -95,6 +99,58 @@ function Invoke-EzVmCommand {
                     return New-EzVmCliArgumentError -Command 'base' -Message "Unknown base subcommand '$subcommand'." -Code 'unknown_command'
                 }
                 $command = 'base ' + $subcommand
+            }
+            'list' {
+                if ($tokens.Count -ne 1) {
+                    return New-EzVmCliArgumentError -Command 'list' -Message "Command 'list' does not accept positional arguments."
+                }
+                $command = 'list'
+            }
+            'create' {
+                if ($tokens.Count -lt 2) {
+                    return New-EzVmCliArgumentError -Command 'create' -Message "Command 'create' requires an instance name."
+                }
+                $instanceName = $tokens[1]
+                try { Assert-EzVmStorageInstanceName -Name $instanceName }
+                catch { return New-EzVmCliArgumentError -Command 'create' -Message $_.Exception.Message }
+
+                $seen = @{}
+                $index = 2
+                while ($index -lt $tokens.Count) {
+                    $option = [string]$tokens[$index]
+                    $key = $option.ToLowerInvariant()
+                    if (@('-profile', '-baseid', '-cpus', '-memorymib') -cnotcontains $key) {
+                        return New-EzVmCliArgumentError -Command 'create' -Message "Unknown create option '$option'. Use -Profile, -BaseId, -Cpus or -MemoryMiB."
+                    }
+                    if ($seen.ContainsKey($key)) {
+                        return New-EzVmCliArgumentError -Command 'create' -Message "Create option '$option' may be supplied at most once."
+                    }
+                    if ($index + 1 -ge $tokens.Count) {
+                        return New-EzVmCliArgumentError -Command 'create' -Message "Create option '$option' requires a value."
+                    }
+                    $seen[$key] = $true
+                    $value = [string]$tokens[$index + 1]
+                    switch ($key) {
+                        '-profile' { $createProfile = $value }
+                        '-baseid' { $createBaseId = $value }
+                        '-cpus' {
+                            if ($value -cnotmatch '^[0-9]+$') {
+                                return New-EzVmCliArgumentError -Command 'create' -Message '-Cpus requires a positive integer.'
+                            }
+                            try { $createCpus = [int]$value }
+                            catch { return New-EzVmCliArgumentError -Command 'create' -Message '-Cpus is outside the supported integer range.' }
+                        }
+                        '-memorymib' {
+                            if ($value -cnotmatch '^[0-9]+$') {
+                                return New-EzVmCliArgumentError -Command 'create' -Message '-MemoryMiB requires a positive integer.'
+                            }
+                            try { $createMemoryMiB = [int]$value }
+                            catch { return New-EzVmCliArgumentError -Command 'create' -Message '-MemoryMiB is outside the supported integer range.' }
+                        }
+                    }
+                    $index += 2
+                }
+                $command = 'create'
             }
             { $_ -in @('start', 'status', 'stop', 'ssh') } {
                 if ($tokens.Count -ne 2) {
@@ -160,8 +216,15 @@ function Invoke-EzVmCommand {
         'base build' {
             $data = Invoke-EzVmBaseBuild -Root $Root -Accelerator whpx
         }
+        'create' {
+            $data = New-EzVmManagedInstance -Root $Root -InstanceName $instanceName -BaseId $createBaseId -Profile $createProfile -Cpus $createCpus -MemoryMiB $createMemoryMiB
+        }
+        'list' {
+            $items = @(Get-EzVmManagedInstanceList -Root $Root)
+            $data = [pscustomobject][ordered]@{ count = $items.Count; instances = $items }
+        }
         'status' {
-            $data = Get-EzVmInstanceStatus -Root $Root -InstanceName $instanceName
+            $data = Get-EzVmManagedInstanceStatus -Root $Root -InstanceName $instanceName
         }
         'start' {
             $configuration = Get-EzVmConfiguration -Root $Root
@@ -204,7 +267,9 @@ function Invoke-EzVmCommand {
                     [pscustomobject]@{ name = 'bootstrap'; description = 'Install the reviewed QEMU runtime into this ezvm root without system installation.' }
                     [pscustomobject]@{ name = 'base acquire'; description = 'Acquire and verify the pinned Ubuntu Noble amd64 source image.' }
                     [pscustomobject]@{ name = 'base build'; description = 'Build and publish an immutable prepared coding base using WHPX.' }
-                    [pscustomobject]@{ name = 'status <name>'; description = 'Reconcile durable/runtime/process evidence and report instance lifecycle state.' }
+                    [pscustomobject]@{ name = 'create <name> [options]'; description = 'Create a named thin-overlay instance with a durable profile and localhost SSH reservation.' }
+                    [pscustomobject]@{ name = 'list'; description = 'Reconstruct and list named instances from durable instance.json authority.' }
+                    [pscustomobject]@{ name = 'status <name>'; description = 'Reconcile durable configuration, runtime and process evidence for one instance.' }
                     [pscustomobject]@{ name = 'start <name>'; description = 'Start with WHPX, provision instance identity and wait for authenticated localhost SSH READY.' }
                     [pscustomobject]@{ name = 'stop <name>'; description = 'Request graceful guest powerdown over host-local QMP and wait for exit.' }
                     [pscustomobject]@{ name = 'ssh <name>'; description = 'Open an interactive managed-key SSH session over the localhost forward.' }
@@ -212,7 +277,7 @@ function Invoke-EzVmCommand {
                     [pscustomobject]@{ name = 'copy-to <name> <host> <guest>'; description = 'Copy one host file into the guest using managed scp trust.' }
                     [pscustomobject]@{ name = 'copy-from <name> <guest> <host>'; description = 'Copy one guest file to a host path using managed scp trust.' }
                 )
-                stage = 'Portable QEMU, prepared bases, thin storage, lifecycle control and localhost-only authenticated SSH are implemented; instance creation/registry allocation follows.'
+                stage = 'Portable QEMU, prepared bases, thin storage, lifecycle control, authenticated SSH and concurrent named-instance allocation are implemented; guest coding-agent provisioning follows.'
             }
         }
     }
@@ -265,9 +330,29 @@ function Write-EzVmResult {
             Write-Output ("  SHA-256 $($Result.data.sha256)")
             Write-Output ("  accelerator: $($Result.data.accelerator)")
         }
+        'create' {
+            Write-Output ("Created $($Result.data.name)")
+            Write-Output ("  profile: $($Result.data.profile) ($($Result.data.cpus) vCPU, $($Result.data.memoryMiB) MiB)")
+            Write-Output ("  base: $($Result.data.baseId) ($($Result.data.baseSelection))")
+            Write-Output ("  SSH reservation: 127.0.0.1:$($Result.data.sshPort)")
+            foreach ($warning in @($Result.data.warnings)) { Write-Output ("  warning: $warning") }
+        }
+        'list' {
+            if ([int]$Result.data.count -eq 0) {
+                Write-Output 'No managed instances.'
+            }
+            else {
+                foreach ($item in @($Result.data.instances)) {
+                    Write-Output (('{0,-24} {1,-10} {2,-7} {3,2} vCPU {4,6} MiB SSH {5}' -f $item.name, $item.state, $item.profile, $item.cpus, $item.memoryMiB, $item.sshPort))
+                }
+            }
+        }
         'status' {
             Write-Output ("$($Result.data.name): $($Result.data.state)")
             Write-Output ("  $($Result.data.reason)")
+            if ($null -ne $Result.data.profile) { Write-Output ("  profile: $($Result.data.profile) ($($Result.data.cpus) vCPU, $($Result.data.memoryMiB) MiB)") }
+            if ($null -ne $Result.data.sshPort) { Write-Output ("  SSH reservation: 127.0.0.1:$($Result.data.sshPort)") }
+            if ($null -ne $Result.data.baseId) { Write-Output ("  base: $($Result.data.baseId)") }
             if ($null -ne $Result.data.pid) { Write-Output ("  pid: $($Result.data.pid)") }
             if ($null -ne $Result.data.accelerator) { Write-Output ("  accelerator: $($Result.data.accelerator)") }
         }

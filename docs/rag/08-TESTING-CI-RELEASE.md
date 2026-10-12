@@ -285,3 +285,23 @@ Fast Windows CI covers:
 EZVM-007 does not claim WHPX execution on GitHub-hosted runners. Any bounded
 software-virtualization qualification must identify TCG explicitly; construction
 tests and TCG evidence do not become a WHPX PASS.
+
+## EZVM-008 registry/concurrency coverage
+
+Fast control-plane coverage now includes:
+
+- conservative valid/invalid instance names and Windows reserved names;
+- default profiles plus explicit CPU/RAM overrides;
+- complete durable instance-intent round-trip and legacy-schema refusal;
+- registry reconstruction from instance directories and fail-closed
+  directory/intent disagreement;
+- relocation of durable instance state without old-root absolute paths;
+- several instances receiving distinct persisted SSH reservations;
+- collision avoidance against a real unrelated loopback listener;
+- competing allocation-lock attempts and stale lock-file reuse;
+- orchestration of multiple independently RUNNING synthetic QEMU owners with
+  distinct persisted SSH forwards.
+
+These tests exercise concurrency/state construction without claiming WHPX
+execution. Real guest/network qualification remains owned by the relevant
+bounded QEMU workflows.

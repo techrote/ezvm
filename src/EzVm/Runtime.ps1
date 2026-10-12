@@ -66,8 +66,18 @@ function Get-EzVmInstanceRuntimePaths {
 function Assert-EzVmInstanceIntent {
     param([object]$Intent, [string]$ExpectedName)
 
+    if ($Intent -is [pscustomobject]) {
+        $legacyFields = @('schemaVersion', 'name', 'baseId', 'cpus', 'memoryMiB', 'createdAt')
+        $actualFields = @($Intent.PSObject.Properties | ForEach-Object { $_.Name })
+        if ($actualFields.Count -eq $legacyFields.Count -and
+            @($legacyFields | Where-Object { $actualFields -cnotcontains $_ }).Count -eq 0) {
+            throw "Instance intent '$ExpectedName' uses the legacy EZVM-006 schema. EZVM-008 requires durable profile, SSH-port and provisioning metadata; recreate or deliberately migrate this pre-v0.1 instance before start."
+        }
+    }
+
     Assert-EzVmRuntimeFields -Value $Intent -Expected @(
-        'schemaVersion', 'name', 'baseId', 'cpus', 'memoryMiB', 'createdAt'
+        'schemaVersion', 'name', 'baseId', 'profile', 'cpus', 'memoryMiB',
+        'sshPort', 'createdAt', 'provisioningProfile', 'provisioningVersion'
     ) -Description 'Instance intent'
     if ($Intent.schemaVersion -ne 1) { throw 'Instance intent schemaVersion must be integer 1.' }
     Assert-EzVmStorageInstanceName -Name ([string]$Intent.name)
@@ -77,9 +87,17 @@ function Assert-EzVmInstanceIntent {
     if ($Intent.baseId -isnot [string] -or $Intent.baseId -cnotmatch '^base-[a-f0-9]{64}$') {
         throw 'Instance intent baseId is invalid.'
     }
+    if ($Intent.profile -isnot [string] -or @('light', 'normal', 'heavy', 'custom') -cnotcontains [string]$Intent.profile) {
+        throw 'Instance intent profile must be light, normal, heavy or custom.'
+    }
     Assert-EzVmRuntimeInteger -Value $Intent.cpus -Description 'Instance intent cpus' -Minimum 1 -Maximum 256
     Assert-EzVmRuntimeInteger -Value $Intent.memoryMiB -Description 'Instance intent memoryMiB' -Minimum 512 -Maximum 1048576
+    Assert-EzVmRuntimeInteger -Value $Intent.sshPort -Description 'Instance intent sshPort' -Minimum 1024 -Maximum 65535
     Assert-EzVmRuntimeTimestamp -Value $Intent.createdAt -Description 'Instance intent createdAt'
+    if ($Intent.provisioningProfile -isnot [string] -or $Intent.provisioningProfile -cnotmatch '^[a-z0-9][a-z0-9._-]{0,63}$') {
+        throw 'Instance intent provisioningProfile is invalid.'
+    }
+    Assert-EzVmRuntimeInteger -Value $Intent.provisioningVersion -Description 'Instance intent provisioningVersion' -Minimum 1 -Maximum 2147483647
 }
 
 function New-EzVmInstanceIntent {
@@ -88,14 +106,34 @@ function New-EzVmInstanceIntent {
         [string]$Root = $script:EzVmDefaultRoot,
         [Parameter(Mandatory = $true)][string]$InstanceName,
         [Parameter(Mandatory = $true)][string]$BaseId,
+        [AllowEmptyString()][string]$Profile = '',
         [ValidateRange(1, 256)][int]$Cpus = 4,
         [ValidateRange(512, 1048576)][int]$MemoryMiB = 8192,
+        [ValidateRange(1024, 65535)][int]$SshPort = 22000,
+        [ValidatePattern('^[a-z0-9][a-z0-9._-]{0,63}$')][string]$ProvisioningProfile = 'ezvm-core',
+        [ValidateRange(1, 2147483647)][int]$ProvisioningVersion = 1,
         [scriptblock]$QemuImgRunner
     )
 
     $paths = Get-EzVmPaths -Root $Root
     $runtimePaths = Get-EzVmInstanceRuntimePaths -Root $Root -InstanceName $InstanceName
     $null = Test-EzVmPreparedBase -Root $Root -BaseId $BaseId -QemuImgRunner $QemuImgRunner
+
+    if ([string]::IsNullOrWhiteSpace($Profile)) {
+        $configuration = Get-EzVmConfiguration -Root $Root
+        $matches = @(@('light', 'normal', 'heavy') | Where-Object {
+            $candidateProfile = $configuration.profiles.$_
+            [int]$candidateProfile.cpus -eq $Cpus -and
+            [int]$candidateProfile.memoryMiB -eq $MemoryMiB
+        })
+        $Profile = if ($matches.Count -eq 1) { [string]$matches[0] } else { 'custom' }
+    }
+    else {
+        $Profile = $Profile.ToLowerInvariant()
+        if (@('light', 'normal', 'heavy', 'custom') -cnotcontains $Profile) {
+            throw "Instance profile '$Profile' is invalid."
+        }
+    }
 
     [void][IO.Directory]::CreateDirectory($paths.Instances)
     [void][IO.Directory]::CreateDirectory($runtimePaths.Directory)
@@ -108,10 +146,15 @@ function New-EzVmInstanceIntent {
         schemaVersion = 1
         name = $InstanceName
         baseId = $BaseId
+        profile = $Profile
         cpus = $Cpus
         memoryMiB = $MemoryMiB
+        sshPort = $SshPort
         createdAt = [DateTime]::UtcNow.ToString('o')
+        provisioningProfile = $ProvisioningProfile
+        provisioningVersion = $ProvisioningVersion
     }
+    Assert-EzVmInstanceIntent -Intent $intent -ExpectedName $InstanceName
     Write-EzVmJson -Path $runtimePaths.Intent -Value $intent -SchemaVersion 1
     return $intent
 }
