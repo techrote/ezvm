@@ -1,0 +1,39 @@
+name: EZVM-006 real QMP qualification
+
+on:
+  push:
+    branches:
+      - ezvm-006-runtime-state
+    paths:
+      - .github/workflows/ezvm-006-real-qmp.yml
+      - scripts/Invoke-EzVm006RealQmp.ps1
+      - src/EzVm/Runtime.ps1
+      - src/EzVm/Process.ps1
+      - src/EzVm/Qemu.ps1
+      - manifests/qemu-windows.json
+
+concurrency:
+  group: ezvm-006-real-qmp-\${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  real-qmp:
+    name: Real Windows QMP/process identity smoke (TCG; WHPX SKIP)
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - name: Checkout reviewed branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Qualify loopback QMP and process identity
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\scripts\Invoke-EzVm006RealQmp.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

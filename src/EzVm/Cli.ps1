@@ -27,6 +27,11 @@ function New-EzVmCommandResult {
     }
 }
 
+function New-EzVmCliArgumentError {
+    param([string]$Command, [string]$Message, [string]$Code = 'invalid_arguments')
+    return New-EzVmCommandResult -Success $false -Command $Command -ExitCode 2 -ErrorCode $Code -Message ($Message + ' Run .\ezvm.ps1 help for usage.')
+}
+
 function Invoke-EzVmCommand {
     [CmdletBinding()]
     param(
@@ -40,17 +45,44 @@ function Invoke-EzVmCommand {
         if ($argument -ieq '-Json') { $jsonCount++; continue }
         $tokens.Add($argument)
     }
+    if ($jsonCount -gt 1) {
+        return New-EzVmCliArgumentError -Command $(if ($tokens.Count -gt 0) { $tokens[0].ToLowerInvariant() } else { 'help' }) -Message 'The -Json switch may be supplied at most once.'
+    }
 
     $command = 'help'
+    $instanceName = $null
     if ($tokens.Count -gt 0) {
-        $command = (($tokens.ToArray() | ForEach-Object { $_.ToLowerInvariant() }) -join ' ')
-    }
-    $valid = @('help', 'version', 'bootstrap', 'doctor', 'base acquire', 'base build')
-    if ($jsonCount -gt 1 -or [string]::IsNullOrWhiteSpace($command) -or $valid -cnotcontains $command) {
-        $errorCode = if ($tokens.Count -gt 0 -and $valid -cnotcontains $command) { 'unknown_command' } else { 'invalid_arguments' }
-        $errorCommand = 'help'
-        if ($tokens.Count -gt 0) { $errorCommand = $tokens[0].ToLowerInvariant() }
-        return New-EzVmCommandResult -Success $false -Command $errorCommand -ExitCode 2 -ErrorCode $errorCode -Message "Command or arguments '$command' are unavailable. Run .\ezvm.ps1 help for usage."
+        $verb = $tokens[0].ToLowerInvariant()
+        switch ($verb) {
+            { $_ -in @('help', 'version', 'bootstrap', 'doctor') } {
+                if ($tokens.Count -ne 1) {
+                    return New-EzVmCliArgumentError -Command $verb -Message "Command '$verb' does not accept positional arguments."
+                }
+                $command = $verb
+            }
+            'base' {
+                if ($tokens.Count -ne 2) {
+                    return New-EzVmCliArgumentError -Command 'base' -Message 'The base command requires exactly one subcommand: acquire or build.'
+                }
+                $subcommand = $tokens[1].ToLowerInvariant()
+                if ($subcommand -notin @('acquire', 'build')) {
+                    return New-EzVmCliArgumentError -Command 'base' -Message "Unknown base subcommand '$subcommand'." -Code 'unknown_command'
+                }
+                $command = 'base ' + $subcommand
+            }
+            { $_ -in @('start', 'status', 'stop') } {
+                if ($tokens.Count -ne 2) {
+                    return New-EzVmCliArgumentError -Command $verb -Message "Command '$verb' requires exactly one instance name."
+                }
+                $instanceName = $tokens[1]
+                try { Assert-EzVmStorageInstanceName -Name $instanceName }
+                catch { return New-EzVmCliArgumentError -Command $verb -Message $_.Exception.Message }
+                $command = $verb
+            }
+            default {
+                return New-EzVmCliArgumentError -Command $verb -Message "Unknown command '$verb'." -Code 'unknown_command'
+            }
+        }
     }
 
     $null = Get-EzVmRoot -Path $Root
@@ -71,11 +103,22 @@ function Invoke-EzVmCommand {
         'base build' {
             $data = Invoke-EzVmBaseBuild -Root $Root -Accelerator whpx
         }
+        'status' {
+            $data = Get-EzVmInstanceStatus -Root $Root -InstanceName $instanceName
+        }
+        'start' {
+            $configuration = Get-EzVmConfiguration -Root $Root
+            $data = Start-EzVmInstance -Root $Root -InstanceName $instanceName -Accelerator whpx -StartupTimeoutSeconds ([int]$configuration.timeouts.processSeconds)
+        }
+        'stop' {
+            $configuration = Get-EzVmConfiguration -Root $Root
+            $data = Stop-EzVmInstance -Root $Root -InstanceName $instanceName -ShutdownTimeoutSeconds ([int]$configuration.timeouts.processSeconds)
+        }
         'help' {
             $data = [pscustomobject][ordered]@{
                 name = 'ezvm'
                 version = $version
-                usage = '.\ezvm.ps1 <command> [-Json]'
+                usage = '.\ezvm.ps1 <command> [arguments] [-Json]'
                 commands = @(
                     [pscustomobject]@{ name = 'help'; description = 'Show available commands and usage.' }
                     [pscustomobject]@{ name = 'version'; description = 'Show the control-plane version.' }
@@ -83,8 +126,11 @@ function Invoke-EzVmCommand {
                     [pscustomobject]@{ name = 'bootstrap'; description = 'Install the reviewed QEMU runtime into this ezvm root without system installation.' }
                     [pscustomobject]@{ name = 'base acquire'; description = 'Acquire and verify the pinned Ubuntu Noble amd64 source image.' }
                     [pscustomobject]@{ name = 'base build'; description = 'Build and publish an immutable prepared coding base using WHPX.' }
+                    [pscustomobject]@{ name = 'status <name>'; description = 'Reconcile durable/runtime/process evidence and report instance lifecycle state.' }
+                    [pscustomobject]@{ name = 'start <name>'; description = 'Validate storage and start an existing instance headlessly using WHPX.' }
+                    [pscustomobject]@{ name = 'stop <name>'; description = 'Request graceful guest powerdown over host-local QMP and wait for exit.' }
                 )
-                stage = 'Portable QEMU, host preflight, verified Ubuntu acquisition and reproducible prepared-base construction are implemented; instance lifecycle work follows.'
+                stage = 'Portable QEMU, prepared bases, thin storage and headless start/status/stop are implemented; instance creation, SSH control and registry allocation follow.'
             }
         }
     }
@@ -137,6 +183,24 @@ function Write-EzVmResult {
             Write-Output ("  SHA-256 $($Result.data.sha256)")
             Write-Output ("  accelerator: $($Result.data.accelerator)")
         }
+        'status' {
+            Write-Output ("$($Result.data.name): $($Result.data.state)")
+            Write-Output ("  $($Result.data.reason)")
+            if ($null -ne $Result.data.pid) { Write-Output ("  pid: $($Result.data.pid)") }
+            if ($null -ne $Result.data.accelerator) { Write-Output ("  accelerator: $($Result.data.accelerator)") }
+        }
+        'start' {
+            Write-Output ("Started $($Result.data.name)")
+            Write-Output ("  state: $($Result.data.state)")
+            Write-Output ("  pid: $($Result.data.pid)")
+            Write-Output ("  accelerator: $($Result.data.accelerator)")
+            Write-Output ("  serial log: $($Result.data.serialLog)")
+            Write-Output ("  QEMU log: $($Result.data.qemuLog)")
+        }
+        'stop' {
+            if ($Result.data.alreadyStopped) { Write-Output ("$($Result.data.name) is already stopped.") }
+            else { Write-Output ("Stopped $($Result.data.name) gracefully.") }
+        }
         'help' {
             Write-Output ("ezvm $($Result.data.version)")
             Write-Output ('Portable QEMU + QCOW2 coding-agent environments for Windows.')
@@ -145,7 +209,7 @@ function Write-EzVmResult {
             Write-Output ('')
             Write-Output ('Commands:')
             foreach ($item in $Result.data.commands) {
-                Write-Output (('  {0,-10} {1}' -f $item.name, $item.description))
+                Write-Output (('  {0,-18} {1}' -f $item.name, $item.description))
             }
             Write-Output ('')
             Write-Output ('Use -Json for one structured result, including errors. Omitting the command shows this help.')

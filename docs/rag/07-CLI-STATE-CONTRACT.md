@@ -315,3 +315,62 @@ or stale PID as an implicit STOPPED result.
 No absolute prepared-base path is required as durable instance authority. Later
 instance metadata should record the base ID/fingerprint and derive the current
 path from the active ezvm root.
+
+## Implemented runtime CLI and state (EZVM-006)
+
+The public lifecycle commands are:
+
+~~~text
+ezvm status <name>
+ezvm start <name>
+ezvm stop <name>
+~~~
+
+`start` uses WHPX and does not expose an implicit TCG fallback. `status`
+reconciles durable intent, runtime evidence and Windows process identity.
+`stop` uses host-local QMP `system_powerdown` and waits for clean process
+exit. A shutdown timeout returns failure and leaves STOPPING ownership evidence;
+QEMU is not silently killed.
+
+The EZVM-006 durable instance-intent schema is:
+
+~~~json
+{
+  "schemaVersion": 1,
+  "name": "example",
+  "baseId": "base-<sha256>",
+  "cpus": 4,
+  "memoryMiB": 8192,
+  "createdAt": "<ISO timestamp>"
+}
+~~~
+
+The runtime-state schema records:
+
+~~~json
+{
+  "schemaVersion": 1,
+  "instanceName": "example",
+  "state": "RUNNING",
+  "pid": 1234,
+  "processStartTimeUtc": "<ISO timestamp>",
+  "qemuExecutable": "<ephemeral derived absolute path>",
+  "argumentFingerprint": "<sha256>",
+  "launchId": "<32 hex>",
+  "qmpHost": "127.0.0.1",
+  "qmpPort": 49152,
+  "accelerator": "whpx",
+  "startedAt": "<ISO timestamp>",
+  "lastObservedAt": "<ISO timestamp>",
+  "stoppedAt": "",
+  "qemuLog": "<ephemeral derived absolute path>",
+  "serialLog": "<ephemeral derived absolute path>"
+}
+~~~
+
+Absolute paths in `runtime.json` are ephemeral launch evidence and are
+revalidated/regenerated after relocation; they are not durable portable intent.
+
+Lifecycle status may report ABSENT, CREATED, STARTING, RUNNING, STOPPING, STOPPED,
+STALE or UNKNOWN. Only CREATED/STOPPED can yield the storage layer's
+`proven-safe` guard.

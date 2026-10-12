@@ -44,7 +44,8 @@ Add-EzVmTest -Name 'CLI: help and empty input provide human usage' -ScriptBlock 
         Assert-EzVmTrue -Condition ($result.StandardOutput -match 'Usage:.*ezvm\.ps1')
         Assert-EzVmTrue -Condition ($result.StandardOutput -match 'help' -and $result.StandardOutput -match 'version')
         Assert-EzVmTrue -Condition ($result.StandardOutput -match 'doctor' -and $result.StandardOutput -match 'bootstrap' -and $result.StandardOutput -match 'base acquire' -and $result.StandardOutput -match 'base build') -Message 'Help must list all implemented host, source and prepared-base commands.'
-        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'instance lifecycle') -Message 'Help must distinguish implemented prepared-base tooling from later instance lifecycle work.'
+        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'status <name>' -and $result.StandardOutput -match 'start <name>' -and $result.StandardOutput -match 'stop <name>') -Message 'Help must list implemented lifecycle commands.'
+        Assert-EzVmTrue -Condition ($result.StandardOutput -match 'instance creation.*follow') -Message 'Help must distinguish implemented lifecycle control from later instance creation/registry work.'
     }
 }
 
@@ -199,4 +200,47 @@ Add-EzVmTest -Name 'CLI: base build is a real command and fails cleanly before m
         Assert-EzVmTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $root 'runtime/bases'))) -Message 'Prerequisite failure must happen before base staging is created.'
     }
     finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'CLI: status of an absent instance is a structured ABSENT success' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'status absent CLI'
+    try {
+        $result = Invoke-EzVmCliForTest -ArgumentList @('status', 'missing-agent', '-Json') -Root $root
+        $value = Assert-EzVmJsonEnvelope -Result $result -Command 'status' -ExitCode 0
+        Assert-EzVmEqual -Actual $value.data.name -Expected 'missing-agent'
+        Assert-EzVmEqual -Actual $value.data.state -Expected 'ABSENT'
+        Assert-EzVmTrue -Condition ($value.data.reason -match 'No durable instance intent')
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'CLI: start and stop missing instances fail as execution errors, not fake success' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'lifecycle missing CLI'
+    try {
+        $start = Invoke-EzVmCliForTest -ArgumentList @('start', 'missing-agent', '-Json') -Root $root
+        Assert-EzVmEqual -Actual $start.ExitCode -Expected 1
+        $startValue = $start.StandardOutput | ConvertFrom-Json -ErrorAction Stop
+        Assert-EzVmEqual -Actual $startValue.error.code -Expected 'execution_failed'
+        Assert-EzVmTrue -Condition ($startValue.error.message -match 'instance.json')
+
+        $stop = Invoke-EzVmCliForTest -ArgumentList @('stop', 'missing-agent', '-Json') -Root $root
+        Assert-EzVmEqual -Actual $stop.ExitCode -Expected 1
+        $stopValue = $stop.StandardOutput | ConvertFrom-Json -ErrorAction Stop
+        Assert-EzVmEqual -Actual $stopValue.error.code -Expected 'execution_failed'
+        Assert-EzVmTrue -Condition ($stopValue.error.message -match 'does not exist')
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'CLI: lifecycle commands require exactly one portable instance name' -ScriptBlock {
+    foreach ($arguments in @(
+        @('status'),
+        @('start', 'one', 'extra'),
+        @('stop', '..'),
+        @('status', 'bad/name')
+    )) {
+        $result = Invoke-EzVmCliForTest -ArgumentList $arguments
+        Assert-EzVmEqual -Actual $result.ExitCode -Expected 2
+        Assert-EzVmTrue -Condition ($result.StandardError -match 'help')
+    }
 }

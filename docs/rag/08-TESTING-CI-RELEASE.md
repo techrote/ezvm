@@ -245,3 +245,18 @@ overlay creation, machine-readable backing-chain enumeration, integrity checking
 real second-level-chain rejection, cold relocation of the storage layout, and a
 reset-safe replacement. EZVM-005 performs no guest execution, so WHPX is not an
 applicable acceptance capability.
+
+## EZVM-006 runtime coverage
+
+Fast Windows CI uses injected QEMU-process and QMP boundaries to cover explicit
+WHPX/TCG argv, headless q35/virtio/UEFI configuration, host-local management,
+CREATED-to-RUNNING start, duplicate-start refusal, backing-chain refusal before
+launch, graceful powerdown, bounded shutdown without kill, stale PID, PID reuse,
+argv fingerprint mismatch, corrupt runtime state, untracked QEMU ownership,
+startup timeout, lifecycle-lock contention and storage-guard integration.
+
+A separate bounded Windows smoke lane uses the reviewed repository-local QEMU
+binary under explicit TCG to exercise the real host management transport and
+Windows process-command-line observation. Hosted CI must report WHPX execution as
+SKIP unless the runner actually exposes a usable WHPX environment; TCG smoke
+evidence is not WHPX evidence.

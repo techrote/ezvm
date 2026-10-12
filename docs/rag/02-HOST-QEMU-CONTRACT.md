@@ -165,3 +165,22 @@ and reused idempotently.
 `doctor` is diagnostic only. In particular, feature detection never establishes
 that WHPX execution itself has succeeded; physical/local accelerator qualification
 remains a later release gate.
+
+## Implemented runtime command baseline (EZVM-006)
+
+Normal instance start invokes the repository-local `qemu-system-x86_64.exe` by
+absolute path and uses explicit q35, virtio-blk, virtio-net, UEFI pflash, memory,
+CPU, headless display, serial logging and user-mode networking arguments. WHPX is
+the production accelerator. TCG appears only when an internal/test caller asks
+for it explicitly; there is no automatic WHPX-to-TCG fallback.
+
+The shared firmware code image is opened read-only. Writable UEFI variable state
+is copied from the managed QEMU firmware template into each instance directory
+and is validated as managed generated state before use.
+
+Runtime management uses QMP over a TCP listener bound explicitly to `127.0.0.1` rather than SSH or a LAN-exposed management socket.
+The control path performs the QMP greeting and `qmp_capabilities` negotiation
+before issuing commands. Production graceful stop sends `system_powerdown` and
+waits for process exit; timeout is reported without silently killing QEMU.
+
+Serial and QEMU diagnostic logs live beneath the managed instance directory.
