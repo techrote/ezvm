@@ -26,9 +26,9 @@ $module = Get-Module EzVm
 $launch = $null
 try {
     $launch = & $module {
-        param($file, $args, $working)
-        Start-EzVmRuntimeProcess -FilePath $file -ArgumentList ([string[]]$args) -WorkingDirectory $working
-    } $qemu $arguments $qemuRoot
+        param($file, $argumentTokens, $working)
+        Start-EzVmRuntimeProcess -FilePath $file -ArgumentList ([string[]]$argumentTokens) -WorkingDirectory $working
+    } $qemu (,([string[]]$arguments)) $qemuRoot
 
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
     $query = $null
