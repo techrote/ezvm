@@ -450,7 +450,8 @@ function New-EzVmSshCommandArguments {
         [string]$User = 'coder',
         [AllowEmptyCollection()][string[]]$RemoteCommand = @(),
         [switch]$Batch,
-        [switch]$AcceptNewHostKey
+        [switch]$AcceptNewHostKey,
+        [ValidateRange(1, 60)][int]$ConnectTimeoutSeconds = 5
     )
 
     if ($User -cnotmatch '^[a-z_][a-z0-9_-]{0,31}$') { throw "SSH user '$User' is invalid." }
@@ -469,7 +470,7 @@ function New-EzVmSshCommandArguments {
         @('-o', 'PasswordAuthentication=no'),
         @('-o', 'KbdInteractiveAuthentication=no'),
         @('-o', 'PreferredAuthentications=publickey'),
-        @('-o', 'ConnectTimeout=5'),
+        @('-o', ('ConnectTimeout=' + $ConnectTimeoutSeconds)),
         @('-o', 'ConnectionAttempts=1')
     )) {
         $arguments.Add($pair[0])
@@ -823,8 +824,14 @@ function Wait-EzVmSshReady {
                 }
             }
 
-            $arguments = New-EzVmSshCommandArguments -PrivateKey $Identity.PrivateKey -KnownHosts $candidate.Candidate -Port ([int]$Access.sshPort) -User ([string]$Access.sshUser) -Batch -RemoteCommand @('sh', '-lc', (Get-EzVmReadinessRemoteScript)) -AcceptNewHostKey:$candidateAcceptNew
-            $remainingSeconds = [Math]::Max(1, [Math]::Min(5, [int][Math]::Ceiling(($deadline - [DateTime]::UtcNow).TotalSeconds)))
+            # TCG guests can take materially longer than five seconds for the
+            # SSH key exchange plus a remote shell invocation even after TCP 22
+            # is reachable. Keep each attempt bounded, but give a healthy slow
+            # guest enough budget to prove identity instead of repeatedly killing
+            # the client and consuming the entire outer readiness deadline.
+            $remainingSeconds = [Math]::Max(1, [Math]::Min(30, [int][Math]::Ceiling(($deadline - [DateTime]::UtcNow).TotalSeconds)))
+            $connectTimeoutSeconds = [Math]::Max(1, [Math]::Min(15, $remainingSeconds))
+            $arguments = New-EzVmSshCommandArguments -PrivateKey $Identity.PrivateKey -KnownHosts $candidate.Candidate -Port ([int]$Access.sshPort) -User ([string]$Access.sshUser) -Batch -RemoteCommand @('sh', '-lc', (Get-EzVmReadinessRemoteScript)) -AcceptNewHostKey:$candidateAcceptNew -ConnectTimeoutSeconds $connectTimeoutSeconds
             try {
                 $result = if ($null -ne $SshRunner) {
                     & $SshRunner $Tooling.Ssh $arguments $remainingSeconds
