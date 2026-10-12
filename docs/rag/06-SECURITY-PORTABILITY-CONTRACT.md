@@ -170,3 +170,25 @@ Reset promotion uses same-filesystem file renames and preserves the old overlay
 until a replacement chain has fully validated. If promotion cannot complete, the
 implementation restores the original where possible and otherwise reports the
 exact recovery artifact instead of guessing or deleting evidence.
+
+## Runtime process identity and management boundary (EZVM-006)
+
+`runtime.json` is process evidence, not process authority. A recorded active
+launch is accepted only when Windows process observation proves all of:
+
+- the recorded PID still identifies one process;
+- the process executable is the managed QEMU executable;
+- its creation/start time matches the recorded launch;
+- its observed argv still contains this instance's QEMU name marker;
+- a SHA-256 fingerprint of the observed argv matches the recorded launch.
+
+Missing/reused/fingerprint-mismatched evidence is STALE when there is no distinct
+owner candidate. A separate QEMU process carrying the same instance marker, a
+corrupt runtime file, or an unqueryable process identity is UNKNOWN. Both states
+fail closed for storage mutation.
+
+QMP management is host-local and not exposed on a LAN interface. The public
+lifecycle surface exports graceful start/status/stop, not a generic QMP `quit`
+shortcut. Normal stop requests guest powerdown and never converts its timeout
+into an implicit process kill. A force-stop feature, if introduced later, must be
+separate, explicit and identity-validated.
