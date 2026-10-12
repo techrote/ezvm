@@ -98,7 +98,7 @@ finally {
         try { $null = Stop-EzVmInstance -Root $Root -InstanceName $instanceName -ShutdownTimeoutSeconds 30 } catch { }
     }
     foreach ($path in @($hostSource, $hostRoundTrip)) {
-        if (-not [string]::IsNullOrWhiteSpace($path) -and Test-Path -LiteralPath $path) {
+        if (-not [string]::IsNullOrWhiteSpace($path) -and (Test-Path -LiteralPath $path)) {
             Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
         }
     }
