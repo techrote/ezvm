@@ -23,7 +23,7 @@ Export-ModuleMember -Function @(
     'Get-EzVmStorageImageInfo', 'Get-EzVmStorageBackingChain', 'Test-EzVmInstanceOverlay', 'Test-EzVmInstanceStorage',
     'New-EzVmInstanceOverlay', 'Test-EzVmStoppedImageIntegrity', 'Reset-EzVmInstanceOverlayStorage',
     'Get-EzVmInstanceRuntimePaths', 'New-EzVmInstanceIntent', 'Get-EzVmInstanceIntent',
-    'Get-EzVmArgumentFingerprint', 'New-EzVmRuntimeQemuArguments', 'Invoke-EzVmQmpCommand',
+    'Get-EzVmArgumentFingerprint', 'Get-EzVmRuntimeFirmwarePaths', 'New-EzVmRuntimeQemuArguments', 'Invoke-EzVmQmpCommand',
     'Get-EzVmInstanceStatus', 'Get-EzVmInstanceStorageLifecycleGuard', 'Start-EzVmInstance', 'Stop-EzVmInstance',
     'Invoke-EzVmCommand', 'Write-EzVmResult'
 )
