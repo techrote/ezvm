@@ -198,8 +198,12 @@ Add-EzVmTest -Name 'SSH: readiness wait has a bounded total timeout when TCP nev
         $identity = [pscustomobject]@{ PrivateKey = (Join-Path $root 'unused-key') }
         $tooling = [pscustomobject]@{ Ssh = 'unused-ssh'; Keyscan = 'unused-keyscan' }
         $clock = [Diagnostics.Stopwatch]::StartNew()
+        $module = Get-Module EzVm
         Assert-EzVmThrows -ScriptBlock {
-            Wait-EzVmSshReady -Root $root -InstanceName 'ssh-agent' -Intent $intent -Access $access -Identity $identity -Tooling $tooling -TimeoutSeconds 1 -PortProbe { param($hostAddress, $port) return $false }
+            & $module {
+                param($r, $i, $a, $id, $tools)
+                Wait-EzVmSshReady -Root $r -InstanceName 'ssh-agent' -Intent $i -Access $a -Identity $id -Tooling $tools -TimeoutSeconds 1 -PortProbe { param($hostAddress, $port) return $false }
+            } $root $intent $access $identity $tooling
         } -MessagePattern 'did not reach authenticated SSH READY within 1 seconds' | Out-Null
         $clock.Stop()
         Assert-EzVmTrue -Condition ($clock.Elapsed.TotalSeconds -lt 4) -Message 'Readiness timeout must remain bounded.'
