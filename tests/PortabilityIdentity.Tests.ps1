@@ -303,7 +303,7 @@ Add-EzVmTest -Name 'Portability identity: pending initialization cannot preserve
 }
 
 Add-EzVmTest -Name 'Portability identity: pending source key and reboot transport rotate only unpromoted candidates before full proof' -ScriptBlock {
-    foreach ($firstExit in @(75, 255)) {
+    foreach ($firstExit in @(75, 255, -1)) {
         $root = New-EzVmCheckoutFixture -Prefix ('identity key transition ' + $firstExit)
         try {
             $intent = New-EzVmPortabilityIdentityTestIntent
@@ -318,6 +318,58 @@ Add-EzVmTest -Name 'Portability identity: pending source key and reboot transpor
             Assert-EzVmEqual -Actual $observed.PrematurePromotion -Expected $false
             Assert-EzVmEqual -Actual $observed.StrictBypass -Expected $false
             Assert-EzVmTrue -Condition ([IO.File]::ReadAllText((Get-EzVmSshPaths -Root $root -InstanceName $intent.name).InstanceKnownHosts).Contains('ssh-ed25519 CCCC'))
+        }
+        finally { Remove-EzVmTestDirectory -Path $root }
+    }
+}
+
+Add-EzVmTest -Name 'Portability identity: persistent Windows SSH disconnects expire without promoting READY or trust' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'identity Windows disconnect'
+    try {
+        $intent = New-EzVmPortabilityIdentityTestIntent
+        # Even copied proof bytes are unusable when the client did not receive
+        # successful remote exit status before the channel closed.
+        $copiedProof = New-EzVmSshTestProbe -IdentityBase64 (ConvertTo-EzVmSshTestBase64 (New-EzVmSshTestIdentityJson -Intent $intent))
+        $disconnect = [pscustomobject]@{ ExitCode = -1; StdOut = $copiedProof; StdErr = 'Connection to 127.0.0.1 closed by remote host.' }
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        $observed = Invoke-EzVmPortabilityIdentityWaitFixture -Root $root -Intent $intent -Outputs @($disconnect)
+        $clock.Stop()
+        Assert-EzVmTrue -Condition ($observed.Error -match 'did not reach authenticated SSH READY within 2 seconds.*SSH authentication/transport is not ready.*closed by remote host')
+        Assert-EzVmTrue -Condition ($clock.Elapsed.TotalSeconds -lt 5) -Message 'Repeated disconnects must remain inside the existing bounded readiness wait.'
+        Assert-EzVmTrue -Condition ($observed.Calls -gt 1)
+        # The loop may allocate one final candidate before observing that less
+        # than one second remains for another probe; it must never reuse one.
+        Assert-EzVmTrue -Condition ($observed.Scans -ge $observed.Calls -and $observed.Scans -le ($observed.Calls + 1)) -Message 'Each disconnected attempt must discard its unpromoted candidate.'
+        Assert-EzVmEqual -Actual $observed.Ready -Expected $null
+        Assert-EzVmEqual -Actual $observed.PrematurePromotion -Expected $false
+        Assert-EzVmEqual -Actual $observed.StrictBypass -Expected $false
+        $paths = Get-EzVmSshPaths -Root $root -InstanceName $intent.name
+        $access = Read-EzVmJson -Path $paths.AccessState -SchemaVersion 2
+        Assert-EzVmEqual -Actual $access.state -Expected 'PROVISIONING'
+        Assert-EzVmEqual -Actual $access.readyAt -Expected ''
+        Assert-EzVmEqual -Actual ([IO.File]::ReadAllText($paths.InstanceKnownHosts)) -Expected ('[127.0.0.1]:22001 ssh-ed25519 AAAA' + [Environment]::NewLine)
+        Assert-EzVmEqual -Actual (@(Get-ChildItem -LiteralPath $paths.KnownHostsDirectory -Force -File | Where-Object { $_.Name.EndsWith('.candidate') }).Count) -Expected 0
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'Portability identity: nontransport SSH exit codes remain fatal despite complete proof bytes' -ScriptBlock {
+    foreach ($exitCode in @(1, 70, 254, -2)) {
+        $root = New-EzVmCheckoutFixture -Prefix ('identity fatal SSH exit ' + $exitCode)
+        try {
+            $intent = New-EzVmPortabilityIdentityTestIntent
+            $proof = New-EzVmSshTestProbe -IdentityBase64 (ConvertTo-EzVmSshTestBase64 (New-EzVmSshTestIdentityJson -Intent $intent))
+            $failure = [pscustomobject]@{ ExitCode = $exitCode; StdOut = $proof; StdErr = 'probe failed' }
+            $observed = Invoke-EzVmPortabilityIdentityWaitFixture -Root $root -Intent $intent -Outputs @($failure)
+            Assert-EzVmTrue -Condition ($observed.Error -match ('exited unexpectedly with code ' + [regex]::Escape([string]$exitCode)))
+            Assert-EzVmEqual -Actual $observed.Calls -Expected 1
+            Assert-EzVmEqual -Actual $observed.Ready -Expected $null
+            Assert-EzVmEqual -Actual $observed.PrematurePromotion -Expected $false
+            Assert-EzVmEqual -Actual $observed.StrictBypass -Expected $false
+            $paths = Get-EzVmSshPaths -Root $root -InstanceName $intent.name
+            Assert-EzVmEqual -Actual (Read-EzVmJson -Path $paths.AccessState -SchemaVersion 2).state -Expected 'PROVISIONING'
+            Assert-EzVmEqual -Actual ([IO.File]::ReadAllText($paths.InstanceKnownHosts)) -Expected ('[127.0.0.1]:22001 ssh-ed25519 AAAA' + [Environment]::NewLine)
+            Assert-EzVmEqual -Actual (@(Get-ChildItem -LiteralPath $paths.KnownHostsDirectory -Force -File | Where-Object { $_.Name.EndsWith('.candidate') }).Count) -Expected 0
         }
         finally { Remove-EzVmTestDirectory -Path $root }
     }

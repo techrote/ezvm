@@ -1553,7 +1553,11 @@ function Wait-EzVmSshReady {
                     Remove-Item -LiteralPath $candidate.Candidate -Force -ErrorAction SilentlyContinue
                     $candidate = $null
                 }
-                elseif ([int]$result.ExitCode -eq 255) {
+                elseif ([int]$result.ExitCode -eq 255 -or [int]$result.ExitCode -eq -1) {
+                    # OpenSSH starts with exit_status=-1 until the remote sends
+                    # an exit-status message. A guest reboot can close that
+                    # channel first: POSIX reports 255, while Windows preserves
+                    # the signed -1 value. Neither result proves readiness.
                     $lastError = "SSH authentication/transport is not ready: $([string]$result.StdErr)"
                     if ($initializationEnabled) {
                         Remove-Item -LiteralPath $candidate.Candidate -Force -ErrorAction SilentlyContinue
