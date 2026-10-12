@@ -204,17 +204,20 @@ NoCloud at `http://10.0.2.100:8000/`.
 
 The controller identity is an Ed25519 keypair in `runtime/keys`. On Windows the
 private-key ACL is restricted to the current user with `icacls`. ezvm requires
-`ssh.exe`, `scp.exe`, `ssh-keygen.exe` and `ssh-keyscan.exe`; `doctor`
-reports a concrete OpenSSH Client remediation if any are unavailable.
+`ssh.exe`, `scp.exe` and `ssh-keygen.exe`; `doctor` reports a concrete
+OpenSSH Client remediation if any are unavailable.
 
-Host-key checking is never disabled. A scanned host key is first placed in a
-launch candidate known-hosts file and becomes durable trust only after managed-key
-SSH succeeds and the guest proves the expected ezvm identity/readiness state.
-A changed key is staged in a launch-local candidate file and never overwrites
-existing trust merely because it was scanned. If managed-key authentication then
-proves the exact requested ezvm identity, completed cloud-init and READY marker,
-only that instance's scoped known-host entry is atomically replaced. Failed or
-mismatched identity proof leaves the previous trust entry untouched.
+Host-key checking is never disabled. First-use/re-key bootstrap uses `ssh.exe`
+with `StrictHostKeyChecking=accept-new` only against an empty launch-local
+candidate known-hosts file, with `UpdateHostKeys=no` and Ed25519 host keys.
+Normal SSH/scp uses `StrictHostKeyChecking=yes` against the managed per-instance
+file. The temporary candidate becomes durable trust only after managed-key SSH
+succeeds and the guest proves the exact requested ezvm identity, completed
+cloud-init and READY marker. A changed key therefore never overwrites existing
+trust merely because a new SSH endpoint was observed. Failed or mismatched
+identity proof leaves the previous trust entry untouched. `ssh-keyscan` is not
+used: affected Windows OpenSSH builds can fail its KEX negotiation against modern
+Ubuntu OpenSSH even when `ssh.exe` itself is compatible.
 
 EZVM-007 stores launch SSH metadata in per-instance `access.json`, separately
 from EZVM-006's durable instance intent and process-lifecycle schema. It contains
