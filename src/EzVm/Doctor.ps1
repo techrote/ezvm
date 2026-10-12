@@ -176,7 +176,7 @@ function Get-EzVmDoctorReport {
         $checks.Add((New-EzVmDoctorCheck -Name 'runtime-state' -Status 'ready' -Message 'No existing instance runtime state requires reconciliation.'))
     }
     else {
-        $checks.Add((New-EzVmDoctorCheck -Name 'runtime-state' -Status 'unknown' -Message "Found $($runtimeState.Count) instance runtime-state file(s). Reconcile each instance with status before destructive storage work." -Remediation 'Use '.\ezvm.ps1 status <name>' and do not mutate instance disks from PID files alone.'))
+        $checks.Add((New-EzVmDoctorCheck -Name 'runtime-state' -Status 'unknown' -Message "Found $($runtimeState.Count) instance runtime-state file(s). Reconcile each instance with status before destructive storage work." -Remediation "Use '.\ezvm.ps1 status <name>' and do not mutate instance disks from PID files alone."))
     }
 
     $array = @($checks.ToArray())
