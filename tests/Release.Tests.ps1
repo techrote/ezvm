@@ -62,7 +62,7 @@ Add-EzVmTest -Name 'Release: deterministic package is source-only, self-describi
             }
             foreach ($name in $names) {
                 Assert-EzVmTrue -Condition ($name.StartsWith('ezvm-0.1.0/', [StringComparison]::Ordinal)) -Message 'Release ZIP contains content outside its versioned root.'
-                Assert-EzVmTrue -Condition ($name -notmatch '/(?:runtime|cache|artifacts|tests|\.github)/') -Message ('Release ZIP contains generated/test/workflow content: ' + $name)
+                Assert-EzVmTrue -Condition ($name -notmatch '/(?:runtime|cache|artifacts|tests|scripts|\.github)/') -Message ('Release ZIP contains generated/test/workflow/tooling content: ' + $name)
                 Assert-EzVmTrue -Condition ($name -notmatch '(?i)\.(?:qcow2?|img|iso|vhdx?|vmdk|vdi|raw|exe|dll|msi|zip|7z|pem|key|pfx|token)$') -Message ('Release ZIP contains a binary/secret-like payload: ' + $name)
             }
 
