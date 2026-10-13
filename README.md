@@ -6,7 +6,7 @@ Start with [Getting started](docs/GETTING-STARTED.md). Release evidence and know
 
 ## Current state
 
-**ezvm v0.1.0 is the current release candidate.** The dependency-ordered EZVM-001 through EZVM-011 implementation stack is accepted; EZVM-012 owns final packaging and end-to-end release qualification. Release acceptance requires the exact-candidate automated and real gates documented below. The checkout has reviewed QEMU/7-Zip manifests, repository-local verified runtime bootstrap, `doctor`, reproducible prepared-base construction, authenticated coding READY, safe reset/clone/export/import, cold portability, bounded recovery diagnostics, and automated tests under Windows PowerShell 5.1 and PowerShell 7.
+**This source reports ezvm v0.1.0.** The dependency-ordered EZVM-001 through EZVM-011 implementation stack is accepted; EZVM-012 defines final packaging and end-to-end release qualification. A published v0.1.0 release additionally requires the exact-source automated and real gates documented below. The checkout has reviewed QEMU/7-Zip manifests, repository-local verified runtime bootstrap, `doctor`, reproducible prepared-base construction, authenticated coding READY, safe reset/clone/export/import, cold portability, bounded recovery diagnostics, and automated tests under Windows PowerShell 5.1 and PowerShell 7.
 
 The commands available on this branch are:
 
