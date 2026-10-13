@@ -1,0 +1,55 @@
+name: EZVM-012 real release qualification
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/ezvm-012-real-release.yml
+      - .github/workflows/release.yml
+      - scripts/Invoke-EzVm010RealPortability.ps1
+      - scripts/New-EzVmReleasePackage.ps1
+      - scripts/Publish-EzVmGitHubRelease.ps1
+      - src/EzVm/**
+      - guest/**
+      - manifests/**
+      - config/**
+      - docs/**
+      - README.md
+      - THIRD-PARTY-NOTICES.md
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ezvm-012-real-release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-release:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    name: Real v0.1 end-to-end release (Avrea 8-core Windows TCG; WHPX SKIP)
+    runs-on: avrea-windows-2025-8-vcpu
+    timeout-minutes: 180
+    steps:
+      - name: Checkout candidate source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Record runner and exact source identity
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git rev-parse HEAD 'HEAD^{tree}'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host ('EZVM012_REQUESTED_RUNNER=avrea-windows-2025-8-vcpu; observedCPU=' + [Environment]::ProcessorCount)
+          Write-Host 'EZVM012_WHPX_EXECUTION=SKIP: hosted qualification uses explicit TCG; no WHPX runtime PASS is claimed.'
+          $PSVersionTable
+
+      - name: Qualify complete clean-root v0.1 workflow
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\scripts\Invoke-EzVm010RealPortability.ps1 -ReleaseQualification
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
