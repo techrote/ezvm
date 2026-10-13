@@ -425,3 +425,65 @@ preserve an existing host destination after remote transfer failure, reject
 copying into managed runtime, and refuse diagnostic image checking while running.
 No real credentials, uploaded disks or relaxed acceptance thresholds are involved.
 WHPX execution remains explicitly SKIP; TCG is not WHPX qualification.
+
+
+## EZVM-012 final release qualification
+
+EZVM-012 sets the public/module version to 0.1.0 and adds a deterministic
+source-package contract. scripts/New-EzVmReleasePackage.ps1 accepts only a clean,
+tracked repository tree that passes the repository contract. The version must
+match both module version fields. The ZIP contains the first-party control plane,
+configuration, guest recipes, reviewed manifests and documentation under one
+versioned root. It deliberately excludes tests, GitHub workflow files, generated
+runtime/cache/artifacts, QEMU/7-Zip/Ubuntu provider payloads, VM disks and
+credential-like files. RELEASE-METADATA.json records the exact source commit,
+source tree, package root, third-party-binary exclusion and per-file SHA-256
+values. ZIP entry order/timestamps/compression settings are fixed, and Windows
+CI builds it twice to require byte-identical SHA-256 output. The package is
+extracted and its public version command is executed as a regression.
+
+The final expensive integration lane is
+EZVM-012 real release qualification. It runs once per release-candidate PR on
+the owner-approved Avrea Windows 2025 8-vCPU runner and invokes the accepted
+security/portability scenario with ReleaseQualification. It starts from a fresh
+source-only copied root and adds release-only evidence for:
+
+- doctor before bootstrap and again after verified QEMU bootstrap;
+- the default normal coding resource profile;
+- a second light instance reaching authenticated READY while the normal instance
+  remains RUNNING, with distinct PID, QMP endpoint, SSH reservation and identity;
+- authenticated remote execution on both concurrently running guests;
+- a same-instance clean stop/restart that preserves mutable content and stable
+  guest identity;
+- a real full-guest fresh clone that receives new identity/resources and excludes
+  source overlay state;
+- all EZVM-011 real SCP/security checks and all EZVM-010 stateful
+  clone/export/import/reset/relocation checks;
+- destination doctor after complete cold relocation while the original root is
+  unavailable;
+- relocated authenticated restart, final portability validation and graceful
+  shutdown.
+
+The accepted 2400-second prepared-base build bound and 900-second per-launch READY
+bound are unchanged. The workflow timeout is 180 minutes only to contain the
+additional required release boots; it does not relax an operation's acceptance
+deadline. Hosted execution uses explicit TCG and records WHPX execution as SKIP.
+The Avrea Windows Server host is outside the supported Windows-client end-user
+baseline, so doctor itself is evidence-producing rather than coerced to overall
+ready; managed QEMU and all applicable checks must still report their exact
+state. A supported physical Windows client procedure is documented separately
+for optional WHPX runtime evidence.
+
+.github/workflows/release.yml is intentionally tag-only for v0.1.0 and has the
+minimal contents: write permission required to publish a GitHub release. Before
+publication it fetches current main and refuses a tag that does not point at the
+accepted main commit, reruns the repository contract, verifies public version
+0.1.0 and rebuilds the deterministic package. The publisher refuses to mutate an
+already-existing release and uploads only the versioned source ZIP and SHA-256
+sidecar. The release body is prefixed with the exact tag target commit.
+
+Creating or pushing the v0.1.0 tag is not part of ordinary PR CI. If the active
+automation connection cannot create that Git ref, the repository must be left
+release-ready and the exact accepted main SHA plus the single required tag-push
+action must be recorded; no release may be claimed published until the GitHub
+release exists.
