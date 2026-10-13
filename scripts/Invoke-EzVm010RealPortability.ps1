@@ -330,8 +330,7 @@ sync
     $null = Invoke-EzVm010Guest -Name $sourceName -Script $fixtureScript
     $sourceFacts = Get-EzVm010GuestFacts -Name $sourceName
     if ($ReleaseQualification) {
-        $null = Invoke-EzVm010Guest -Name $sourceName -Script ("set -eu; printf '%s
-' '" + $restartSentinel + "' > /home/coder/workspace/ezvm012-restart.txt; sync")
+        $null = Invoke-EzVm010Guest -Name $sourceName -Script ("set -eu; printf '%s\n' '" + $restartSentinel + "' > /home/coder/workspace/ezvm012-restart.txt; sync")
         Stop-EzVm010Guest -Name $sourceName
         Start-EzVm010Guest -Name $sourceName
         $restartFacts = Get-EzVm010GuestFacts -Name $sourceName
@@ -340,11 +339,8 @@ sync
             $restartFacts.identity.cloudInstanceId -cne $sourceFacts.identity.cloudInstanceId) {
             throw 'Normal stop/restart changed stable guest identity.'
         }
-        $restartCheck = (Invoke-EzVm010Guest -Name $sourceName -Script 'set -eu; cat /home/coder/workspace/ezvm010-source.txt; cat /home/coder/workspace/ezvm012-restart.txt').Trim() -replace '
-', "
-"
-        if ($restartCheck -cne ($sentinel + "
-" + $restartSentinel)) { throw 'Normal stop/restart lost mutable guest state.' }
+        $restartCheck = (Invoke-EzVm010Guest -Name $sourceName -Script 'set -eu; cat /home/coder/workspace/ezvm010-source.txt; cat /home/coder/workspace/ezvm012-restart.txt').Trim() -replace '\r\n', [string][char]10
+        if ($restartCheck -cne ($sentinel + [char]10 + $restartSentinel)) { throw 'Normal stop/restart lost mutable guest state.' }
         Write-Host 'EZVM012_REAL_STOP_RESTART_PERSISTENCE=PASS'
     }
     foreach ($operation in @('reset', 'stateful-clone', 'export', 'portability')) {
