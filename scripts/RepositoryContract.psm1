@@ -44,6 +44,12 @@ function Test-EzVmRepositoryContract {
         '.gitattributes',
         '.gitignore',
         '.github/workflows/ci.yml',
+        '.github/workflows/ezvm-012-real-release.yml',
+        '.github/workflows/release.yml',
+        'THIRD-PARTY-NOTICES.md',
+        'docs/GETTING-STARTED.md',
+        'docs/RELEASE-v0.1.0.md',
+        'docs/WHPX-QUALIFICATION.md',
         'docs/programme/IMPLEMENTATION-PROGRAMME.md',
         'docs/rag/README.md',
         'docs/rag/00-PROJECT-CHARTER.md',
@@ -67,9 +73,12 @@ function Test-EzVmRepositoryContract {
         'guest/base-cloud-init/user-data.yaml',
         'tests/Run-Tests.ps1',
         'tests/TestHarness.ps1',
+        'tests/Release.Tests.ps1',
         'tests/tooling.json',
         'scripts/Test-Repository.ps1',
-        'scripts/RepositoryContract.psm1'
+        'scripts/RepositoryContract.psm1',
+        'scripts/New-EzVmReleasePackage.ps1',
+        'scripts/Publish-EzVmGitHubRelease.ps1'
     )
     foreach ($path in $required) {
         if (-not $trackedSet.Contains($path) -or -not (Test-Path -LiteralPath (Join-Path $rootPath $path) -PathType Leaf)) {
@@ -85,6 +94,172 @@ function Test-EzVmRepositoryContract {
         if ($rows.Count -ne 1 -or [int]$rows[0].Groups['issue'].Value -ne ($number + 1)) {
             throw "Programme must contain one coherent issue catalogue row for $code linked to issue #$($number + 1)."
         }
+    }
+
+    $moduleData = Import-PowerShellDataFile -LiteralPath (Join-Path $rootPath 'src/EzVm/EzVm.psd1')
+    if ([string]$moduleData.ModuleVersion -cne '0.1.0' -or [string]$moduleData.PrivateData.EzVmVersion -cne '0.1.0') {
+        throw 'The release branch must expose exactly ezvm 0.1.0 in both module version fields.'
+    }
+
+    $releaseNotes = [IO.File]::ReadAllText((Join-Path $rootPath 'docs/RELEASE-v0.1.0.md'))
+    $qemuPin = [IO.File]::ReadAllText((Join-Path $rootPath 'manifests/qemu-windows.json')) | ConvertFrom-Json -ErrorAction Stop
+    $ubuntuPin = [IO.File]::ReadAllText((Join-Path $rootPath 'manifests/ubuntu-noble-amd64.json')) | ConvertFrom-Json -ErrorAction Stop
+    foreach ($pin in @(
+        [string]$qemuPin.qemu.version,
+        [string]$qemuPin.qemu.providerBuild,
+        [string]$qemuPin.qemu.digest,
+        [string]$qemuPin.extractor.version,
+        [string]$qemuPin.extractor.bootstrap.digest,
+        [string]$qemuPin.extractor.package.digest,
+        [string]$ubuntuPin.publication,
+        [string]$ubuntuPin.sha256
+    )) {
+        if ([string]::IsNullOrWhiteSpace($pin) -or -not $releaseNotes.Contains($pin)) {
+            throw "v0.1.0 release notes do not match reviewed provider pin '$pin'."
+        }
+    }
+    if ($releaseNotes -notmatch 'WHPX execution.*SKIP|WHPX.*capability SKIP') {
+        throw 'v0.1.0 release notes must explicitly record hosted WHPX execution as SKIP.'
+    }
+    $releaseWorkflow = [IO.File]::ReadAllText((Join-Path $rootPath '.github/workflows/release.yml'))
+    if ($releaseWorkflow -notmatch '(?m)^\s*-\s*v0\.1\.0\s*
+    $forbiddenDirectory = '(?i)(^|/)(runtime|\.ezvm|cache|artifacts|TestResults|coverage)(/|$)'
+    $forbiddenExtension = '(?i)\.(qcow2?|img|iso|vhdx?|vmdk|vdi|raw|ova|ovf|dmg|exe|msi|msix|msp|dll|so(?:\.[0-9.]+)?|dylib|bin|zip|7z|rar|tar|tgz|gz|bz2|xz|zst|pem|key|p12|pfx|ppk|token|pid|sock)$'
+    $forbiddenName = '(?i)(^|/)(\.env(?:\..*)?|id_(rsa|dsa|ecdsa|ed25519)|ssh_host_[^/]+_key)$'
+    $privateKeyContent = '(?m)^\s*-{4,5}\s*BEGIN (?:(?:RSA|DSA|EC|OPENSSH|ENCRYPTED) )?PRIVATE KEY\s*-{4,5}|^PuTTY-User-Key-File-[23]:'
+    $jsonCount = 0
+    $powerShellCount = 0
+
+    foreach ($file in $tracked) {
+        if ($file -match $forbiddenDirectory -or $file -match $forbiddenExtension -or $file -match $forbiddenName) {
+            throw "Forbidden generated/binary/secret-like artifact is tracked: $file. Remove it from Git and keep generated state under runtime/."
+        }
+        $absolutePath = Join-Path $rootPath $file
+        if (-not (Test-Path -LiteralPath $absolutePath -PathType Leaf)) {
+            throw "Tracked source file is missing from the working tree: $file"
+        }
+        $item = Get-Item -LiteralPath $absolutePath -Force
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Tracked symbolic links are outside the repository source contract: $file"
+        }
+        if ($item.Length -gt 5MB) {
+            throw "Tracked source exceeds the 5 MiB source-file limit: $file. Keep large generated payloads out of Git."
+        }
+        $bytes = [IO.File]::ReadAllBytes($absolutePath)
+        $signature = [BitConverter]::ToString($bytes, 0, [Math]::Min(8, $bytes.Length))
+        if ($signature -match '^(4D-5A|7F-45-4C-46|51-46-49-FB|50-4B-03-04|37-7A-BC-AF-27-1C|52-61-72-21-1A-07|1F-8B)') {
+            throw "Tracked binary/archive/disk payload has an executable or runtime signature: $file"
+        }
+        $content = [IO.File]::ReadAllText($absolutePath)
+        if ($content.IndexOf([char]0) -ge 0) {
+            throw "Tracked source contains binary NUL data: $file"
+        }
+        if ($content -match $privateKeyContent) {
+            throw "Private-key content is tracked in $file. Remove it from Git and replace any exposed credential."
+        }
+        Assert-EzVmCredentialFreeText -Text $content -Description ('Tracked source ' + $file)
+        $extension = [IO.Path]::GetExtension($file)
+        if ($extension -ieq '.json') {
+            if ([string]::IsNullOrWhiteSpace($content)) { throw "Tracked JSON file is empty: $file" }
+            try { $null = ConvertFrom-Json -InputObject $content -ErrorAction Stop }
+            catch { throw "Tracked JSON cannot be parsed: $file. $($_.Exception.Message)" }
+            $jsonCount++
+        }
+        if ($extension -iin @('.ps1', '.psm1', '.psd1')) {
+            $tokens = $null
+            $parseErrors = $null
+            $null = [Management.Automation.Language.Parser]::ParseFile($absolutePath, [ref]$tokens, [ref]$parseErrors)
+            if (@($parseErrors).Count -ne 0) {
+                throw "Tracked PowerShell source cannot be parsed by PowerShell $($PSVersionTable.PSVersion): $file. $($parseErrors[0].Message)"
+            }
+            $powerShellCount++
+        }
+    }
+
+    $null = & git -C $rootPath rev-parse --verify --quiet HEAD
+    if ($LASTEXITCODE -eq 0) {
+        $null = Invoke-EzVmRepositoryGit -Root $rootPath -Arguments @('show', '--format=', '--check', 'HEAD')
+    }
+    $null = Invoke-EzVmRepositoryGit -Root $rootPath -Arguments @('diff', '--check')
+    $null = Invoke-EzVmRepositoryGit -Root $rootPath -Arguments @('diff', '--cached', '--check')
+    return [pscustomobject]@{
+        TrackedFiles = $tracked.Count
+        JsonFiles = $jsonCount
+        PowerShellFiles = $powerShellCount
+    }
+}
+
+Export-ModuleMember -Function Test-EzVmRepositoryContract
+ -or $releaseWorkflow -notmatch '(?m)^\s*contents:\s*write\s*
+    $forbiddenDirectory = '(?i)(^|/)(runtime|\.ezvm|cache|artifacts|TestResults|coverage)(/|$)'
+    $forbiddenExtension = '(?i)\.(qcow2?|img|iso|vhdx?|vmdk|vdi|raw|ova|ovf|dmg|exe|msi|msix|msp|dll|so(?:\.[0-9.]+)?|dylib|bin|zip|7z|rar|tar|tgz|gz|bz2|xz|zst|pem|key|p12|pfx|ppk|token|pid|sock)$'
+    $forbiddenName = '(?i)(^|/)(\.env(?:\..*)?|id_(rsa|dsa|ecdsa|ed25519)|ssh_host_[^/]+_key)$'
+    $privateKeyContent = '(?m)^\s*-{4,5}\s*BEGIN (?:(?:RSA|DSA|EC|OPENSSH|ENCRYPTED) )?PRIVATE KEY\s*-{4,5}|^PuTTY-User-Key-File-[23]:'
+    $jsonCount = 0
+    $powerShellCount = 0
+
+    foreach ($file in $tracked) {
+        if ($file -match $forbiddenDirectory -or $file -match $forbiddenExtension -or $file -match $forbiddenName) {
+            throw "Forbidden generated/binary/secret-like artifact is tracked: $file. Remove it from Git and keep generated state under runtime/."
+        }
+        $absolutePath = Join-Path $rootPath $file
+        if (-not (Test-Path -LiteralPath $absolutePath -PathType Leaf)) {
+            throw "Tracked source file is missing from the working tree: $file"
+        }
+        $item = Get-Item -LiteralPath $absolutePath -Force
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Tracked symbolic links are outside the repository source contract: $file"
+        }
+        if ($item.Length -gt 5MB) {
+            throw "Tracked source exceeds the 5 MiB source-file limit: $file. Keep large generated payloads out of Git."
+        }
+        $bytes = [IO.File]::ReadAllBytes($absolutePath)
+        $signature = [BitConverter]::ToString($bytes, 0, [Math]::Min(8, $bytes.Length))
+        if ($signature -match '^(4D-5A|7F-45-4C-46|51-46-49-FB|50-4B-03-04|37-7A-BC-AF-27-1C|52-61-72-21-1A-07|1F-8B)') {
+            throw "Tracked binary/archive/disk payload has an executable or runtime signature: $file"
+        }
+        $content = [IO.File]::ReadAllText($absolutePath)
+        if ($content.IndexOf([char]0) -ge 0) {
+            throw "Tracked source contains binary NUL data: $file"
+        }
+        if ($content -match $privateKeyContent) {
+            throw "Private-key content is tracked in $file. Remove it from Git and replace any exposed credential."
+        }
+        Assert-EzVmCredentialFreeText -Text $content -Description ('Tracked source ' + $file)
+        $extension = [IO.Path]::GetExtension($file)
+        if ($extension -ieq '.json') {
+            if ([string]::IsNullOrWhiteSpace($content)) { throw "Tracked JSON file is empty: $file" }
+            try { $null = ConvertFrom-Json -InputObject $content -ErrorAction Stop }
+            catch { throw "Tracked JSON cannot be parsed: $file. $($_.Exception.Message)" }
+            $jsonCount++
+        }
+        if ($extension -iin @('.ps1', '.psm1', '.psd1')) {
+            $tokens = $null
+            $parseErrors = $null
+            $null = [Management.Automation.Language.Parser]::ParseFile($absolutePath, [ref]$tokens, [ref]$parseErrors)
+            if (@($parseErrors).Count -ne 0) {
+                throw "Tracked PowerShell source cannot be parsed by PowerShell $($PSVersionTable.PSVersion): $file. $($parseErrors[0].Message)"
+            }
+            $powerShellCount++
+        }
+    }
+
+    $null = & git -C $rootPath rev-parse --verify --quiet HEAD
+    if ($LASTEXITCODE -eq 0) {
+        $null = Invoke-EzVmRepositoryGit -Root $rootPath -Arguments @('show', '--format=', '--check', 'HEAD')
+    }
+    $null = Invoke-EzVmRepositoryGit -Root $rootPath -Arguments @('diff', '--check')
+    $null = Invoke-EzVmRepositoryGit -Root $rootPath -Arguments @('diff', '--cached', '--check')
+    return [pscustomobject]@{
+        TrackedFiles = $tracked.Count
+        JsonFiles = $jsonCount
+        PowerShellFiles = $powerShellCount
+    }
+}
+
+Export-ModuleMember -Function Test-EzVmRepositoryContract
+) {
+        throw 'Release workflow must be restricted to the v0.1.0 tag and have explicit contents: write publication permission.'
     }
 
     $forbiddenDirectory = '(?i)(^|/)(runtime|\.ezvm|cache|artifacts|TestResults|coverage)(/|$)'
