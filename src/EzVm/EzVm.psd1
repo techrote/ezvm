@@ -3,7 +3,7 @@
     ModuleVersion = '0.1.0'
     GUID = '2e0b7e67-36f3-4e77-96c8-8d40296b7abd'
     Author = 'ezvm contributors'
-    Description = 'Portable Windows QEMU environment manager: control-plane foundation.'
+    Description = 'Portable Windows QEMU + QCOW2 coding-environment manager.'
     PowerShellVersion = '5.1'
     FunctionsToExport = @(
         'Get-EzVmVersion',
