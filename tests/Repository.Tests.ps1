@@ -11,7 +11,7 @@ function New-EzVmRepositoryFixture {
 
     $root = New-EzVmTestDirectory -Prefix 'tracked repository fixture'
     try {
-        foreach ($relative in @('.github', '.gitattributes', '.gitignore', 'README.md', 'AGENTS.md', 'docs', 'ezvm.ps1', 'src', 'config', 'manifests', 'guest', 'tests', 'scripts')) {
+        foreach ($relative in @('.github', '.gitattributes', '.gitignore', 'README.md', 'AGENTS.md', 'THIRD-PARTY-NOTICES.md', 'docs', 'ezvm.ps1', 'src', 'config', 'manifests', 'guest', 'tests', 'scripts')) {
             Copy-Item -LiteralPath (Join-Path $script:EzVmRepositoryRoot $relative) -Destination $root -Recurse -Force
         }
         if ($UseCrlf) {
