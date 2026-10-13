@@ -43,8 +43,8 @@ $trackedText = ((& git -C $rootPath -c core.quotepath=false ls-files --cached -z
 if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate tracked release source.' }
 $tracked = @($trackedText.Split([char[]]@([char]0), [StringSplitOptions]::RemoveEmptyEntries))
 
-$rootFiles = @('ezvm.ps1', 'README.md', 'AGENTS.md', 'THIRD-PARTY-NOTICES.md', '.gitignore', '.gitattributes')
-$prefixes = @('config/', 'docs/', 'guest/', 'manifests/', 'scripts/', 'src/')
+$rootFiles = @('ezvm.ps1', 'README.md', 'THIRD-PARTY-NOTICES.md')
+$prefixes = @('config/', 'docs/', 'guest/', 'manifests/', 'src/')
 $selected = New-Object 'System.Collections.Generic.List[string]'
 foreach ($relative in $tracked) {
     $include = $rootFiles -ccontains $relative
