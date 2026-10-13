@@ -479,8 +479,11 @@ minimal contents: write permission required to publish a GitHub release. Before
 publication it fetches current main and refuses a tag that does not point at the
 accepted main commit, reruns the repository contract, verifies public version
 0.1.0 and rebuilds the deterministic package. The publisher refuses to mutate an
-already-existing release and uploads only the versioned source ZIP and SHA-256
-sidecar. The release body is prefixed with the exact tag target commit.
+already-existing release, independently verifies the ZIP against its SHA-256
+sidecar, and creates the GitHub release as a draft. It uploads exactly the
+versioned source ZIP and checksum sidecar and publishes the release only after
+both uploads are confirmed; an upload failure leaves a non-public draft for
+inspection. The release body is prefixed with the exact tag target commit.
 
 Creating or pushing the v0.1.0 tag is not part of ordinary PR CI. If the active
 automation connection cannot create that Git ref, the repository must be left
