@@ -306,3 +306,28 @@ read-only; deep inspection may create/reuse a coordination lock. Reset barriers,
 original disks and staging are preserved when recovery is ambiguous. Detailed
 recovery procedures and legacy-QEMU rebootstrap are in
 [TROUBLESHOOTING.md](../TROUBLESHOOTING.md).
+
+
+## v0.1 release-package boundary
+
+The normal v0.1.0 release ZIP is a source/control-plane artifact, not a portable
+runtime bundle. It may contain tracked first-party PowerShell, configuration,
+guest recipes, reviewed provider manifests, documentation and the third-party
+provenance notice. It must not contain downloaded QEMU/7-Zip executables,
+Ubuntu images, prepared bases, overlays, runtime state, host SSH keys, user
+credentials, caches, logs or arbitrary exported guest state.
+
+Release packaging is derived from the clean tracked Git tree rather than a
+recursive copy of the working directory. The package records the exact source
+commit/tree and per-file SHA-256 values and is built deterministically. This
+boundary is distinct from supported cold portability: a user's complete,
+already-bootstrapped ezvm working directory can include sensitive runtime state
+and may be copied only after every guest is positively stopped and the bundle
+passes portability validation.
+
+The release publisher accepts only the fixed v0.1.0 tag workflow, verifies that
+the tag target is the accepted current main commit, and uploads only the
+deterministic source ZIP plus its checksum sidecar. Provider binaries continue to
+be acquired from the reviewed upstream locations and verified against repository
+pins. Release notes and THIRD-PARTY-NOTICES.md identify those providers without
+claiming ownership of or rebundling their payloads.
