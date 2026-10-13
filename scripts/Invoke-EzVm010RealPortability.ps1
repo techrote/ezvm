@@ -105,16 +105,16 @@ function Assert-EzVm012Doctor {
     param([switch]$RequireManagedQemu)
     $report = Get-EzVmDoctorReport -Root $Root
     if ([bool]$report.whpxExecutionTested) { throw 'doctor must not claim WHPX execution without an actual accelerator run.' }
-    $host = @($report.checks | Where-Object { $_.name -ceq 'host-os' })
+    $hostCheck = @($report.checks | Where-Object { $_.name -ceq 'host-os' })
     $managed = @($report.checks | Where-Object { $_.name -ceq 'managed-qemu' })
-    if ($host.Count -ne 1 -or $managed.Count -ne 1) { throw 'doctor omitted required host or managed-QEMU evidence.' }
+    if ($hostCheck.Count -ne 1 -or $managed.Count -ne 1) { throw 'doctor omitted required host or managed-QEMU evidence.' }
     if ($RequireManagedQemu) {
         if ($managed[0].status -cne 'ready') { throw 'doctor did not validate the reviewed managed QEMU runtime after bootstrap/relocation.' }
     }
     elseif ($managed[0].status -ceq 'ready') {
         throw 'Fresh release qualification root unexpectedly contained a pre-bootstrapped QEMU runtime.'
     }
-    Write-Host ('EZVM012_DOCTOR=status=' + $report.status + '; host=' + $host[0].status + '; managed-qemu=' + $managed[0].status + '; whpxExecutionTested=' + $report.whpxExecutionTested)
+    Write-Host ('EZVM012_DOCTOR=status=' + $report.status + '; host=' + $hostCheck[0].status + '; managed-qemu=' + $managed[0].status + '; whpxExecutionTested=' + $report.whpxExecutionTested)
     return $report
 }
 
