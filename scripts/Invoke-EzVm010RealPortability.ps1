@@ -391,7 +391,7 @@ sync
     Start-EzVm010Guest -Name $sourceName
     $resetFacts = Get-EzVm010GuestFacts -Name $sourceName
     Assert-EzVm010NewIdentity -Original $sourceFacts -Copy $resetFacts
-    $null = Invoke-EzVm010Guest -Name $sourceName -Script 'set -eu; test ! -e /home/coder/workspace/ezvm010-source.txt; test ! -e /home/coder/.config/ezvm-portability-fixture/auth.json; test ! -e /home/coder/.ssh/id_ezvm_portability_fixture'
+    $null = Invoke-EzVm010Guest -Name $sourceName -Script 'set -eu; test ! -e /home/coder/workspace/ezvm010-source.txt; test ! -e /home/coder/workspace/ezvm012-restart.txt; test ! -e /home/coder/.config/ezvm-portability-fixture/auth.json; test ! -e /home/coder/.ssh/id_ezvm_portability_fixture'
     Stop-EzVm010Guest -Name $sourceName
     Write-Host 'EZVM010_REAL_RESET_PRISTINE_READY=PASS'
 
@@ -400,8 +400,9 @@ sync
     $cloneFacts = Get-EzVm010GuestFacts -Name $cloneName
     Assert-EzVm010NewIdentity -Original $sourceFacts -Copy $cloneFacts
     Assert-EzVm010PreservedSyntheticState -Original $sourceFacts -Copy $cloneFacts
-    $preserved = Invoke-EzVm010Guest -Name $cloneName -Script 'cat /home/coder/workspace/ezvm010-source.txt'
-    if ($preserved.Trim() -cne $sentinel) { throw 'Stateful clone lost source workspace data after source reset.' }
+    $preserved = Invoke-EzVm010Guest -Name $cloneName -Script 'set -eu; cat /home/coder/workspace/ezvm010-source.txt; if test -e /home/coder/workspace/ezvm012-restart.txt; then cat /home/coder/workspace/ezvm012-restart.txt; fi'
+    $expectedCloneSource = if ($ReleaseQualification) { $sentinel + [char]10 + $restartSentinel } else { $sentinel }
+    if (($preserved.Trim() -replace '\r\n', [string][char]10) -cne $expectedCloneSource) { throw 'Stateful clone lost source workspace data after source reset.' }
     $null = Invoke-EzVm010Guest -Name $cloneName -Script ("set -eu; printf '%s\n' '" + $cloneSentinel + "' > /home/coder/workspace/ezvm010-clone.txt; sync")
     Stop-EzVm010Guest -Name $cloneName
     Write-Host 'EZVM010_REAL_STATEFUL_NEW_IDENTITY_AND_CONTENT=PASS'
@@ -412,8 +413,9 @@ sync
     Assert-EzVm010NewIdentity -Original $sourceFacts -Copy $importFacts
     Assert-EzVm010NewIdentity -Original $cloneFacts -Copy $importFacts
     Assert-EzVm010PreservedSyntheticState -Original $sourceFacts -Copy $importFacts
-    $preserved = Invoke-EzVm010Guest -Name $importName -Script 'set -eu; test ! -e /home/coder/workspace/ezvm010-clone.txt; cat /home/coder/workspace/ezvm010-source.txt'
-    if ($preserved.Trim() -cne $sentinel) { throw 'Imported guest did not preserve exactly the exported source state.' }
+    $preserved = Invoke-EzVm010Guest -Name $importName -Script 'set -eu; test ! -e /home/coder/workspace/ezvm010-clone.txt; cat /home/coder/workspace/ezvm010-source.txt; if test -e /home/coder/workspace/ezvm012-restart.txt; then cat /home/coder/workspace/ezvm012-restart.txt; fi'
+    $expectedImported = if ($ReleaseQualification) { $sentinel + [char]10 + $restartSentinel } else { $sentinel }
+    if (($preserved.Trim() -replace '\r\n', [string][char]10) -cne $expectedImported) { throw 'Imported guest did not preserve exactly the exported source state.' }
     Stop-EzVm010Guest -Name $importName
     Write-Host 'EZVM010_REAL_IMPORTED_NEW_IDENTITY_AND_CONTENT=PASS'
 
@@ -455,8 +457,9 @@ sync
     if ($movedFacts.machineId -cne $cloneFacts.machineId -or $movedFacts.hostKey -cne $cloneFacts.hostKey -or $movedFacts.identity.cloudInstanceId -cne $cloneFacts.identity.cloudInstanceId) {
         throw 'A normal relocated restart unexpectedly changed stable guest identity.'
     }
-    $preserved = Invoke-EzVm010Guest -Name $cloneName -Script 'set -eu; cat /home/coder/workspace/ezvm010-source.txt; cat /home/coder/workspace/ezvm010-clone.txt'
-    if (($preserved.Trim() -replace '\r\n', "`n") -cne ($sentinel + "`n" + $cloneSentinel)) { throw 'Relocated guest did not preserve source and independent clone changes.' }
+    $preserved = Invoke-EzVm010Guest -Name $cloneName -Script 'set -eu; cat /home/coder/workspace/ezvm010-source.txt; if test -e /home/coder/workspace/ezvm012-restart.txt; then cat /home/coder/workspace/ezvm012-restart.txt; fi; cat /home/coder/workspace/ezvm010-clone.txt'
+    $expectedRelocated = if ($ReleaseQualification) { $sentinel + [char]10 + $restartSentinel + [char]10 + $cloneSentinel } else { $sentinel + [char]10 + $cloneSentinel }
+    if (($preserved.Trim() -replace '\r\n', [string][char]10) -cne $expectedRelocated) { throw 'Relocated guest did not preserve source and independent clone changes.' }
     $runtime = Get-Content -LiteralPath (Get-EzVmInstanceRuntimePaths -Root $Root -InstanceName $cloneName).Runtime -Raw | ConvertFrom-Json
     if (-not ([string]$runtime.qemuExecutable).StartsWith($rootB + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Relocated launch retained the old absolute QEMU path.' }
     Stop-EzVm010Guest -Name $cloneName
