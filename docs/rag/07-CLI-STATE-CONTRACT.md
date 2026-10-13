@@ -12,7 +12,7 @@ The public path must work under Windows PowerShell 5.1. PowerShell 7 compatibili
 
 ## Implemented foundation (EZVM-001)
 
-The initial source version is `0.0.0-dev`; v0.1 is reserved for the release gate.
+The initial source version was `0.0.0-dev`. EZVM-012 sets the accepted release version to `0.1.0`; pre-release history remains relevant only when interpreting older evidence.
 The entry point imports `src/EzVm/EzVm.psd1`. The module explicitly loads separate
 CLI, path, configuration, JSON and process source files.
 
