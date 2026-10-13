@@ -94,3 +94,23 @@ Add-EzVmTest -Name 'Release: deterministic package is source-only, self-describi
         Remove-EzVmTestDirectory $extract
     }
 }
+
+
+Add-EzVmTest -Name 'Release: publisher stages a draft and requires the exact verified asset pair' -ScriptBlock {
+    $root = $script:EzVmRepositoryRoot
+    $publisher = [IO.File]::ReadAllText((Join-Path $root 'scripts/Publish-EzVmGitHubRelease.ps1'))
+    $workflow = [IO.File]::ReadAllText((Join-Path $root '.github/workflows/release.yml'))
+
+    foreach ($requiredText in @(
+        'draft = $true',
+        'draft = $false',
+        'remains a draft',
+        'Release checksum sidecar does not match the exact ZIP bytes',
+        'AssetCount = 2'
+    )) {
+        Assert-EzVmTrue -Condition $publisher.Contains($requiredText) -Message ('Release publisher safety contract omitted: ' + $requiredText)
+    }
+    Assert-EzVmTrue -Condition ($workflow -match '(?m)^\s*-\s*v0\.1\.0\s*$') -Message 'Release workflow must remain tag-only for v0.1.0.'
+    Assert-EzVmTrue -Condition $workflow.Contains('Release tag must point at current accepted main.') -Message 'Release workflow must refuse a tag that is not current accepted main.'
+    Assert-EzVmTrue -Condition $workflow.Contains('Publish-EzVmGitHubRelease.ps1') -Message 'Release workflow must use the reviewed guarded publisher.'
+}
