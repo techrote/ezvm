@@ -217,6 +217,7 @@ Add-EzVmTest -Name 'QEMU: managed tool resolution is absolute and independent of
     $oldPath = $env:PATH
     try {
         $fixture = New-EzVmQemuFixture -Root $root
+        [IO.File]::Copy($fixture.ManifestPath, (Get-EzVmPaths -Root $root).QemuManifest, $true)
         $hooks = New-EzVmQemuFixtureHooks -Fixture $fixture
         $null = Install-EzVmQemuRuntime -Root $root -ManifestPath $fixture.ManifestPath -Downloader $hooks.Downloader -ExtractorBootstrapper $hooks.ExtractorBootstrapper -QemuExpander $hooks.QemuExpander -PayloadProbe $hooks.PayloadProbe
         $env:PATH = ''

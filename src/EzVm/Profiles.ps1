@@ -55,12 +55,13 @@ function Get-EzVmCodingProfile {
     }
 
     $utf8 = New-Object Text.UTF8Encoding($false, $true)
-    $manifestJson = [IO.File]::ReadAllText($manifestPath, $utf8).Replace("`r`n", "`n").Replace("`r", "`n").TrimEnd([char[]]@([char]10)) + "`n"
-    $guestScript = [IO.File]::ReadAllText($scriptPath, $utf8).Replace("`r`n", "`n").Replace("`r", "`n").TrimEnd([char[]]@([char]10)) + "`n"
+    $manifestJson = (Read-EzVmBoundedText -Path $manifestPath -MaximumBytes 65536).Replace("`r`n", "`n").Replace("`r", "`n").TrimEnd([char[]]@([char]10)) + "`n"
+    $guestScript = (Read-EzVmBoundedText -Path $scriptPath -MaximumBytes 1048576).Replace("`r`n", "`n").Replace("`r", "`n").TrimEnd([char[]]@([char]10)) + "`n"
     if (-not $guestScript.StartsWith("#!/bin/sh`n", [StringComparison]::Ordinal)) {
         throw 'Coding profile provision.sh must be a reviewed POSIX shell script.'
     }
     foreach ($content in @($manifestJson, $guestScript)) {
+        Assert-EzVmCredentialFreeText -Text $content -Description 'Coding profile source'
         if ($content.IndexOf([char]0) -ge 0 -or
             $content -match '(?im)BEGIN .*PRIVATE KEY|OPENSSH PRIVATE KEY|github_pat_|ghp_[A-Za-z0-9]|__[A-Z0-9_]+__') {
             throw 'Coding profile source contains a binary NUL, unresolved placeholder or credential-like material.'

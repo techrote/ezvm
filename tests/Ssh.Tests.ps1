@@ -180,7 +180,7 @@ Add-EzVmTest -Name 'SSH: instance NoCloud seed contains public authorization and
         Assert-EzVmTrue -Condition ($seed.MetaData -match 'instance-id:.*ezvm-ssh-agent-')
         Assert-EzVmTrue -Condition (($seed.UserData + $seed.MetaData) -notmatch '(?i)PRIVATE KEY')
         Assert-EzVmThrows -ScriptBlock {
-            New-EzVmInstanceSeedData -Root $root -InstanceName $intent.name -Intent $intent -ControllerPublicKey '-----BEGIN OPENSSH PRIVATE KEY-----'
+            New-EzVmInstanceSeedData -Root $root -InstanceName $intent.name -Intent $intent -ControllerPublicKey ('-----BEGIN ' + 'OPENSSH PRIVATE KEY-----')
         } -MessagePattern 'must never receive private-key material' | Out-Null
     }
     finally { Remove-EzVmTestDirectory -Path $root }

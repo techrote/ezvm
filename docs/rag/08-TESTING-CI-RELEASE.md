@@ -403,3 +403,25 @@ TCG proves orchestration and correctness, not WHPX performance. Source tests and
 the presence of this workflow are not acceptance evidence: retain the actual
 successful run URL and exact tested commit before claiming the real scenario
 passed. Only synthetic content is used; no vendor credentials are involved.
+
+## EZVM-011 hardening qualification
+
+`Security.Tests.ps1` and `Recovery.Tests.ps1` add executable negative coverage
+for cache/JSON redirection, dangling links and ancestor escape, safe cleanup,
+Windows ADS/device spellings, exact ACL/hard-link refusal, public/private pairing,
+staged transfer failure, installed executable/DLL/firmware tampering, legacy
+receipt refusal, acquisition-stage revalidation, token-free base inputs,
+bounded seed lifetime/client/log state, diagnostic redaction and preserved
+reset/staging evidence. Existing storage/portability tests retain running-image,
+PID reuse, interrupted replacement and one-level-chain coverage. Both required
+Windows PowerShell lanes run the Windows-only cases; non-Windows skips are not
+Windows qualification.
+
+The owner-approved expensive qualification runs the existing complete real
+portability scenario with `-SecurityQualification` on Avrea Windows 2025 8-vCPU.
+It retains all twelve acceptance markers and the 2400-second build / 900-second
+READY bounds. Additional checks use actual SSH/SCP for a binary file round trip,
+preserve an existing host destination after remote transfer failure, reject
+copying into managed runtime, and refuse diagnostic image checking while running.
+No real credentials, uploaded disks or relaxed acceptance thresholds are involved.
+WHPX execution remains explicitly SKIP; TCG is not WHPX qualification.

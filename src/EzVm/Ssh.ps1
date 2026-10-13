@@ -92,8 +92,9 @@ function Write-EzVmSshTextAtomically {
         [AllowEmptyString()][string]$Content = ''
     )
 
-    $fullPath = [IO.Path]::GetFullPath($Path)
+    $fullPath = Assert-EzVmSafePath -Path $Path -Description 'SSH state publication'
     $directory = [IO.Path]::GetDirectoryName($fullPath)
+    $null = Assert-EzVmSafePath -Path $directory -Description 'SSH managed directory'
     [void][IO.Directory]::CreateDirectory($directory)
     $temporary = Join-Path $directory ('.' + [IO.Path]::GetFileName($fullPath) + '.tmp-' + [Guid]::NewGuid().ToString('N'))
     try {
@@ -106,6 +107,7 @@ function Write-EzVmSshTextAtomically {
         }
         finally { $stream.Dispose() }
 
+        $null = Assert-EzVmSafePath -Path $fullPath -Description 'SSH state publication'
         if (Test-Path -LiteralPath $fullPath -PathType Leaf) {
             [IO.File]::Replace($temporary, $fullPath, [System.Management.Automation.Language.NullString]::Value)
         }
@@ -116,119 +118,6 @@ function Write-EzVmSshTextAtomically {
     catch {
         if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue }
         throw
-    }
-}
-
-function Protect-EzVmControllerPrivateKey {
-    param(
-        [Parameter(Mandatory = $true)][string]$Path,
-        [AllowNull()][object]$ProcessRunner = $null
-    )
-
-    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return }
-    $systemRoot = [Environment]::GetEnvironmentVariable('SystemRoot')
-    if ([string]::IsNullOrWhiteSpace($systemRoot)) {
-        throw 'Cannot restrict the controller private-key ACL because SystemRoot is unavailable.'
-    }
-    $icacls = Join-Path $systemRoot 'System32\icacls.exe'
-    if (-not (Test-Path -LiteralPath $icacls -PathType Leaf)) {
-        throw "Cannot restrict the controller private-key ACL because '$icacls' is unavailable."
-    }
-    $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-    $arguments = @(
-        [IO.Path]::GetFullPath($Path),
-        '/inheritance:r',
-        '/grant:r',
-        ('*' + $sid + ':(F)')
-    )
-    $result = if ($null -ne $ProcessRunner) {
-        & $ProcessRunner $icacls $arguments 15
-    } else {
-        Invoke-EzVmProcess -FilePath $icacls -ArgumentList $arguments -TimeoutSeconds 15
-    }
-    if ($null -eq $result -or [int]$result.ExitCode -ne 0) {
-        $detail = if ($null -ne $result) { [string]$result.StdErr } else { '' }
-        throw "Failed to restrict the ezvm controller private-key ACL. $detail"
-    }
-}
-
-function Get-EzVmControllerSshIdentity {
-    [CmdletBinding()]
-    param(
-        [string]$Root = $script:EzVmDefaultRoot,
-        [AllowNull()][object]$Tooling = $null,
-        [scriptblock]$ProcessRunner
-    )
-
-    $Tooling = Assert-EzVmOpenSshTools -Tooling $Tooling
-    $paths = Get-EzVmSshPaths -Root $Root
-    [void][IO.Directory]::CreateDirectory($paths.KeysDirectory)
-    $privateExists = Test-Path -LiteralPath $paths.ControllerPrivateKey -PathType Leaf
-    $publicExists = Test-Path -LiteralPath $paths.ControllerPublicKey -PathType Leaf
-    $createdThisCall = $false
-
-    if (-not $privateExists -and $publicExists) {
-        throw "The ezvm controller public key exists without its private key at '$($paths.ControllerPrivateKey)'. Restore the matching private key or remove the orphan public key deliberately before generating a new controller identity."
-    }
-
-    if (-not $privateExists) {
-        $arguments = @('-q', '-t', 'ed25519', '-N', '', '-C', 'ezvm-controller', '-f', $paths.ControllerPrivateKey)
-        $result = if ($null -ne $ProcessRunner) {
-            & $ProcessRunner $Tooling.Keygen $arguments 30
-        } else {
-            Invoke-EzVmProcess -FilePath $Tooling.Keygen -ArgumentList $arguments -TimeoutSeconds 30
-        }
-        if ($null -eq $result -or [int]$result.ExitCode -ne 0) {
-            $detail = if ($null -ne $result) { [string]$result.StdErr } else { '' }
-            throw "ssh-keygen could not create the ezvm controller keypair. $detail"
-        }
-        $createdThisCall = $true
-        $privateExists = Test-Path -LiteralPath $paths.ControllerPrivateKey -PathType Leaf
-        $publicExists = Test-Path -LiteralPath $paths.ControllerPublicKey -PathType Leaf
-        if (-not $privateExists -or -not $publicExists) {
-            foreach ($path in @($paths.ControllerPrivateKey, $paths.ControllerPublicKey)) {
-                if (Test-Path -LiteralPath $path -PathType Leaf) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
-            }
-            throw 'ssh-keygen reported success but did not create both controller key files.'
-        }
-    }
-
-    try {
-        Protect-EzVmControllerPrivateKey -Path $paths.ControllerPrivateKey -ProcessRunner $ProcessRunner
-    }
-    catch {
-        if ($createdThisCall) {
-            foreach ($path in @($paths.ControllerPrivateKey, $paths.ControllerPublicKey)) {
-                if (Test-Path -LiteralPath $path -PathType Leaf) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
-            }
-        }
-        throw
-    }
-
-    if (-not $publicExists) {
-        $arguments = @('-y', '-f', $paths.ControllerPrivateKey)
-        $result = if ($null -ne $ProcessRunner) {
-            & $ProcessRunner $Tooling.Keygen $arguments 30
-        } else {
-            Invoke-EzVmProcess -FilePath $Tooling.Keygen -ArgumentList $arguments -TimeoutSeconds 30
-        }
-        if ($null -eq $result -or [int]$result.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace([string]$result.StdOut)) {
-            throw 'The controller public key is missing and could not be reconstructed from the private key.'
-        }
-        Write-EzVmSshTextAtomically -Path $paths.ControllerPublicKey -Content ($result.StdOut.Trim() + ' ezvm-controller' + [Environment]::NewLine)
-    }
-
-    $publicKey = [IO.File]::ReadAllText($paths.ControllerPublicKey, (New-Object Text.UTF8Encoding($false, $true))).Trim()
-    if ($publicKey -cnotmatch '^ssh-ed25519 [A-Za-z0-9+/]+={0,2}(?: [^\r\n]*)?$') {
-        throw 'The ezvm controller public key is not a single valid-looking Ed25519 OpenSSH public-key line.'
-    }
-    if ($publicKey -match '(?i)PRIVATE KEY') {
-        throw 'The controller public-key file contains private-key material; refusing to use it.'
-    }
-    return [pscustomobject][ordered]@{
-        PrivateKey = $paths.ControllerPrivateKey
-        PublicKey = $paths.ControllerPublicKey
-        PublicKeyText = $publicKey
     }
 }
 
@@ -765,6 +654,7 @@ function Enter-EzVmSshAllocationLock {
 
     $paths = Get-EzVmPaths -Root $Root
     $null = Assert-EzVmStorageManagedPath -Path $paths.Locks -ContainmentRoot $paths.Runtime -SafetyRoot $paths.Root -Description 'SSH allocation lock directory'
+    $null = Assert-EzVmSafePath -Path $paths.Locks -Description 'SSH managed directory'
     [void][IO.Directory]::CreateDirectory($paths.Locks)
     $null = Assert-EzVmStorageManagedPath -Path $paths.Locks -ContainmentRoot $paths.Runtime -SafetyRoot $paths.Root -Description 'SSH allocation lock directory' -RequireDirectory
     $lockPath = Join-Path $paths.Locks 'ssh-port-allocation.lock'
@@ -929,6 +819,10 @@ function New-EzVmScpCommandArguments {
         '-P', [string]$Port,
         '-i', [IO.Path]::GetFullPath($PrivateKey),
         '-o', 'IdentitiesOnly=yes',
+        '-o', 'BatchMode=yes',
+        '-o', 'NumberOfPasswordPrompts=0',
+        '-o', 'ConnectionAttempts=1',
+        '-o', 'ConnectTimeout=15',
         '-o', 'StrictHostKeyChecking=yes',
         '-o', 'UpdateHostKeys=no',
         '-o', 'HostKeyAlgorithms=ssh-ed25519',
@@ -964,6 +858,7 @@ function New-EzVmEmptyCandidateKnownHosts {
     )
 
     $paths = Get-EzVmSshPaths -Root $Root -InstanceName $InstanceName
+    $null = Assert-EzVmSafePath -Path $paths.KnownHostsDirectory -Description 'SSH managed directory'
     [void][IO.Directory]::CreateDirectory($paths.KnownHostsDirectory)
     $candidate = Join-Path $paths.KnownHostsDirectory ('.' + $InstanceName + '.' + $LaunchId + '.candidate')
     Write-EzVmSshTextAtomically -Path $candidate -Content ''
@@ -982,7 +877,7 @@ function Assert-EzVmCandidateKnownHostsEntry {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         throw 'SSH did not create the launch-local host-key candidate.'
     }
-    $lines = @([IO.File]::ReadAllLines($Path) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and -not $_.TrimStart().StartsWith('#') })
+    $lines = @(((Read-EzVmBoundedText -Path $Path -MaximumBytes 65536) -split '\r?\n') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and -not $_.TrimStart().StartsWith('#') })
     if ($lines.Count -ne 1) {
         throw 'Launch-local SSH host-key candidate must contain exactly one managed Ed25519 entry.'
     }
@@ -1004,6 +899,7 @@ function New-EzVmCandidateKnownHosts {
     )
 
     $paths = Get-EzVmSshPaths -Root $Root -InstanceName $InstanceName
+    $null = Assert-EzVmSafePath -Path $paths.KnownHostsDirectory -Description 'SSH managed directory'
     [void][IO.Directory]::CreateDirectory($paths.KnownHostsDirectory)
     $scanned = Get-EzVmKnownHostKeyMaterial -Line $ScannedLine
     $expectedHost = '[127.0.0.1]:' + $Port
@@ -1014,7 +910,7 @@ function New-EzVmCandidateKnownHosts {
     $existingMaterial = $null
     $changed = $false
     if (Test-Path -LiteralPath $paths.InstanceKnownHosts -PathType Leaf) {
-        $existingLines = @([IO.File]::ReadAllLines($paths.InstanceKnownHosts) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and -not $_.TrimStart().StartsWith('#') })
+        $existingLines = @(((Read-EzVmBoundedText -Path $paths.InstanceKnownHosts -MaximumBytes 65536) -split '\r?\n') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and -not $_.TrimStart().StartsWith('#') })
         if ($existingLines.Count -ne 1) {
             throw "Managed known-hosts state for instance '$InstanceName' is malformed; refusing to weaken host-key verification."
         }
@@ -1027,7 +923,7 @@ function New-EzVmCandidateKnownHosts {
     # existing managed entry untouched and use this launch-local candidate only
     # for the authenticated identity/readiness proof. Promotion happens later.
     $candidate = Join-Path $paths.KnownHostsDirectory ('.' + $InstanceName + '.' + $LaunchId + '.candidate')
-    [IO.File]::WriteAllText($candidate, ($ScannedLine.Trim() + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
+    Write-EzVmSshTextAtomically -Path $candidate -Content ($ScannedLine.Trim() + [Environment]::NewLine)
     return [pscustomobject][ordered]@{
         Candidate = [IO.Path]::GetFullPath($candidate)
         Managed = $paths.InstanceKnownHosts
@@ -1112,7 +1008,7 @@ function Publish-EzVmSshLaunchAccess {
         $knownHostsText = $null
         if ($State -ceq 'READY') {
             $null = Assert-EzVmCandidateKnownHostsEntry -Path $CandidateKnownHosts.Candidate -Port ([int]$Access.sshPort)
-            $knownHostsText = [IO.File]::ReadAllText($CandidateKnownHosts.Candidate)
+            $knownHostsText = (Read-EzVmBoundedText -Path $CandidateKnownHosts.Candidate -MaximumBytes 65536)
             # Lock acquisition and process reconciliation consume the same
             # readiness budget as the live proof, before either file changes.
             if ([DateTime]::UtcNow -ge $DeadlineUtc) {
@@ -1611,7 +1507,7 @@ function Wait-EzVmSshReady {
                     $lastError = 'destination guest identity initialization is pending; copied source READY cannot authorize access. Confirm cloud-init is enabled with automatic cache checking if this persists.'
                     # The source host key can answer briefly before the new
                     # seed rotates it. Discard only unpromoted launch evidence.
-                    Remove-Item -LiteralPath $candidate.Candidate -Force -ErrorAction SilentlyContinue
+                    $null = Assert-EzVmSafePath -Path $candidate.Candidate -Description 'SSH candidate cleanup'; Remove-Item -LiteralPath $candidate.Candidate -Force -ErrorAction SilentlyContinue
                     $candidate = $null
                 }
                 elseif ([int]$result.ExitCode -eq 255 -or [int]$result.ExitCode -eq -1) {
@@ -1621,7 +1517,7 @@ function Wait-EzVmSshReady {
                     # the signed -1 value. Neither result proves readiness.
                     $lastError = "SSH authentication/transport is not ready: $([string]$result.StdErr)"
                     if ($initializationEnabled) {
-                        Remove-Item -LiteralPath $candidate.Candidate -Force -ErrorAction SilentlyContinue
+                        $null = Assert-EzVmSafePath -Path $candidate.Candidate -Description 'SSH candidate cleanup'; Remove-Item -LiteralPath $candidate.Candidate -Force -ErrorAction SilentlyContinue
                         $candidate = $null
                     }
                 }
@@ -1640,7 +1536,7 @@ function Wait-EzVmSshReady {
     }
     finally {
         if ($null -ne $candidate -and (Test-Path -LiteralPath $candidate.Candidate)) {
-            Remove-Item -LiteralPath $candidate.Candidate -Force -ErrorAction SilentlyContinue
+            $null = Assert-EzVmSafePath -Path $candidate.Candidate -Description 'SSH candidate cleanup'; Remove-Item -LiteralPath $candidate.Candidate -Force -ErrorAction SilentlyContinue
         }
     }
 }
@@ -1837,7 +1733,10 @@ function Invoke-EzVmCopyToGuest {
         [scriptblock]$ProcessProvider,
         [scriptblock]$ScpRunner
     )
-    $fullHostPath = [IO.Path]::GetFullPath($HostPath)
+    $fullHostPath = Assert-EzVmSafePath -Path $HostPath -Description 'Host transfer path'
+    if (Test-EzVmStoragePathInside -Path $fullHostPath -Directory (Get-EzVmPaths -Root $Root).Keys) {
+        throw 'Host controller-key state must not be transferred into a guest. Use guest-specific outbound credentials instead.'
+    }
     if (-not (Test-Path -LiteralPath $fullHostPath -PathType Leaf)) {
         throw "Host source file '$fullHostPath' does not exist; copy-to transfers one file."
     }
@@ -1863,18 +1762,37 @@ function Invoke-EzVmCopyFromGuest {
         [scriptblock]$ProcessProvider,
         [scriptblock]$ScpRunner
     )
-    $fullHostPath = [IO.Path]::GetFullPath($HostPath)
+    $fullHostPath = Assert-EzVmSafePath -Path $HostPath -Description 'Host transfer path'
     $parent = [IO.Path]::GetDirectoryName($fullHostPath)
     if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
         throw "Host destination directory '$parent' does not exist."
     }
+    if (Test-EzVmStoragePathInside -Path $fullHostPath -Directory (Get-EzVmPaths -Root $Root).Runtime) {
+        throw 'copy-from cannot replace managed runtime state, keys or immutable images. Choose a separate host output directory.'
+    }
+    if (Test-Path -LiteralPath $fullHostPath -PathType Container) { throw 'copy-from requires one explicit host filename, not a directory.' }
     $access = Get-EzVmSshAccessState -Root $Root -InstanceName $InstanceName -RequireReady -ProcessProvider $ProcessProvider
     $tooling = Assert-EzVmOpenSshTools
     $identity = Get-EzVmControllerSshIdentity -Root $Root -Tooling $tooling
     $knownHosts = (Get-EzVmSshPaths -Root $Root -InstanceName $InstanceName).InstanceKnownHosts
     $remote = [string]$access.sshUser + '@127.0.0.1:' + $GuestPath
-    $arguments = New-EzVmScpCommandArguments -PrivateKey $identity.PrivateKey -KnownHosts $knownHosts -Port ([int]$access.sshPort) -Source $remote -Destination $fullHostPath
-    $result = if ($null -ne $ScpRunner) { & $ScpRunner $tooling.Scp $arguments $TimeoutSeconds } else { Invoke-EzVmProcess -FilePath $tooling.Scp -ArgumentList $arguments -TimeoutSeconds $TimeoutSeconds }
-    if ([int]$result.ExitCode -ne 0) { throw "copy-from failed with scp exit code $($result.ExitCode): $([string]$result.StdErr)" }
+    $temporary = Join-Path $parent ('.ezvm-copy-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+    try {
+        $arguments = New-EzVmScpCommandArguments -PrivateKey $identity.PrivateKey -KnownHosts $knownHosts -Port ([int]$access.sshPort) -Source $remote -Destination $temporary
+        $result = if ($null -ne $ScpRunner) { & $ScpRunner $tooling.Scp $arguments $TimeoutSeconds } else { Invoke-EzVmProcess -FilePath $tooling.Scp -ArgumentList $arguments -TimeoutSeconds $TimeoutSeconds }
+        if ([int]$result.ExitCode -ne 0) { throw ("copy-from failed with scp exit code $($result.ExitCode): " + (Protect-EzVmDiagnosticText $result.StdErr)) }
+        $null = Assert-EzVmSafePath -Path $temporary -Description 'Downloaded host file'
+        if (-not [IO.File]::Exists($temporary)) { throw 'copy-from did not produce a regular staged host file.' }
+        $null = Assert-EzVmSafePath -Path $fullHostPath -Description 'Host transfer publication'
+        if ([IO.File]::Exists($fullHostPath)) {
+            [IO.File]::Replace($temporary, $fullHostPath, [System.Management.Automation.Language.NullString]::Value)
+        }
+        else { [IO.File]::Move($temporary, $fullHostPath) }
+    }
+    finally {
+        if ([IO.File]::Exists($temporary)) {
+            try { $null = Assert-EzVmSafePath -Path $temporary -Description 'Transfer cleanup'; [IO.File]::Delete($temporary) } catch { }
+        }
+    }
     return [pscustomobject][ordered]@{ name = $InstanceName; direction = 'guest-to-host'; guestPath = $GuestPath; hostPath = $fullHostPath }
 }

@@ -184,3 +184,23 @@ before issuing commands. Production graceful stop sends `system_powerdown` and
 waits for process exit; timeout is reported without silently killing QEMU.
 
 Serial and QEMU diagnostic logs live beneath the managed instance directory.
+
+## Verified installed payload (EZVM-011)
+
+Fresh bootstrap holds read-only handles to verified provider artifacts, rechecks
+all hashes/sizes immediately before extraction, and builds a bounded inventory
+from the extracted payload before version probes. `ezvm-payload.json` records
+relative paths, byte lengths and SHA-256 for every payload file, including DLLs
+and firmware. Its digest is recorded as `payloadManifestSha256` in the existing
+version 1 provenance receipt. The inventory and reviewed-manifest association
+are checked before probing an installed runtime or resolving a managed tool.
+Added, missing or changed payload files fail closed. No artifact pin or WHPX
+mitigation is relaxed.
+
+Legacy installations without that receipt are not silently upgraded from their
+installed bytes. Stop guests and builders, preserve the old QEMU directory at an
+unused location outside runtime/qemu, then bootstrap again from reviewed pins;
+base images, instances and keys are retained. Existing invalid runtime directories
+are never automatically replaced. See [recovery](../TROUBLESHOOTING.md).
+Receipts detect installed-payload drift within the trusted-host model; they are
+not external signatures against a malicious owner rewriting source and receipts.

@@ -592,3 +592,25 @@ CPU and RAM values; clone preserves the resolved source resources. Prepared
 base selection without `-BaseId` excludes schema version 2 snapshot bases,
 which can contain credentials. See [the portability guide](../PORTABILITY.md)
 for reset/fresh semantics on a sensitive snapshot baseline.
+
+## Bounded diagnosis (EZVM-011)
+
+```text
+ezvm diagnose <name> [-CheckImage] [-Json]
+```
+
+`Get-EzVmInstanceDiagnosis -InstanceName <name> [-CheckImage]` returns
+`schemaVersion: 1`, `instanceName`, `lifecycleState`, `status`, `imageCheck`,
+`repairsPerformed: false`, bounded `findings` and `recoveryArtifacts`, and a
+scope statement. Each finding has `code`, redacted `message` and actionable
+`remediation`. `status` is `observed` or `attention`; `imageCheck` is
+`not-requested`, `refused`, `failed` or `passed`. Exit 0 means a diagnostic report
+was produced, not that a VM/image passed: consumers must inspect its fields.
+The usual envelope and syntax-error rules apply. Duplicate or unknown options
+are refused. No force, cleanup or repair option exists.
+
+Default diagnosis never executes QEMU. Explicit image checking requires a
+lifecycle lock and revalidated stopped ownership and intent. It validates raw
+headers before qemu-img can follow backing metadata and uses non-repairing checks.
+Recovery artifacts are shallow bounded observations, not paths read from a journal
+or a list of deletion targets. No automatic recovery rewrites runtime state.

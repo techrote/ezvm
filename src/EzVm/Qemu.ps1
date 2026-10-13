@@ -101,6 +101,7 @@ function Invoke-EzVmSevenZipBootstrap {
         [string]$Destination,
         [string]$ExpectedVersion
     )
+    $null = Assert-EzVmSafePath -Path $Destination -Description 'Managed directory'
     [void][IO.Directory]::CreateDirectory($Destination)
     Invoke-EzVmProcess -FilePath $BootstrapExtractor -ArgumentList @(
         'x', $PackagePath, ('-o' + $Destination), '-y'
@@ -125,6 +126,8 @@ function Invoke-EzVmSevenZipBootstrap {
 function Invoke-EzVmQemuExtraction {
     param([string]$SevenZipExe, [string]$InstallerPath, [string]$Destination)
 
+    $null = Assert-EzVmSafePath -Path $Destination -Description 'Managed directory'
+
     [void][IO.Directory]::CreateDirectory($Destination)
     Invoke-EzVmProcess -FilePath $SevenZipExe -ArgumentList @(
         'x', $InstallerPath, ('-o' + $Destination), '-y'
@@ -143,7 +146,7 @@ function Invoke-EzVmQemuExtraction {
 
     # NSIS-only scaffolding is not part of the managed portable runtime.
     $pluginDirectory = Join-Path $Destination '$PLUGINSDIR'
-    if (Test-Path -LiteralPath $pluginDirectory) { Remove-Item -LiteralPath $pluginDirectory -Recurse -Force }
+    if (Test-Path -LiteralPath $pluginDirectory) { Remove-EzVmSafeTree -Path $pluginDirectory }
     $uninstaller = Join-Path $Destination 'qemu-uninstall.exe'
     if (Test-Path -LiteralPath $uninstaller) { Remove-Item -LiteralPath $uninstaller -Force }
 
@@ -173,6 +176,7 @@ function Test-EzVmQemuPayload {
     }
 
     $probeDirectory = Join-Path $Root ('.ezvm-probe-' + [Guid]::NewGuid().ToString('N'))
+    $null = Assert-EzVmSafePath -Path $probeDirectory -Description 'Managed directory'
     [void][IO.Directory]::CreateDirectory($probeDirectory)
     try {
         $probeImage = Join-Path $probeDirectory 'probe.qcow2'
@@ -182,7 +186,7 @@ function Test-EzVmQemuPayload {
         if ($metadata.format -cne 'qcow2') { throw 'qemu-img functional probe did not create a qcow2 image.' }
     }
     finally {
-        if (Test-Path -LiteralPath $probeDirectory) { Remove-Item -LiteralPath $probeDirectory -Recurse -Force }
+        if (Test-Path -LiteralPath $probeDirectory) { Remove-EzVmSafeTree -Path $probeDirectory }
     }
 
     return [pscustomobject][ordered]@{
@@ -212,12 +216,7 @@ function Get-EzVmManagedQemuStatus {
         return [pscustomobject][ordered]@{ Valid = $false; Reason = 'Managed QEMU runtime is not installed.'; QemuSystem = $systemPath; QemuImg = $imgPath }
     }
     try {
-        $provenance = Read-EzVmJson -Path $provenancePath -SchemaVersion 1
-        $manifestDigest = Get-EzVmFileDigest -Path $ManifestPath -Algorithm SHA256
-        $propertyNames = @($provenance.PSObject.Properties | ForEach-Object { $_.Name })
-        if ($propertyNames -cnotcontains 'manifestSha256' -or $provenance.manifestSha256 -cne $manifestDigest) {
-            return [pscustomobject][ordered]@{ Valid = $false; Reason = 'Managed QEMU provenance does not match the reviewed manifest.'; QemuSystem = $systemPath; QemuImg = $imgPath }
-        }
+        Assert-EzVmQemuPayloadIntegrity -RuntimeDirectory $paths.Qemu -ManifestPath $ManifestPath
         if ($null -ne $PayloadProbe) {
             $probe = & $PayloadProbe $paths.Qemu $Manifest.qemu.expectedVersionPrefix
             if ($null -eq $probe -or -not $probe.QemuSystemVersion -or -not $probe.QemuImgVersion) {
@@ -260,8 +259,8 @@ function Move-EzVmDirectoryAtomically {
         [scriptblock]$Mover
     )
 
-    $sourcePath = [IO.Path]::GetFullPath($Source)
-    $destinationPath = [IO.Path]::GetFullPath($Destination)
+    $sourcePath = Assert-EzVmSafePath -Path $Source -Description 'Atomic directory source'
+    $destinationPath = Assert-EzVmSafePath -Path $Destination -Description 'Atomic directory destination'
     $comparison = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
         [StringComparison]::OrdinalIgnoreCase
     } else {
@@ -272,6 +271,8 @@ function Move-EzVmDirectoryAtomically {
     }
 
     for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+        $null = Assert-EzVmSafePath -Path $sourcePath -Description 'Atomic directory source'
+        $null = Assert-EzVmSafePath -Path $destinationPath -Description 'Atomic directory destination'
         if (-not [IO.Directory]::Exists($sourcePath)) {
             throw "Atomic directory promotion source disappeared before completion: '$sourcePath'."
         }
@@ -313,149 +314,151 @@ function Install-EzVmQemuRuntime {
     }
 
     $paths = Get-EzVmPaths -Root $Root
-    $manifestArguments = @{ Root = $Root }
-    if ($PSBoundParameters.ContainsKey('ManifestPath')) { $manifestArguments.ManifestPath = $ManifestPath }
-    $manifest = Get-EzVmQemuManifest @manifestArguments
-    if (-not $PSBoundParameters.ContainsKey('ManifestPath')) { $ManifestPath = $paths.QemuManifest }
-    $manifestDigest = Get-EzVmFileDigest -Path $ManifestPath -Algorithm SHA256
-
-    $statusArguments = @{ Root = $Root; Manifest = $manifest; ManifestPath = $ManifestPath }
-    if ($null -ne $PayloadProbe) { $statusArguments.PayloadProbe = $PayloadProbe }
-    $installed = Get-EzVmManagedQemuStatus @statusArguments
-    if ($installed.Valid) {
-        return [pscustomobject][ordered]@{
-            runtimePath = $paths.Qemu
-            qemuSystem = $installed.QemuSystem
-            qemuImg = $installed.QemuImg
-            version = $manifest.qemu.version
-            providerBuild = $manifest.qemu.providerBuild
-            downloaded = $false
-            idempotent = $true
-        }
-    }
-
-    [void][IO.Directory]::CreateDirectory($paths.Downloads)
-    [void][IO.Directory]::CreateDirectory($paths.Runtime)
-
-    function Acquire-EzVmQemuArtifact {
-        param([object]$Descriptor)
-        $arguments = @{
-            Url = $Descriptor.url
-            FileName = $Descriptor.filename
-            Algorithm = $Descriptor.digestAlgorithm
-            ExpectedDigest = $Descriptor.digest
-            ExpectedSizeBytes = [long]$Descriptor.sizeBytes
-            DestinationDirectory = $paths.Downloads
-        }
-        if ($null -ne $Downloader) { $arguments.Downloader = $Downloader }
-        return Get-EzVmVerifiedArtifact @arguments
-    }
-
-    $qemuArtifact = Acquire-EzVmQemuArtifact $manifest.qemu
-    $bootstrapArtifact = Acquire-EzVmQemuArtifact $manifest.extractor.bootstrap
-    $packageArtifact = Acquire-EzVmQemuArtifact $manifest.extractor.package
-
-    $extractorStage = Join-Path $paths.Runtime ('.qemu-extractor-' + [Guid]::NewGuid().ToString('N'))
-    $qemuStage = Join-Path $paths.Runtime ('.qemu-stage-' + [Guid]::NewGuid().ToString('N'))
-    $backup = $null
+    $null = Assert-EzVmSafePath -Path $paths.Qemu -Description 'QEMU bootstrap'
+    $lock = Enter-EzVmSecurityLock -Path (Join-Path $paths.Locks 'qemu-bootstrap.lock')
     try {
-        if ($null -ne $ExtractorBootstrapper) {
-            $extractor = & $ExtractorBootstrapper $bootstrapArtifact.Path $packageArtifact.Path $extractorStage $manifest.extractor.version
-        }
-        else {
-            $extractor = Invoke-EzVmSevenZipBootstrap -BootstrapExtractor $bootstrapArtifact.Path -PackagePath $packageArtifact.Path -Destination $extractorStage -ExpectedVersion $manifest.extractor.version
-        }
-        if ($null -eq $extractor -or -not $extractor.SevenZipExe) { throw 'Extractor bootstrap did not return a verified 7z.exe path.' }
+        $manifestArguments = @{ Root = $Root }
+        if ($PSBoundParameters.ContainsKey('ManifestPath')) { $manifestArguments.ManifestPath = $ManifestPath }
+        $manifest = Get-EzVmQemuManifest @manifestArguments
+        if (-not $PSBoundParameters.ContainsKey('ManifestPath')) { $ManifestPath = $paths.QemuManifest }
+        $manifestDigest = Get-EzVmFileDigest -Path $ManifestPath -Algorithm SHA256
 
-        if ($null -ne $QemuExpander) {
-            $expanded = & $QemuExpander $extractor.SevenZipExe $qemuArtifact.Path $qemuStage
+        $statusArguments = @{ Root = $Root; Manifest = $manifest; ManifestPath = $ManifestPath }
+        if ($null -ne $PayloadProbe) { $statusArguments.PayloadProbe = $PayloadProbe }
+        $installed = Get-EzVmManagedQemuStatus @statusArguments
+        if ($installed.Valid) {
+            return [pscustomobject][ordered]@{
+                runtimePath = $paths.Qemu
+                qemuSystem = $installed.QemuSystem
+                qemuImg = $installed.QemuImg
+                version = $manifest.qemu.version
+                providerBuild = $manifest.qemu.providerBuild
+                downloaded = $false
+                idempotent = $true
+            }
         }
-        else {
-            $expanded = Invoke-EzVmQemuExtraction -SevenZipExe $extractor.SevenZipExe -InstallerPath $qemuArtifact.Path -Destination $qemuStage
-        }
-        if ($null -eq $expanded -or -not (Test-Path -LiteralPath (Join-Path $qemuStage 'qemu-system-x86_64.exe') -PathType Leaf) -or
-            -not (Test-Path -LiteralPath (Join-Path $qemuStage 'qemu-img.exe') -PathType Leaf)) {
-            throw 'QEMU extraction did not produce the required managed executables.'
-        }
-
-        if ($null -ne $PayloadProbe) {
-            $probe = & $PayloadProbe $qemuStage $manifest.qemu.expectedVersionPrefix
-        }
-        else {
-            $probe = Test-EzVmQemuPayload -Root $qemuStage -ExpectedVersionPrefix $manifest.qemu.expectedVersionPrefix
-        }
-        if ($null -eq $probe -or -not $probe.QemuSystemVersion -or -not $probe.QemuImgVersion) {
-            throw 'QEMU payload probe did not return validated version evidence.'
-        }
-        if ([string]$probe.QemuSystemVersion -notmatch [regex]::Escape($manifest.qemu.expectedVersionPrefix) -or
-            [string]$probe.QemuImgVersion -notmatch [regex]::Escape($manifest.qemu.expectedVersionPrefix)) {
-            throw "QEMU payload probe did not confirm reviewed version prefix '$($manifest.qemu.expectedVersionPrefix)'."
-        }
-
-        if ([string]$probe.QemuSystemVersion -notmatch [regex]::Escape($manifest.qemu.expectedVersionPrefix) -or
-            [string]$probe.QemuImgVersion -notmatch [regex]::Escape($manifest.qemu.expectedVersionPrefix)) {
-            throw "QEMU payload probe did not confirm reviewed version prefix '$($manifest.qemu.expectedVersionPrefix)'."
-        }
-
-        $provenance = [pscustomobject][ordered]@{
-            schemaVersion = 1
-            manifestSha256 = $manifestDigest
-            provider = $manifest.provider
-            qemuVersion = $manifest.qemu.version
-            providerBuild = $manifest.qemu.providerBuild
-            qemuUrl = $manifest.qemu.url
-            qemuFilename = $manifest.qemu.filename
-            qemuDigestAlgorithm = $manifest.qemu.digestAlgorithm
-            qemuExpectedDigest = $manifest.qemu.digest
-            qemuObservedDigest = $qemuArtifact.Digest
-            extractorVersion = $manifest.extractor.version
-            extractorBootstrapUrl = $manifest.extractor.bootstrap.url
-            extractorBootstrapDigest = $bootstrapArtifact.Digest
-            extractorPackageUrl = $manifest.extractor.package.url
-            extractorPackageDigest = $packageArtifact.Digest
-            extractorVersionOutput = [string]$extractor.VersionOutput
-            qemuSystemVersion = [string]$probe.QemuSystemVersion
-            qemuImgVersion = [string]$probe.QemuImgVersion
-            bootstrappedAt = [DateTime]::UtcNow.ToString('o')
-        }
-        Write-EzVmJson -Path (Join-Path $qemuStage 'ezvm-provenance.json') -Value $provenance -SchemaVersion 1
 
         if (Test-Path -LiteralPath $paths.Qemu) {
-            $backup = Join-Path $paths.Runtime ('.qemu-backup-' + [Guid]::NewGuid().ToString('N'))
-            Move-EzVmDirectoryAtomically -Source $paths.Qemu -Destination $backup
-        }
-        try {
-            Move-EzVmDirectoryAtomically -Source $qemuStage -Destination $paths.Qemu
-        }
-        catch {
-            if ($null -ne $backup -and (Test-Path -LiteralPath $backup) -and -not (Test-Path -LiteralPath $paths.Qemu)) {
-                Move-EzVmDirectoryAtomically -Source $backup -Destination $paths.Qemu
-                $backup = $null
-            }
-            throw
-        }
-        if ($null -ne $backup -and (Test-Path -LiteralPath $backup)) {
-            Remove-Item -LiteralPath $backup -Recurse -Force
-            $backup = $null
+            throw ('Existing QEMU runtime is not verified and will not be replaced automatically. Stop all guests and preserve it outside runtime/qemu before a fresh bootstrap. ' + $installed.Reason)
         }
 
-        return [pscustomobject][ordered]@{
-            runtimePath = $paths.Qemu
-            qemuSystem = Join-Path $paths.Qemu 'qemu-system-x86_64.exe'
-            qemuImg = Join-Path $paths.Qemu 'qemu-img.exe'
-            version = $manifest.qemu.version
-            providerBuild = $manifest.qemu.providerBuild
-            downloaded = [bool]($qemuArtifact.Downloaded -or $bootstrapArtifact.Downloaded -or $packageArtifact.Downloaded)
-            idempotent = $false
+        $null = Assert-EzVmSafePath -Path $paths.Downloads -Description 'Managed directory'
+
+        [void][IO.Directory]::CreateDirectory($paths.Downloads)
+        $null = Assert-EzVmSafePath -Path $paths.Runtime -Description 'Managed directory'
+        [void][IO.Directory]::CreateDirectory($paths.Runtime)
+
+        function Acquire-EzVmQemuArtifact {
+            param([object]$Descriptor)
+            $arguments = @{
+                Url = $Descriptor.url
+                FileName = $Descriptor.filename
+                Algorithm = $Descriptor.digestAlgorithm
+                ExpectedDigest = $Descriptor.digest
+                ExpectedSizeBytes = [long]$Descriptor.sizeBytes
+                DestinationDirectory = $paths.Downloads
+            }
+            if ($null -ne $Downloader) { $arguments.Downloader = $Downloader }
+            return Get-EzVmVerifiedArtifact @arguments
         }
-    }
-    finally {
-        foreach ($stage in @($extractorStage, $qemuStage)) {
-            if (Test-Path -LiteralPath $stage) {
-                try { Remove-Item -LiteralPath $stage -Recurse -Force } catch { }
+
+        $qemuArtifact = Acquire-EzVmQemuArtifact $manifest.qemu
+        $bootstrapArtifact = Acquire-EzVmQemuArtifact $manifest.extractor.bootstrap
+        $packageArtifact = Acquire-EzVmQemuArtifact $manifest.extractor.package
+
+        $extractorStage = Join-Path $paths.Runtime ('.qemu-extractor-' + [Guid]::NewGuid().ToString('N'))
+        $qemuStage = Join-Path $paths.Runtime ('.qemu-stage-' + [Guid]::NewGuid().ToString('N'))
+        $artifactHandles = New-Object 'System.Collections.Generic.List[object]'
+        try {
+            foreach ($pair in @(@($qemuArtifact, $manifest.qemu), @($bootstrapArtifact, $manifest.extractor.bootstrap), @($packageArtifact, $manifest.extractor.package))) {
+                $artifactPath = Assert-EzVmSafePath -Path $pair[0].Path -Description 'Verified acquisition input'
+                $artifactHandles.Add([IO.File]::Open($artifactPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read))
+                if ((Get-EzVmFileDigest -Path $artifactPath -Algorithm $pair[1].digestAlgorithm) -cne $pair[1].digest -or (Get-Item -LiteralPath $artifactPath -Force).Length -ne [long]$pair[1].sizeBytes) {
+                    throw 'A downloaded artifact changed before extraction. No unverified executable will be used.'
+                }
+            }
+            if ($null -ne $ExtractorBootstrapper) {
+                $extractor = & $ExtractorBootstrapper $bootstrapArtifact.Path $packageArtifact.Path $extractorStage $manifest.extractor.version
+            }
+            else {
+                $extractor = Invoke-EzVmSevenZipBootstrap -BootstrapExtractor $bootstrapArtifact.Path -PackagePath $packageArtifact.Path -Destination $extractorStage -ExpectedVersion $manifest.extractor.version
+            }
+            if ($null -eq $extractor -or -not $extractor.SevenZipExe) { throw 'Extractor bootstrap did not return a verified 7z.exe path.' }
+
+            if ($null -ne $QemuExpander) {
+                $expanded = & $QemuExpander $extractor.SevenZipExe $qemuArtifact.Path $qemuStage
+            }
+            else {
+                $expanded = Invoke-EzVmQemuExtraction -SevenZipExe $extractor.SevenZipExe -InstallerPath $qemuArtifact.Path -Destination $qemuStage
+            }
+            if ($null -eq $expanded -or -not (Test-Path -LiteralPath (Join-Path $qemuStage 'qemu-system-x86_64.exe') -PathType Leaf) -or
+                -not (Test-Path -LiteralPath (Join-Path $qemuStage 'qemu-img.exe') -PathType Leaf)) {
+                throw 'QEMU extraction did not produce the required managed executables.'
+            }
+
+            $inventoryDigest = Write-EzVmQemuPayloadInventory -RuntimeDirectory $qemuStage -ManifestDigest $manifestDigest
+            if ($null -ne $PayloadProbe) {
+                $probe = & $PayloadProbe $qemuStage $manifest.qemu.expectedVersionPrefix
+            }
+            else {
+                $probe = Test-EzVmQemuPayload -Root $qemuStage -ExpectedVersionPrefix $manifest.qemu.expectedVersionPrefix
+            }
+            if ($null -eq $probe -or -not $probe.QemuSystemVersion -or -not $probe.QemuImgVersion) {
+                throw 'QEMU payload probe did not return validated version evidence.'
+            }
+
+            if ([string]$probe.QemuSystemVersion -notmatch [regex]::Escape($manifest.qemu.expectedVersionPrefix) -or
+                [string]$probe.QemuImgVersion -notmatch [regex]::Escape($manifest.qemu.expectedVersionPrefix)) {
+                throw "QEMU payload probe did not confirm reviewed version prefix '$($manifest.qemu.expectedVersionPrefix)'."
+            }
+
+            $provenance = [pscustomobject][ordered]@{
+                schemaVersion = 1
+                payloadManifestSha256 = $inventoryDigest
+                manifestSha256 = $manifestDigest
+                provider = $manifest.provider
+                qemuVersion = $manifest.qemu.version
+                providerBuild = $manifest.qemu.providerBuild
+                qemuUrl = $manifest.qemu.url
+                qemuFilename = $manifest.qemu.filename
+                qemuDigestAlgorithm = $manifest.qemu.digestAlgorithm
+                qemuExpectedDigest = $manifest.qemu.digest
+                qemuObservedDigest = $qemuArtifact.Digest
+                extractorVersion = $manifest.extractor.version
+                extractorBootstrapUrl = $manifest.extractor.bootstrap.url
+                extractorBootstrapDigest = $bootstrapArtifact.Digest
+                extractorPackageUrl = $manifest.extractor.package.url
+                extractorPackageDigest = $packageArtifact.Digest
+                extractorVersionOutput = [string]$extractor.VersionOutput
+                qemuSystemVersion = [string]$probe.QemuSystemVersion
+                qemuImgVersion = [string]$probe.QemuImgVersion
+                bootstrappedAt = [DateTime]::UtcNow.ToString('o')
+            }
+            Write-EzVmJson -Path (Join-Path $qemuStage 'ezvm-provenance.json') -Value $provenance -SchemaVersion 1
+
+            Assert-EzVmQemuPayloadIntegrity -RuntimeDirectory $qemuStage -ManifestPath $ManifestPath
+            Move-EzVmDirectoryAtomically -Source $qemuStage -Destination $paths.Qemu
+
+            return [pscustomobject][ordered]@{
+                runtimePath = $paths.Qemu
+                qemuSystem = Join-Path $paths.Qemu 'qemu-system-x86_64.exe'
+                qemuImg = Join-Path $paths.Qemu 'qemu-img.exe'
+                version = $manifest.qemu.version
+                providerBuild = $manifest.qemu.providerBuild
+                downloaded = [bool]($qemuArtifact.Downloaded -or $bootstrapArtifact.Downloaded -or $packageArtifact.Downloaded)
+                idempotent = $false
+            }
+        }
+        finally {
+            foreach ($handle in $artifactHandles) { $handle.Dispose() }
+            foreach ($stage in @($extractorStage, $qemuStage)) {
+                if (Test-Path -LiteralPath $stage) {
+                    try { Remove-EzVmSafeTree -Path $stage } catch { }
+                }
             }
         }
     }
+    finally { $lock.Dispose() }
 }
 
 function Get-EzVmQemuToolPath {
@@ -469,5 +472,6 @@ function Get-EzVmQemuToolPath {
     if (-not [IO.File]::Exists($path)) {
         throw "Managed QEMU tool '$Name' is unavailable. Run '.\ezvm.ps1 bootstrap' first."
     }
+    Assert-EzVmQemuPayloadIntegrity -RuntimeDirectory $paths.Qemu -ManifestPath $paths.QemuManifest
     return [IO.Path]::GetFullPath($path)
 }

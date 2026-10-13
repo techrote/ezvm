@@ -331,3 +331,15 @@ state and remain intact. Identity initialization does not scrub vendor login
 state. An imported guest whose cloud-init is disabled, or which trusts a manual
 cache instead of consuming the destination NoCloud seed, cannot reach READY;
 structural QCOW2 acceptance is separate from supported coding-guest bootstrap.
+
+## Base input and seed cleanup (EZVM-011)
+
+Both reviewed base seed templates and coding-profile sources are bounded UTF-8
+inputs and reject high-confidence private-key/token patterns before generation.
+Only the controller public key is supplied to an instance. Base-build seed files
+are removed in final cleanup after success or failure; remaining staging disks,
+serial logs and redacted failure summaries are retained for diagnosis. This
+supersedes the older optional retention of base-build seed files. An in-memory
+seed server is always stopped at the caller's completion/timeout boundary and
+releases its payload references; this is not a promise of cryptographic memory
+erasure, pagefile erasure or removal of guest-side cloud-init records.

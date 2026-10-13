@@ -183,7 +183,7 @@ function Get-EzVmInstanceIntent {
     }
     $null = Assert-EzVmStorageManagedPath -Path $runtimePaths.Intent -ContainmentRoot $paths.Instances -SafetyRoot $paths.Root -Description 'Instance intent' -RequireFile
     # Both complete schema versions remain readable; reads never rotate identity.
-    $text = [IO.File]::ReadAllText($runtimePaths.Intent, (New-Object Text.UTF8Encoding($false, $true)))
+    $text = (Read-EzVmBoundedText -Path $runtimePaths.Intent)
     try { $intent = ConvertFrom-EzVmJsonText -Text $text -SchemaVersion 2 -Description 'Instance intent' }
     catch { $intent = ConvertFrom-EzVmJsonText -Text $text -SchemaVersion 1 -Description 'Instance intent' }
     Assert-EzVmInstanceIntent -Intent $intent -ExpectedName $InstanceName
@@ -302,10 +302,10 @@ function Get-EzVmObservedQemuProcesses {
 
     try {
         if ($null -ne $ProcessId) {
-            $items = @(Get-CimInstance -ClassName Win32_Process -Filter ("ProcessId = " + [int]$ProcessId) -ErrorAction Stop)
+            $items = @(Get-CimInstance -ClassName Win32_Process -OperationTimeoutSec 5 -Filter ("ProcessId = " + [int]$ProcessId) -ErrorAction Stop)
         }
         else {
-            $items = @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'qemu-system-x86_64.exe'" -ErrorAction Stop)
+            $items = @(Get-CimInstance -ClassName Win32_Process -OperationTimeoutSec 5 -Filter "Name = 'qemu-system-x86_64.exe'" -ErrorAction Stop)
         }
         $snapshots = New-Object 'System.Collections.Generic.List[object]'
         foreach ($item in $items) {
@@ -626,6 +626,7 @@ function Get-EzVmRuntimeFirmwarePaths {
             throw "Managed QEMU firmware is incomplete: missing '$path'. Re-run bootstrap and retry."
         }
     }
+    $null = Assert-EzVmSafePath -Path $runtimePaths.FirmwareVariables -Description 'Guest firmware state'
     if (-not (Test-Path -LiteralPath $runtimePaths.FirmwareVariables -PathType Leaf)) {
         $candidate = Join-Path $runtimePaths.Directory ('.uefi-vars-' + [Guid]::NewGuid().ToString('N') + '.tmp')
         try {
@@ -908,6 +909,7 @@ function Start-EzVmInstance {
         if ($null -eq $managed -or -not $managed.Valid) { throw "Instance start requires validated managed QEMU. $($managed.Reason) Run '.\ezvm.ps1 bootstrap' and retry." }
 
         $runtimePaths = Get-EzVmInstanceRuntimePaths -Root $Root -InstanceName $InstanceName
+        $null = Assert-EzVmSafePath -Path $runtimePaths.Logs -Description 'QEMU log directory'
         [void][IO.Directory]::CreateDirectory($runtimePaths.Logs)
         $null = Assert-EzVmStorageManagedPath -Path $runtimePaths.Logs -ContainmentRoot $runtimePaths.Directory -SafetyRoot $paths.Root -Description 'Instance log directory' -RequireDirectory
         $firmware = Get-EzVmRuntimeFirmwarePaths -Root $Root -InstanceName $InstanceName

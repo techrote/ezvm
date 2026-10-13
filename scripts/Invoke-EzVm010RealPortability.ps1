@@ -1,6 +1,6 @@
 #requires -Version 5.1
 [CmdletBinding()]
-param([string]$Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')))
+param([string]$Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')), [switch]$SecurityQualification)
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -237,6 +237,30 @@ try {
     $created = New-EzVmManagedInstance -Root $Root -InstanceName $sourceName -BaseId $base.baseId -Profile light
     Start-EzVm010Guest -Name $sourceName
     $sourceIntent = Get-EzVmInstanceIntent -Root $Root -InstanceName $sourceName
+    if ($SecurityQualification) {
+        Write-Host 'EZVM011_STEP=real_host_transfer_and_diagnosis'
+        $transferInput = Join-Path $work 'synthetic input [spaces].bin'
+        $transferOutput = Join-Path $work 'synthetic output [spaces].bin'
+        $bytes = New-Object byte[] 4096
+        for ($i = 0; $i -lt $bytes.Length; $i++) { $bytes[$i] = [byte]($i % 251) }
+        [IO.File]::WriteAllBytes($transferInput, $bytes)
+        $null = Invoke-EzVmCopyToGuest -Root $Root -InstanceName $sourceName -HostPath $transferInput -GuestPath '/home/coder/workspace/ezvm011-transfer.bin' -TimeoutSeconds 120
+        [IO.File]::WriteAllText($transferOutput, 'old host output must survive a failed transfer')
+        $oldOutputDigest = Get-EzVmFileDigest -Path $transferOutput -Algorithm SHA256
+        Assert-EzVm010Refused -Description 'failed copy preserves destination' -Pattern 'copy-from failed' -Action {
+            Invoke-EzVmCopyFromGuest -Root $Root -InstanceName $sourceName -GuestPath '/home/coder/workspace/ezvm011-does-not-exist' -HostPath $transferOutput -TimeoutSeconds 120
+        }
+        if ((Get-EzVmFileDigest -Path $transferOutput -Algorithm SHA256) -cne $oldOutputDigest) { throw 'Failed SCP changed existing host bytes.' }
+        $null = Invoke-EzVmCopyFromGuest -Root $Root -InstanceName $sourceName -GuestPath '/home/coder/workspace/ezvm011-transfer.bin' -HostPath $transferOutput -TimeoutSeconds 120
+        if ((Get-EzVmFileDigest -Path $transferOutput -Algorithm SHA256) -cne (Get-EzVmFileDigest -Path $transferInput -Algorithm SHA256)) { throw 'Real binary SCP round trip changed bytes.' }
+        Assert-EzVm010Refused -Description 'managed runtime cannot be an SCP destination' -Pattern 'managed runtime' -Action {
+            Invoke-EzVmCopyFromGuest -Root $Root -InstanceName $sourceName -GuestPath '/home/coder/workspace/ezvm011-transfer.bin' -HostPath (Get-EzVmInstanceRuntimePaths -Root $Root -InstanceName $sourceName).Intent
+        }
+        $diagnosis = Get-EzVmInstanceDiagnosis -Root $Root -InstanceName $sourceName -CheckImage
+        if ($diagnosis.lifecycleState -cne 'RUNNING' -or $diagnosis.imageCheck -cne 'refused' -or $diagnosis.repairsPerformed) { throw 'Running diagnosis reached offline image checking or changed state.' }
+        Write-Host 'EZVM011_REAL_SCP_ROUNDTRIP_AND_FAILED_DESTINATION_PRESERVATION=PASS'
+        Write-Host 'EZVM011_REAL_RUNNING_DIAGNOSIS_AND_RUNTIME_TRANSFER_REFUSAL=PASS'
+    }
     # These are clearly synthetic persistence fixtures, never vendor credentials
     # or a usable private SSH key. Only their independent SHA-256 digests enter
     # the evidence, and copied inbound access is checked separately above.
@@ -355,6 +379,7 @@ sync
     Write-Host 'EZVM010_REAL_GRACEFUL_STOP=PASS'
     Write-Host ('EZVM010_REAL_BASE=' + $base.baseId)
     Write-Host ('EZVM010_REAL_EXPORTED_SHA256=' + (Get-EzVmFileDigest -Path $export.Image -Algorithm SHA256))
+    if ($SecurityQualification) { Write-Host 'EZVM011_REAL_COMPLETE_SECURITY_AND_PORTABILITY=PASS' }
     Write-Host ('EZVM010_COMPLETED_AT=' + [DateTime]::UtcNow.ToString('o'))
 }
 catch {

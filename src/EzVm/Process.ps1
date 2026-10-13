@@ -262,6 +262,7 @@ function Invoke-EzVmProcess {
         if ($ThrowOnError -and ($result.ExitCode -ne 0)) {
             $detail = $result.StdErr.Trim()
             if ([string]::IsNullOrWhiteSpace($detail)) { $detail = $result.StdOut.Trim() }
+            $detail = Protect-EzVmDiagnosticText -Text $detail -MaximumCharacters 2048
             if ($detail.Length -gt 2048) { $detail = $detail.Substring(0, 2048) + '...' }
             $exception = [System.InvalidOperationException]::new(
                 "Executable '$FilePath' exited with code $($result.ExitCode). Inspect the tool output and correct the reported failure. $detail")

@@ -358,8 +358,10 @@ function New-EzVmSnapshotStage {
     param([string]$Root)
     $paths = Get-EzVmPaths -Root $Root
     $null = Assert-EzVmStorageManagedPath -Path $paths.Bases -ContainmentRoot $paths.Runtime -SafetyRoot $paths.Root -Description 'Snapshot staging root'
+    $null = Assert-EzVmSafePath -Path $paths.Bases -Description 'Managed directory'
     [void][IO.Directory]::CreateDirectory($paths.Bases)
     $stage = Join-Path $paths.Bases ('.snapshot-' + [Guid]::NewGuid().ToString('N'))
+    $null = Assert-EzVmSafePath -Path $stage -Description 'Managed directory'
     [void][IO.Directory]::CreateDirectory($stage)
     return $stage
 }
@@ -367,7 +369,7 @@ function New-EzVmSnapshotStage {
 function Write-EzVmSnapshotFailure {
     param([string]$StagingDirectory, [string]$Operation, [object]$Failure)
     try {
-        $message = [string]$Failure.Exception.Message
+        $message = (Protect-EzVmDiagnosticText -Text $Failure.Exception.Message)
         if ($message.Length -gt 4096) { $message = $message.Substring(0, 4096) }
         Write-EzVmJson -Path (Join-Path $StagingDirectory 'failure.json') -Value ([pscustomobject][ordered]@{
             schemaVersion = 1; operation = $Operation; failedAt = [DateTime]::UtcNow.ToString('o'); message = $message; sensitiveState = $true
@@ -381,6 +383,7 @@ function Publish-EzVmSnapshotBase {
     Assert-EzVmSnapshotBaseManifest -Manifest $Manifest
     $paths = Get-EzVmPaths -Root $Root
     $candidate = Join-Path $StagingDirectory 'candidate'
+    $null = Assert-EzVmSafePath -Path $candidate -Description 'Managed directory'
     [void][IO.Directory]::CreateDirectory($candidate)
     $image = Join-Path $candidate 'base.qcow2'
     [IO.File]::Move($ImagePath, $image)
@@ -430,7 +433,7 @@ function New-EzVmDerivedBase {
             sensitiveState = $true; guestIdentityResetRequired = $true; source = $source.Provenance; qemu = $qemu
         }
         $result = Publish-EzVmSnapshotBase -Root $Root -StagingDirectory $stage -ImagePath $flat -Manifest $manifest -QemuImgRunner $QemuImgRunner -DirectoryMover $DirectoryMover
-        try { Remove-Item -LiteralPath $stage -Recurse -Force } catch { }
+        try { Remove-EzVmSafeTree -Path $stage } catch { }
         return $result
     }
     catch {
@@ -459,6 +462,7 @@ function Export-EzVmInstanceStorage {
     $qemu = Get-EzVmSnapshotQemuProvenance -Root $Root -QemuStatusProvider $QemuStatusProvider
     $source = Get-EzVmSnapshotSource -Root $Root -SourceIntent $SourceIntent -LifecycleGuard $LifecycleGuard -QemuImgRunner $QemuImgRunner
     $stage = Join-Path $parent ('.ezvm-export-' + [Guid]::NewGuid().ToString('N'))
+    $null = Assert-EzVmSafePath -Path $stage -Description 'Managed directory'
     [void][IO.Directory]::CreateDirectory($stage)
     try {
         $image = Join-Path $stage 'disk.qcow2'
@@ -550,7 +554,7 @@ function Import-EzVmStandaloneBase {
             qemu = $qemu
         }
         $result = Publish-EzVmSnapshotBase -Root $Root -StagingDirectory $stage -ImagePath $flat -Manifest $manifest -QemuImgRunner $QemuImgRunner -DirectoryMover $DirectoryMover
-        try { Remove-Item -LiteralPath $stage -Recurse -Force } catch { }
+        try { Remove-EzVmSafeTree -Path $stage } catch { }
         return $result
     }
     catch {

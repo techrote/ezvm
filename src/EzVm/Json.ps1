@@ -152,7 +152,7 @@ function ConvertFrom-EzVmJsonText {
         $value = ConvertFrom-Json @parameters
     }
     catch {
-        throw "$Description contains malformed JSON. Repair or restore this state file. $($_.Exception.Message)"
+        throw "$Description contains malformed JSON. Repair or restore this state file. $(Protect-EzVmDiagnosticText $_.Exception.Message)"
     }
     Assert-EzVmJsonSchema -Value $value -SchemaVersion $SchemaVersion -Description $Description
     $ancestors = New-Object 'System.Collections.Generic.List[object]'
@@ -178,10 +178,10 @@ function Read-EzVmJson {
     try {
         $fullPath = Resolve-EzVmJsonFilePath -Path $Path
         $encoding = New-Object System.Text.UTF8Encoding($false, $true)
-        $text = [System.IO.File]::ReadAllText($fullPath, $encoding)
+        $text = Read-EzVmBoundedText -Path $fullPath
     }
     catch {
-        throw "Could not read JSON state '$Path'. Check that the file exists and is readable, or restore it from a known valid copy. $($_.Exception.Message)"
+        throw "Could not read JSON state '$Path'. Check that the file exists and is readable, or restore it from a known valid copy. $(Protect-EzVmDiagnosticText $_.Exception.Message)"
     }
     return ConvertFrom-EzVmJsonText -Text $text -SchemaVersion $SchemaVersion -Description "JSON state '$Path'"
 }
@@ -220,6 +220,7 @@ function Write-EzVmJson {
         $bytes = $encoding.GetBytes($json + [Environment]::NewLine)
 
         $fullPath = Resolve-EzVmJsonFilePath -Path $Path
+        $null = Assert-EzVmSafePath -Path $fullPath -Description 'JSON publication'
         $directory = [System.IO.Path]::GetDirectoryName($fullPath)
         if (-not [System.IO.Directory]::Exists($directory)) {
             throw "The parent directory '$directory' does not exist. Create the state directory before saving."
@@ -238,6 +239,7 @@ function Write-EzVmJson {
             if ($null -ne $stream) { $stream.Dispose() }
         }
 
+        $null = Assert-EzVmSafePath -Path $fullPath -Description 'JSON publication'
         if ([System.IO.File]::Exists($fullPath)) {
             # PowerShell casts $null to an empty string for a string parameter;
             # NullString preserves the actual null backup-path required by .NET.
@@ -253,7 +255,7 @@ function Write-EzVmJson {
     }
     finally {
         if ($ownsTemporaryFile -and [System.IO.File]::Exists($temporaryPath)) {
-            try { [System.IO.File]::Delete($temporaryPath) }
+            try { $null = Assert-EzVmSafePath -Path $temporaryPath -Description 'JSON cleanup'; [System.IO.File]::Delete($temporaryPath) }
             catch { $cleanupFailure = $_ }
         }
     }
