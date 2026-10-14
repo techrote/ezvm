@@ -2,22 +2,11 @@
 
 Portable, disposable QEMU + QCOW2 coding-agent environments for Windows hosts.
 
+Start with [Getting started](docs/GETTING-STARTED.md). Release evidence and known limits are in [v0.1.0 release notes](docs/RELEASE-v0.1.0.md).
+
 ## Current state
 
-**EZVM-001 provides the control-plane foundation, EZVM-002 adds portable QEMU
-bootstrap plus Windows host preflight, EZVM-003 adds verified Ubuntu source
-acquisition, EZVM-004 adds reproducible prepared-base construction, EZVM-005
-adds validated thin-overlay storage primitives, EZVM-006 adds headless
-start/status/stop lifecycle control, EZVM-007 adds localhost-only managed SSH,
-authenticated readiness, exec and file transfer, and EZVM-008 adds durable named
-instances, resource profiles and concurrent SSH-port allocation. EZVM-009 adds
-the versioned `coding-default` guest profile and verifies that the guest's coding
-tools, account and workspace are usable before reporting READY. EZVM-010 adds
-reset, explicit fresh/stateful cloning, standalone export/import and cold-bundle
-portability validation. The project remains version `0.0.0-dev`.**
-The checkout has reviewed QEMU/7-Zip manifests, repository-local verified runtime
-bootstrap, `doctor`, and automated tests under Windows PowerShell 5.1 and
-PowerShell 7.
+**This source reports ezvm v0.1.0.** The dependency-ordered EZVM-001 through EZVM-011 implementation stack is accepted; EZVM-012 defines final packaging and end-to-end release qualification. A published v0.1.0 release additionally requires the exact-source automated and real gates documented below. The checkout has reviewed QEMU/7-Zip manifests, repository-local verified runtime bootstrap, `doctor`, reproducible prepared-base construction, authenticated coding READY, safe reset/clone/export/import, cold portability, bounded recovery diagnostics, and automated tests under Windows PowerShell 5.1 and PowerShell 7.
 
 The commands available on this branch are:
 
@@ -42,6 +31,7 @@ The commands available on this branch are:
 .\ezvm.ps1 export <name> <new-directory>
 .\ezvm.ps1 import <name> <image-path> [-ManifestPath <manifest-path>] [-Profile light|normal|heavy] [-Cpus <n>] [-MemoryMiB <n>]
 .\ezvm.ps1 portability check
+.\ezvm.ps1 diagnose <name> [-CheckImage]
 ~~~
 
 Running with no command also shows help. Unknown commands and malformed arguments

@@ -1,15 +1,9 @@
 name: EZVM-011 real security and portability qualification
 
 on:
+  # Historical EZVM-011 regression lane. EZVM-012 supersedes this on release PRs
+  # to avoid running the same expensive portability/security scenario twice.
   workflow_dispatch:
-  pull_request:
-    paths:
-      - .github/workflows/ezvm-011-real-security.yml
-      - scripts/Invoke-EzVm010RealPortability.ps1
-      - src/EzVm/**
-      - guest/**
-      - manifests/qemu-windows.json
-      - manifests/ubuntu-noble-amd64.json
 
 permissions:
   contents: read

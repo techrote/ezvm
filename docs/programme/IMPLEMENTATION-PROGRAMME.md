@@ -168,4 +168,13 @@ EZVM-012 may tag/release v0.1 only when the repository demonstrates:
 - reset/clone/export/import semantics;
 - relocation tests;
 - no committed generated runtime data or credentials;
-- user documentation sufficient to bootstrap on a fresh compatible Windows host.
+- user documentation sufficient to bootstrap on a fresh compatible Windows host;
+- a deterministic source-only v0.1.0 package whose metadata binds the exact Git
+  commit/tree and excludes third-party/runtime payloads;
+- one exact-candidate end-to-end TCG qualification covering normal/default
+  creation, concurrent READY guests, restart persistence, reset, fresh/stateful
+  copy semantics, export/import and cold relocation;
+- explicit WHPX execution status with no conversion of hosted TCG evidence into
+  a WHPX PASS;
+- tag publication guarded so v0.1.0 can be released only from accepted current
+  main after the release package and repository contract are revalidated.

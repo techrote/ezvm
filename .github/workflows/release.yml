@@ -1,0 +1,56 @@
+name: Release v0.1.0
+
+on:
+  push:
+    tags:
+      - v0.1.0
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Verify tag and publish deterministic source package
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact tag
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify accepted main and repository contract
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REF_NAME -cne 'v0.1.0') { throw 'This workflow publishes only v0.1.0.' }
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $tagCommit = (git rev-parse HEAD).Trim()
+          $mainCommit = (git rev-parse refs/remotes/origin/main).Trim()
+          if ($tagCommit -cne $mainCommit) { throw ('Release tag must point at current accepted main. tag=' + $tagCommit + '; main=' + $mainCommit) }
+          $version = .\ezvm.ps1 version -Json | ConvertFrom-Json
+          if (-not $version.success -or $version.data.version -cne '0.1.0') { throw 'Tag source does not report ezvm 0.1.0.' }
+          .\scripts\Test-Repository.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build deterministic source package
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $destination = Join-Path $env:RUNNER_TEMP 'ezvm-release'
+          $package = .\scripts\New-EzVmReleasePackage.ps1 -OutputDirectory $destination -Version '0.1.0'
+          Write-Host ('EZVM_RELEASE_PACKAGE_SHA256=' + $package.PackageSha256)
+          Write-Host ('EZVM_RELEASE_SOURCE_COMMIT=' + $package.SourceCommit)
+
+      - name: Publish GitHub release and assets
+        shell: powershell
+        env:
+          EZVM_RELEASE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $destination = Join-Path $env:RUNNER_TEMP 'ezvm-release'
+          $commit = (git rev-parse HEAD).Trim()
+          .\scripts\Publish-EzVmGitHubRelease.ps1 -Repository $env:GITHUB_REPOSITORY -Tag $env:GITHUB_REF_NAME -CommitSha $commit -Token $env:EZVM_RELEASE_TOKEN -ReleaseNotesPath .\docs\RELEASE-v0.1.0.md -AssetPaths @((Join-Path $destination 'ezvm-0.1.0.zip'), (Join-Path $destination 'ezvm-0.1.0.zip.sha256'))
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

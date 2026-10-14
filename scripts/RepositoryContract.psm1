@@ -44,6 +44,12 @@ function Test-EzVmRepositoryContract {
         '.gitattributes',
         '.gitignore',
         '.github/workflows/ci.yml',
+        '.github/workflows/ezvm-012-real-release.yml',
+        '.github/workflows/release.yml',
+        'THIRD-PARTY-NOTICES.md',
+        'docs/GETTING-STARTED.md',
+        'docs/RELEASE-v0.1.0.md',
+        'docs/WHPX-QUALIFICATION.md',
         'docs/programme/IMPLEMENTATION-PROGRAMME.md',
         'docs/rag/README.md',
         'docs/rag/00-PROJECT-CHARTER.md',
@@ -67,9 +73,12 @@ function Test-EzVmRepositoryContract {
         'guest/base-cloud-init/user-data.yaml',
         'tests/Run-Tests.ps1',
         'tests/TestHarness.ps1',
+        'tests/Release.Tests.ps1',
         'tests/tooling.json',
         'scripts/Test-Repository.ps1',
-        'scripts/RepositoryContract.psm1'
+        'scripts/RepositoryContract.psm1',
+        'scripts/New-EzVmReleasePackage.ps1',
+        'scripts/Publish-EzVmGitHubRelease.ps1'
     )
     foreach ($path in $required) {
         if (-not $trackedSet.Contains($path) -or -not (Test-Path -LiteralPath (Join-Path $rootPath $path) -PathType Leaf)) {
@@ -85,6 +94,36 @@ function Test-EzVmRepositoryContract {
         if ($rows.Count -ne 1 -or [int]$rows[0].Groups['issue'].Value -ne ($number + 1)) {
             throw "Programme must contain one coherent issue catalogue row for $code linked to issue #$($number + 1)."
         }
+    }
+
+    $moduleData = Import-PowerShellDataFile -LiteralPath (Join-Path $rootPath 'src/EzVm/EzVm.psd1')
+    if ([string]$moduleData.ModuleVersion -cne '0.1.0' -or [string]$moduleData.PrivateData.EzVmVersion -cne '0.1.0') {
+        throw 'The release branch must expose exactly ezvm 0.1.0 in both module version fields.'
+    }
+
+    $releaseNotes = [IO.File]::ReadAllText((Join-Path $rootPath 'docs/RELEASE-v0.1.0.md'))
+    $qemuPin = [IO.File]::ReadAllText((Join-Path $rootPath 'manifests/qemu-windows.json')) | ConvertFrom-Json -ErrorAction Stop
+    $ubuntuPin = [IO.File]::ReadAllText((Join-Path $rootPath 'manifests/ubuntu-noble-amd64.json')) | ConvertFrom-Json -ErrorAction Stop
+    foreach ($pin in @(
+        [string]$qemuPin.qemu.version,
+        [string]$qemuPin.qemu.providerBuild,
+        [string]$qemuPin.qemu.digest,
+        [string]$qemuPin.extractor.version,
+        [string]$qemuPin.extractor.bootstrap.digest,
+        [string]$qemuPin.extractor.package.digest,
+        [string]$ubuntuPin.publication,
+        [string]$ubuntuPin.sha256
+    )) {
+        if ([string]::IsNullOrWhiteSpace($pin) -or -not $releaseNotes.Contains($pin)) {
+            throw "v0.1.0 release notes do not match reviewed provider pin '$pin'."
+        }
+    }
+    if ($releaseNotes -notmatch 'WHPX execution.*SKIP|WHPX.*capability SKIP') {
+        throw 'v0.1.0 release notes must explicitly record hosted WHPX execution as SKIP.'
+    }
+    $releaseWorkflow = [IO.File]::ReadAllText((Join-Path $rootPath '.github/workflows/release.yml'))
+    if ($releaseWorkflow -notmatch '(?m)^\s*-\s*v0\.1\.0\s*$' -or $releaseWorkflow -notmatch '(?m)^\s*contents:\s*write\s*$') {
+        throw 'Release workflow must be restricted to the v0.1.0 tag and have explicit contents: write publication permission.'
     }
 
     $forbiddenDirectory = '(?i)(^|/)(runtime|\.ezvm|cache|artifacts|TestResults|coverage)(/|$)'

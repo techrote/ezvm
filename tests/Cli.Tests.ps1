@@ -87,7 +87,7 @@ Add-EzVmTest -Name 'CLI: human version matches the module version' -ScriptBlock 
     Assert-EzVmEqual -Actual $result.ExitCode -Expected 0
     Assert-EzVmEqual -Actual $result.StandardError -Expected ''
     Assert-EzVmEqual -Actual $result.StandardOutput.Trim() -Expected ('ezvm ' + (Get-EzVmVersion))
-    Assert-EzVmEqual -Actual (Get-EzVmVersion) -Expected '0.0.0-dev'
+    Assert-EzVmEqual -Actual (Get-EzVmVersion) -Expected '0.1.0'
 }
 
 $structuredCases = @(
@@ -110,10 +110,10 @@ foreach ($structuredCase in $structuredCases) {
 
 Add-EzVmTest -Name 'CLI: JSON is available to a same-host PowerShell pipeline' -ScriptBlock {
     $entry = ConvertTo-EzVmTestLiteral (Join-Path $script:EzVmRepositoryRoot 'ezvm.ps1')
-    $command = '$ErrorActionPreference = ''Stop''; $value = & ' + $entry + ' version -Json | ConvertFrom-Json; if ($value.data.version -ne ''0.0.0-dev'' -or -not $value.success) { exit 91 }; [Console]::Write($value.data.version); exit 0'
+    $command = '$ErrorActionPreference = ''Stop''; $value = & ' + $entry + ' version -Json | ConvertFrom-Json; if ($value.data.version -ne ''0.1.0'' -or -not $value.success) { exit 91 }; [Console]::Write($value.data.version); exit 0'
     $result = Invoke-EzVmTestPowerShell -CommandText $command
     Assert-EzVmEqual -Actual $result.ExitCode -Expected 0
-    Assert-EzVmEqual -Actual $result.StandardOutput -Expected '0.0.0-dev'
+    Assert-EzVmEqual -Actual $result.StandardOutput -Expected '0.1.0'
     Assert-EzVmEqual -Actual $result.StandardError -Expected ''
 }
 
@@ -146,7 +146,7 @@ Add-EzVmTest -Name 'CLI: direct File invocation produces clean JSON without a wr
         Assert-EzVmTrue -Condition ($stdout.Wait(5000) -and $stderr.Wait(5000))
         $result = [pscustomobject]@{ ExitCode = $process.ExitCode; StandardOutput = $stdout.Result; StandardError = $stderr.Result }
         $value = Assert-EzVmJsonEnvelope -Result $result -Command 'version' -ExitCode 0
-        Assert-EzVmEqual -Actual $value.data.version -Expected '0.0.0-dev'
+        Assert-EzVmEqual -Actual $value.data.version -Expected '0.1.0'
     }
     finally {
         $process.Dispose()
@@ -194,7 +194,7 @@ Add-EzVmTest -Name 'CLI: copied checkout with spaces and brackets works from an 
     try {
         $result = Invoke-EzVmCliForTest -ArgumentList @('version', '-Json') -Root $root -WorkingDirectory $elsewhere
         $value = Assert-EzVmJsonEnvelope -Result $result -Command 'version' -ExitCode 0
-        Assert-EzVmEqual -Actual $value.data.version -Expected '0.0.0-dev'
+        Assert-EzVmEqual -Actual $value.data.version -Expected '0.1.0'
         Assert-EzVmTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $root '.git')))
         Assert-EzVmTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $root 'runtime')))
         Assert-EzVmTrue -Condition (-not (Test-Path -LiteralPath (Join-Path $elsewhere 'runtime')))
