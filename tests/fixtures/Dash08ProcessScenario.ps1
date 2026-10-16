@@ -33,8 +33,10 @@ $ProgressPreference = 'SilentlyContinue'
 Import-Module '__MODULE__' -Force
 $directory = '__DIRECTORY__'
 $fixture = '__FIXTURE__'
-$tokens = @([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__TOKENS__')) | ConvertFrom-Json)
-$arguments = @($directory) + $tokens
+# Assign the decoded array before enumeration: Windows PowerShell 5.1 emits
+# JSON arrays as one pipeline object, unlike current PowerShell.
+$tokens = ConvertFrom-Json -InputObject ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__TOKENS__')))
+$arguments = @($directory) + @($tokens)
 # An unrelated inheritable handle must not be copied into the long-lived child.
 Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class Dash08Inheritance { [DllImport("kernel32.dll", SetLastError=true)] public static extern bool SetHandleInformation(IntPtr handle, uint mask, uint flags); }'
 $sentinel = [IO.File]::Open((Join-Path $directory 'unrelated.lock'), [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
