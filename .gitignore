@@ -64,3 +64,7 @@ Thumbs.db
 # Test output
 TestResults/
 coverage/
+
+# Optional Python dashboard bytecode / local interpreter state
+__pycache__/
+*.py[cod]

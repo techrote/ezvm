@@ -232,6 +232,22 @@ Implementation follows the dependency-ordered
 [RAG authority](docs/rag/README.md). Each issue includes implementation, tests,
 PR review, green automated checks, merge and verification of the merged commit.
 
+## VM & AI dashboard
+
+The first [read-only dashboard](docs/DASHBOARD.md) is available as an optional
+Windows terminal companion: run `.\dashboard.ps1` after its isolated dependency
+setup. It has mouse-controlled tiles for real VM resources, OpenCode worker
+activity, provider/model usage and local-engine metrics. It cannot resume workers
+or change VM provisioning. TRIO remains paused.
+
+The wider [dashboard design](docs/design/VM-AI-DASHBOARD.md) proposes future
+human-directed review/rework queues and provisioning controls. Those actions are
+not implemented, and the companion does not change the released v0.1 CLI contract.
+The [delivery slices](docs/design/VM-AI-DASHBOARD-DELIVERY.md) trace back to the
+[TRIO field-research register](docs/research/TRIO-2026-10/README.md), which records
+observations, evidence and retest criteria for future EzVM improvements and a clean
+local/free agentic-demo devbox recipe.
+
 ## Design constraints
 
 v0.1 intentionally avoids:

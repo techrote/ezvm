@@ -1,0 +1,469 @@
+{
+  "schemaVersion": 1,
+  "study": "TRIO-2026-10",
+  "recordedAt": "2026-10-16T15:07:10.089132+00:00",
+  "status": "planning; programme paused",
+  "observations": [
+    {
+      "id": "TRIO-FR-01",
+      "title": "Pause must stop future retries as well as visible work",
+      "area": "owner control",
+      "status": "proposed",
+      "observation": "During pause wrap-up, a quota-limited session still had a scheduled retry despite the expectation that workers had stopped. Its exact owned session was preserved and aborted; other sessions were not restarted.",
+      "design_implication": "Pause is durable operator intent, distinct from an idle or retry-wait observation.",
+      "evidence_ids": [
+        "E01",
+        "E03",
+        "E14"
+      ],
+      "confidence": "documented field event",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-05",
+        "DASH-07",
+        "DASH-11"
+      ],
+      "retest_criterion": "Pause persists across quota reset and controller restart; no new dispatch occurs and unacknowledged cancellation remains visible.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-02",
+      "title": "Accepted main and useful restart source diverged",
+      "area": "source identity",
+      "status": "proposed",
+      "observation": "Accepted main ended at whole001..007; the historical canonical checkout and the later partial pause checkpoint were different commits and roots.",
+      "design_implication": "A dashboard must display accepted baseline, current candidate and active worktree explicitly.",
+      "evidence_ids": [
+        "E01",
+        "E04",
+        "E17"
+      ],
+      "confidence": "verified checkpoint",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-02",
+        "DASH-06",
+        "DASH-11"
+      ],
+      "retest_criterion": "An operator finds the intended restart tree without choosing the stale checkout; every test and review names its source.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-03",
+      "title": "Green counts and zero-finding prose hid unfinished or defective work",
+      "area": "acceptance",
+      "status": "proposed",
+      "observation": "The report records false zero-blocking claims, missing committed reports and real defects found after green component tests. Whole acceptance needed separate evidence.",
+      "design_implication": "Acceptance must be a configurable evidence gate, not a model message parser.",
+      "evidence_ids": [
+        "E02",
+        "E03"
+      ],
+      "confidence": "documented repeated pattern",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-01",
+        "DASH-06"
+      ],
+      "retest_criterion": "Fixtures with PASS text but failing exit or absent report never become accepted.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-04",
+      "title": "Wrong imports and faulty probes created false findings or confidence",
+      "area": "review quality",
+      "status": "proposed",
+      "observation": "Several reviews initially used the wrong source root, treated an executable wrapper as a venv, or had a defective public probe. Corrected oracles changed the finding classification.",
+      "design_implication": "Review jobs need frozen source, explicit import roots, exit capture and harness/source error categories.",
+      "evidence_ids": [
+        "E02",
+        "E03"
+      ],
+      "confidence": "documented repeated pattern",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-02",
+        "DASH-06"
+      ],
+      "retest_criterion": "A wrong-import fixture is detected and a corrected probe preserves the original result without declaring a product regression.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-05",
+      "title": "Provenance and original reports were easy to lose during integration",
+      "area": "traceability",
+      "status": "proposed",
+      "observation": "Integration previously dropped a unique provenance row sharing a branch label and attempted report-tip-only imports. Pause wrap-up preserved full histories,89 incoming rows and151 original report blobs.",
+      "design_implication": "Track contributor records by full identity/content and validate complete incoming histories.",
+      "evidence_ids": [
+        "E02",
+        "E03",
+        "E04"
+      ],
+      "confidence": "verified checkpoint and historical events",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-06",
+        "DASH-11"
+      ],
+      "retest_criterion": "Rows sharing a branch label survive union; original reports remain hash-identical after corrections.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-06",
+      "title": "CI consumption and postmerge gates required manual reconstruction",
+      "area": "verification budget",
+      "status": "proposed",
+      "observation": "Actual CI included an unexpected generic-Python run and a packaging ENOSPC failure followed by a required postmerge retry. Counters had to follow real executions across phases.",
+      "design_implication": "Use a carried invocation ledger tied to tested trees; reconcile bypassed tickets without rerunning green work.",
+      "evidence_ids": [
+        "E01",
+        "E02",
+        "E08"
+      ],
+      "confidence": "verified historical accounting",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-06",
+        "DASH-11"
+      ],
+      "retest_criterion": "Un-ticketed actual runs consume the appropriate project budget and component checks never masquerade as whole/postmerge qualification.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-07",
+      "title": "Disk exhaustion interrupted work; growth required a recovery procedure",
+      "area": "provisioning",
+      "status": "proposed",
+      "observation": "The dedicated guest grew from16 to64GiB, preserving rollback data and checking guest capacity. Earlier low space affected CI and forced selective cache retirement.",
+      "design_implication": "Expose guest/host capacity separately and provide a journalled stopped-only growth path.",
+      "evidence_ids": [
+        "E02",
+        "E08",
+        "E15"
+      ],
+      "confidence": "measured operational event",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-04",
+        "DASH-09",
+        "DASH-11"
+      ],
+      "retest_criterion": "A growth preview shows host reserve and guest outcome; interrupted stages recover without modifying base or unrelated VMs.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-08",
+      "title": "Monitoring clients themselves consumed substantial RAM",
+      "area": "monitor overhead",
+      "status": "proposed",
+      "observation": "A preserved receipt records multiple exact idle OpenCode attach viewers retired to recover memory; active workers and servers remained.",
+      "design_implication": "One collector should feed many lightweight panes; distinguish viewers from workers and engines.",
+      "evidence_ids": [
+        "E09",
+        "E02"
+      ],
+      "confidence": "process measurements",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-03",
+        "DASH-11",
+        "DASH-12"
+      ],
+      "retest_criterion": "Opening and closing comparison panes does not spawn unbounded native clients, abort workers or leak memory.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-09",
+      "title": "Token totals needed message deduplication and semantic caveats",
+      "area": "telemetry",
+      "status": "proposed",
+      "observation": "The13:20UTC audit counted272378305 recorded tokens including216160584 cached tokens across OpenCode/NVIDIA records. It excluded local models and unreported failures; session totals were not added again.",
+      "design_implication": "Show coverage and cache/output/reasoning inclusion explicitly; totals are not unique content or provider billing.",
+      "evidence_ids": [
+        "E06",
+        "E16",
+        "E02"
+      ],
+      "confidence": "measured snapshot with known coverage",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-04"
+      ],
+      "retest_criterion": "Replay of the same records through multiple endpoints yields identical totals; missing usage remains unknown.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-10",
+      "title": "Provider429s occurred below configured local RPM target",
+      "area": "provider availability",
+      "status": "proposed",
+      "observation": "Two audited windows had minimum local admission spacing about1.771351s and2.226696s and peaks16 and11 rollingRPM. These timestamps do not establish provider arrival or the429 cause.",
+      "design_implication": "Expose local admission, retry/cooldown and provider errors separately; do not infer account quota from local counts.",
+      "evidence_ids": [
+        "E07",
+        "E02"
+      ],
+      "confidence": "measured dispatch windows; cause unknown",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-04",
+        "DASH-07"
+      ],
+      "retest_criterion": "A429 at low observedRPM enters visible cooldown without claiming a rate-limit root cause or silently upgrading service.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-11",
+      "title": "Advertised and effective context/runtime settings differed",
+      "area": "configuration",
+      "status": "proposed",
+      "observation": "The two-KAT trial recorded128k-advertised versus64k-native context mismatch. Strata requested residency but ran mapped when host commit headroom was insufficient.",
+      "design_implication": "Show requested/effective/observed context, quant, memory mode and concurrency before assigning work.",
+      "evidence_ids": [
+        "E08",
+        "E15",
+        "E02"
+      ],
+      "confidence": "measured configuration mismatch",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-02",
+        "DASH-04",
+        "DASH-07"
+      ],
+      "retest_criterion": "A configured limit never appears as tested capacity; mismatched model metadata blocks an incompatible launch.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-12",
+      "title": "Automatic GPU placement violated the selected-device constraint",
+      "area": "device identity",
+      "status": "proposed",
+      "observation": "A historical lms load CLI attempt allocated8460MiB on the prohibited V100 and was unloaded before benchmark inference. Later SDK/UUID routes verified physical placement.",
+      "design_implication": "Store allowed physical UUIDs and verify actual allocation before inference; reject unsupported loader routes.",
+      "evidence_ids": [
+        "E02",
+        "E01",
+        "E15"
+      ],
+      "confidence": "documented incident; no new device test",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-07",
+        "DASH-11"
+      ],
+      "retest_criterion": "Swapped indices or disallowed allocation prevent first inference; no claimed qualification from configuration alone.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-13",
+      "title": "Long generation could be unproductive while smaller tasks progressed",
+      "area": "task sizing",
+      "status": "proposed",
+      "observation": "Strata recorded an8192-token256.185-second reasoning-only compaction without a useful summary. Other small slices delivered code after controller narrowing; failures included context, tool and reporting problems.",
+      "design_implication": "Display recent executable progress, compaction/context events and bounded task checkpoints; preserve useful WIP before reassignment.",
+      "evidence_ids": [
+        "E11",
+        "E02",
+        "E03"
+      ],
+      "confidence": "measured example and bounded case study",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-03",
+        "DASH-06",
+        "DASH-07"
+      ],
+      "retest_criterion": "A long-thinking fixture is labelled uncertain rather than completed; operator can narrow the task and retain original evidence.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-14",
+      "title": "Native start output capture could remain tied to VM lifetime",
+      "area": "VM control",
+      "status": "proposed",
+      "observation": "The earlier audit reported a captured start pipe held open by QEMU; the field-test instructions retained a file-redirection workaround and protected the original start session.",
+      "design_implication": "Lifecycle operations need independently owned processes, bounded results and progress reporting.",
+      "evidence_ids": [
+        "E12",
+        "E01"
+      ],
+      "confidence": "historical report; not rerun",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-08",
+        "DASH-11"
+      ],
+      "retest_criterion": "A future standard-userWHPX test captures start JSON and returns at READY while VM stays running; dashboard exit cannot kill it.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-15",
+      "title": "Default setup had host-specific prerequisites and readiness failures",
+      "area": "onboarding",
+      "status": "proposed",
+      "observation": "The earlier audit reported standard-user ACL, WHPX reboot, SSH tool selection, CPU-feature and timeout problems. This host used owner patches and workarounds.",
+      "design_implication": "One-click claims require clean-machine qualification and honest prerequisite/capability reporting.",
+      "evidence_ids": [
+        "E12",
+        "E02"
+      ],
+      "confidence": "historical reported audit; needs current triage",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-08",
+        "DASH-10"
+      ],
+      "retest_criterion": "A fresh supported standard-user host reaches verified readiness through public commands with recorded prerequisite and failure paths.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-16",
+      "title": "Remote-only allocation drift left local capacity unused",
+      "area": "workflow allocation",
+      "status": "proposed",
+      "observation": "Owner steering had to restore useful local work alongside remote actors. Later primary-local preference changed to Strata while older documents still referred to KAT defaults.",
+      "design_implication": "Availability/preferences need one dated policy and visible queue eligibility, not duplicated prose defaults.",
+      "evidence_ids": [
+        "E01",
+        "E02",
+        "E14"
+      ],
+      "confidence": "documented operator intervention",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-06",
+        "DASH-07"
+      ],
+      "retest_criterion": "Operator sees why a local pool is idle and the latest role/model preference wins without silently reloading active work.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-17",
+      "title": "Growing handoffs became contradictory operational state",
+      "area": "project tracking",
+      "status": "proposed",
+      "observation": "Pause wrap-up archived long chronological documents and reconciled a concise handoff, component manifest, source hashes and ordered restart queue.",
+      "design_implication": "Generate current summaries from structured task/evidence state while retaining immutable historical claims.",
+      "evidence_ids": [
+        "E01",
+        "E03",
+        "E04",
+        "E05",
+        "E17"
+      ],
+      "confidence": "completed documentation recovery",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-01",
+        "DASH-06",
+        "DASH-11"
+      ],
+      "retest_criterion": "One restart capsule reconstructs accepted/candidate/paused state and all links verify; historical instructions cannot auto-launch workers.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-18",
+      "title": "Status-query errors may undercount ad-hoc admission occupancy",
+      "area": "control reliability",
+      "status": "proposed",
+      "observation": "Planning inspection of the existing helper found a scoped URL-error branch returning an empty status map. Other checks exist; no actual over-admission incident was established.",
+      "design_implication": "An unknown source must not create capacity. Test the whole admission path under partial failures.",
+      "evidence_ids": [
+        "E13"
+      ],
+      "confidence": "code-inspection hypothesis",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-02",
+        "DASH-05",
+        "DASH-07"
+      ],
+      "retest_criterion": "Partial status failures hold admissions until ownership/leases reconcile, including all registered endpoints.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-19",
+      "title": "The mature lab VM is not automatically a clean distributable devbox",
+      "area": "demonstration",
+      "status": "proposed",
+      "observation": "The field environment accumulated providers, model runtimes, worktrees, evidence and operator-specific scripts; recovery exports intentionally excluded credentials/whole databases.",
+      "design_implication": "Extract a reproducible clean recipe and a redacted demonstration exercise instead of shipping the current overlay.",
+      "evidence_ids": [
+        "E02",
+        "E05",
+        "E08"
+      ],
+      "confidence": "design inference from recorded environment",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-10",
+        "DASH-11"
+      ],
+      "retest_criterion": "A clean build has pinned provenance and no account state; local/free demonstration and replay paths are distinguished.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    },
+    {
+      "id": "TRIO-FR-20",
+      "title": "Provider transport and model quality failures were different phenomena",
+      "area": "evaluation",
+      "status": "proposed",
+      "observation": "DeepSeek/Ultra attempts sometimes produced no tools or code after provider timeouts; other models produced source defects. Small parallel helper timings did not consistently predict real task delivery.",
+      "design_implication": "Record error category, controller help and comparable task outcomes; do not rank models by token speed alone.",
+      "evidence_ids": [
+        "E02",
+        "E08"
+      ],
+      "confidence": "bounded mixed-model field study",
+      "scope": "One Windows field-test host and TRIO project; no live reproduction during dashboard planning.",
+      "proposed_actions": [
+        "DASH-01",
+        "DASH-04",
+        "DASH-07"
+      ],
+      "retest_criterion": "Reports separate no-response transport failure, context/tool failure, code defect and accepted repair with denominators and confounds.",
+      "github_issue": null,
+      "implementation_revision": null,
+      "verified_resolution": null
+    }
+  ]
+}

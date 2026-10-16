@@ -9,6 +9,20 @@ repository-pinned digests before use.
 This file records provenance and upstream licensing references; it does not
 relicense third-party software.
 
+## Optional terminal dashboard
+
+The optional dashboard installs the following pinned packages into a dedicated,
+ignored virtual environment. Their wheels and installed license files are not
+committed or bundled with EzVM source. Exact artifact hashes are in
+`dashboard/requirements.txt`; setup requires hash verification and binary wheels.
+
+- prompt_toolkit 3.0.53: BSD-3-Clause, https://github.com/prompt-toolkit/python-prompt-toolkit
+- wcwidth 0.2.13: MIT, https://github.com/jquast/wcwidth
+- psutil 7.2.2: BSD-3-Clause, https://github.com/giampaolo/psutil
+
+The tiled interaction reference is https://github.com/techrote/mdbm. No mdbm
+source or assets are copied into this implementation.
+
 ## QEMU for Windows
 
 - Project: QEMU

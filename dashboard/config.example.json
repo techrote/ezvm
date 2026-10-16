@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "instance": null,
+  "workspace": "/home/coder/workspace",
+  "session_prefix": "",
+  "ports": [4098],
+  "history_limit": 40,
+  "status_roots": 8,
+  "engines": [
+    {"id": "strata", "kind": "strata", "url": "http://127.0.0.1:8081"},
+    {"id": "lmstudio", "kind": "lmstudio", "url": "http://127.0.0.1:1234"}
+  ]
+}
