@@ -4,6 +4,11 @@ Status: initial research extraction for dashboard planning,16 October2026. The c
 programme is paused. Accepted TRIO001..007 and the later partial restart checkpoint are
 different artifacts; this study does not declare TRIO finished.
 
+The [dashboard issue series](../../programme/dashboard/README.md) now links all
+20 observations to concrete implementation/testing issues. Its catalogue preserves
+the original DASH-01..12 action IDs and adds DASH-13 for CI/packaging. The original
+evidence/observations remain unchanged; planned retests are not resolved findings.
+
 The study observed a Windows-hosted EzVM coding guest with local inference on a TITAN RTX,
 NVIDIA endpoints and OpenCode free models. The operator used custom scripts for admission,
 telemetry, independent review, artifact exports and manual recovery. Later authorised Codex

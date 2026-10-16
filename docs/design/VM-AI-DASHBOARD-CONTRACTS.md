@@ -3,6 +3,11 @@
 Companion to the [product proposal](VM-AI-DASHBOARD.md). These are proposed schemas and
 behaviour, not implemented EzVM API changes. Use `schemaVersion` consistently with EzVM.
 
+For future implementation, use the [issue series](../programme/dashboard/README.md)
+and its linked [dashboard RAG](../rag/README.md#dashboard-companion-target-contracts).
+Those targeted contracts supersede this exploratory sketch where more specific;
+this file remains design rationale rather than a second implementation status ledger.
+
 ## Identity and durable records
 
 | Record | Required identity and information |

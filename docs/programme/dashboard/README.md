@@ -1,0 +1,138 @@
+# VM & AI dashboard implementation and testing programme
+
+This is the executable **repository-local issue series** for future dashboard work.
+The 13 issue bodies below are ready to assign or later publish to GitHub. They are
+not GitHub tickets, not scheduled work and not a request to restart TRIO.
+Stable `DASH-01`–`DASH-12` identifiers are retained from the design; `DASH-13`
+adds explicit CI/packaging ownership. Existing EZVM-001..012 issue numbers are unchanged.
+
+## Current implementation and scope
+
+Baseline `d692be6` supplies a working read-only prototype. See
+[the guide](../../DASHBOARD.md) and [measured verification](../../DASHBOARD-VERIFICATION.md).
+DASH-01/02/03/04 have partial foundations, not completed acceptance. All issues in
+this series remain **planned**. No new model, worker, VM mutation or TRIO test is
+required to validate this documentation.
+
+Use the field study as first-person product research, not as a universal model
+ranking or a reason to redistribute the existing authenticated VM. The future
+demonstration is a clean recipe with measured local/free support.
+
+## Issue catalogue
+
+| Issue | Implementation/testing outcome | Priority | Dependencies | State |
+|---|---|---|---|---|
+| [DASH-01](issues/DASH-01-evidence-and-replay.md) | Build the evidence fixtures and research feedback loop | P0 | — | planned |
+| [DASH-02](issues/DASH-02-scoped-adapters-and-identities.md) | Harden scoped observation adapters and registered-worker discovery | P0 | DASH-01 | planned |
+| [DASH-03](issues/DASH-03-tiled-workspace-and-activity.md) | Finish mdbm-style tiles, saved layouts and evidence browsing | P0 | DASH-02 | planned |
+| [DASH-04](issues/DASH-04-usage-and-performance-ledger.md) | Implement a provenance-aware usage and performance ledger | P0 | DASH-02 | planned |
+| [DASH-05](issues/DASH-05-durable-commands-and-pause.md) | Add the durable command broker and operator pause/steering controls | P0 | DASH-11 | planned |
+| [DASH-06](issues/DASH-06-review-rework-and-evidence.md) | Build independent review, rework and evidence-gated task queues | P1 | DASH-05 | planned |
+| [DASH-07](issues/DASH-07-model-pools-and-automations.md) | Add model availability, shared admission pools and bounded automations | P1 | DASH-05, DASH-06 | planned |
+| [DASH-08](issues/DASH-08-lifecycle-prerequisites.md) | Qualify lifecycle prerequisites for dashboard-managed devboxes | P0 | DASH-01 | planned |
+| [DASH-09](issues/DASH-09-previewable-provisioning.md) | Implement previewable stopped-only provisioning and recoverable disk growth | P1 | DASH-05, DASH-08 | planned |
+| [DASH-10](issues/DASH-10-clean-demo-devbox.md) | Build a reproducible local/free agentic demonstration devbox | P1 | DASH-06, DASH-07, DASH-09, DASH-13 | planned |
+| [DASH-11](issues/DASH-11-recovery-and-performance-gates.md) | Establish recovery, pause and performance release gates | P0 | DASH-02, DASH-03, DASH-04, DASH-13 | planned |
+| [DASH-12](issues/DASH-12-optional-terminal-embedding.md) | Evaluate bounded embedded terminal viewing and explicit input ownership | P2 | DASH-03, DASH-05 | planned |
+| [DASH-13](issues/DASH-13-ci-packaging-and-compatibility.md) | Add reproducible dashboard CI, packaging and compatibility checks | P0 | DASH-01, DASH-02, DASH-03, DASH-04 | planned |
+
+The [catalogue JSON](catalog.json) holds stable IDs, paths, dependencies, RAG and
+research references, case IDs and release gates. The issue bodies own substantive
+scope and test assertions. Update both in the same change. GitHub URLs are null
+until actual publication; never invent ticket numbers or mark a draft accepted.
+
+## Execution order and release gates
+
+1. **Foundation:** DASH-01, then DASH-02.
+2. **Observation finish:** DASH-03 and DASH-04 can proceed independently after02.
+   DASH-08 lifecycle triage can proceed after01 in isolated fixtures.
+3. **Read-only qualification:** DASH-13 packages/tests the observation feature;
+   DASH-11 supplies the reusable recovery/performance harness and closes the
+   read-only gate. Numeric IDs preserve earlier references, not execution order.
+4. **Human controls:** DASH-05, then06, then07. Each adds its own actual crash/pause
+   tests to the harness; DASH-11 does not pre-qualify code that does not yet exist.
+5. **Provisioning:** DASH-09 after05 and08; controlled resource changes remain
+   disabled before the accepted API and recovery tests exist.
+6. **Demonstration:** DASH-10 after06/07/09/13, including their transitive gates.
+7. **Optional:** DASH-12 after03/05; its measured no-go does not block useful
+   read-only or workflow releases.
+
+| Gate | Required accepted issues | What may be claimed |
+|---|---|---|
+| READONLY | DASH-01, DASH-02, DASH-03, DASH-04, DASH-13, DASH-11 plus prerequisites | Release qualified observation; does not enable worker/VM mutations. |
+| CONTROL | DASH-05, DASH-06, DASH-07 plus prerequisites | Owned pause/steering/review/rework and policy-bound automation after all transitive prerequisites. |
+| PROVISION | DASH-08, DASH-09 plus prerequisites | Accepted stopped-only resource changes through authoritative APIs; separate explicit resume. |
+| DEVBOX | DASH-10 plus prerequisites | Qualified clean local/free recipe and demonstration, including all transitive prerequisites. |
+| EMBED | DASH-12 plus prerequisites | Measured go/no-go for embedding; not a dependency of the other release gates. |
+
+These are capability release gates, not permission to mutate the owner's paused
+TRIO environment. Work in disposable test roots/VMs where live qualification is
+authorized. Never use the original QEMU start pipe or owner patches as test fixtures.
+
+## Authority and implementation handoff
+
+Read [AGENTS](../../../AGENTS.md), this programme, the selected issue, its linked
+RAG, and the relevant accepted source/tests. Core
+[architecture](../../rag/01-ARCHITECTURE.md),
+[security/portability](../../rag/06-SECURITY-PORTABILITY-CONTRACT.md) and
+[test/release rules](../../rag/08-TESTING-CI-RELEASE.md) remain binding.
+The [dashboard RAG index](../../rag/README.md#dashboard-companion-target-contracts)
+defines target contracts; it does not falsely document proposed controls as current APIs.
+
+The narrative [design](../../design/VM-AI-DASHBOARD.md) remains rationale.
+For future dashboard execution, issue bodies and linked RAG are more specific than
+the earlier delivery sketch. Contract changes require matching implementation/tests
+and a recorded reason. Do not silently redefine the released core v0.1 contract.
+
+Before assignment, reconcile the selected source, owner changes and accepted
+dependencies. Inspect remote main/issues/comments only when remote operations are
+authorized; otherwise state the local baseline and external review gap. Publishing
+these bodies is a separate action. Preserve mixed contributions and avoid including
+the owner's unrelated `Keys.ps1` / `Runtime.ps1` patches in a dashboard commit.
+
+## Common closure requirements
+
+Every issue must deliver:
+
+- Intended implementation with the existing working subset preserved.
+- All listed acceptance cases, positive and negative, with actual commands, exits,
+  source/tested-tree identity, fixture/hardware/runtime versions and artifact hashes.
+  New case IDs in this programme are requirements, not tests claimed to exist.
+- Explicit PASS/FAIL/SKIP reasons; no physical-terminal/WHPX/live-model claim from
+  dummy output, TCG or replay. Unsupported acceptance stays visibly open.
+- Relevant core and dashboard checks, reviewed diff, RAG/user docs and research
+  retest updates. Verify the accepted revision; do not close on an unmerged WIP report.
+- Publication/review/merge under the applicable repository workflow when authorized.
+  A local-only completion record must state that remote checks are unverified.
+
+Staged release gates cannot waive mandatory evidence. A documented optional
+DASH-12 no-go is an explicit allowed outcome; other acceptance waivers need a
+deliberate scope/contract amendment rather than a prose success claim.
+Do not rerun unchanged heavy green tests only to repair documentation.
+
+## Tracking and validation
+
+State flow: planned -> ready (dependencies accepted) -> in-progress -> review ->
+accepted; use blocked with a reason and preserve prior phase. State changes must
+cite source/evidence and, after publication, actual GitHub identity. This catalogue
+is a plan, not a second runtime work queue.
+
+```powershell
+.\scripts\Test-DashboardPlan.ps1
+```
+
+The check verifies IDs, files, RAG/research links, dependency acyclicity, gate
+references, case IDs and required issue sections. It runs on PowerShell5.1 without
+Python, network, VM or model access. It does not validate product acceptance.
+
+At creation on 16 October 2026, the real PowerShell5.1 check passed for all 13
+issues, 62 case IDs, 20 observations and five gates. Seven disposable negative
+fixtures correctly rejected a cycle, missing RAG, missing case, broken link,
+unknown observation, metadata disagreement and duplicate case. The repository
+contract and diff whitespace checks also passed. Product suites were not rerun
+for this documentation-only plan; these results do not close dashboard issues.
+
+Maintain [TRIO research traceability](../../research/TRIO-2026-10/README.md):
+observation -> issue -> fixture -> accepted revision -> retest. Keep original
+evidence immutable and private raw data private; add corrections rather than
+rewriting the historical record.

@@ -8,6 +8,11 @@ released [architecture](../rag/01-ARCHITECTURE.md) or [CLI contract](../rag/07-C
 
 ## Product direction
 
+Future execution is specified by the [implementation/testing issues](../programme/dashboard/README.md)
+and their linked [dashboard RAG contracts](../rag/README.md#dashboard-companion-target-contracts).
+This document retains product rationale; the issue series supersedes the original
+delivery sketch and does not imply proposed actions are implemented or authorized.
+
 Give a person one terminal workspace for answering:
 
 1. Which VM, workers and local engines are actually doing something?
@@ -331,8 +336,9 @@ Initial success: a new operator can identify the active worker, explain why one 
 find the tested source/result, queue a review, pause future work and later recover the same
 queue without double execution. A developer can trace each displayed metric to its source.
 
-Unresolved by this draft: final UI toolkit after Windows spike; live terminal embedding vs
-attach-only; unattended controller lifetime; first supported hardware/model tiers; model
+The prototype now establishes prompt_toolkit as the implementation baseline; a change
+requires a measured unmet requirement and recorded decision. Remaining decisions include
+live terminal embedding vs attach-only; unattended controller lifetime; first supported hardware/model tiers; model
 adapter version support; distribution license. Tiling, mdbm-style controls, strict pause
 intent, evidence-backed acceptance and research traceability are the recommended direction.
 

@@ -243,7 +243,10 @@ or change VM provisioning. TRIO remains paused.
 The wider [dashboard design](docs/design/VM-AI-DASHBOARD.md) proposes future
 human-directed review/rework queues and provisioning controls. Those actions are
 not implemented, and the companion does not change the released v0.1 CLI contract.
-The [delivery slices](docs/design/VM-AI-DASHBOARD-DELIVERY.md) trace back to the
+The [13 implementation/testing issues](docs/programme/dashboard/README.md) include
+dependency order, release gates, 62 required test cases and linked dashboard RAG
+contracts. They are repository-local drafts, not published GitHub tickets.
+The [delivery overview](docs/design/VM-AI-DASHBOARD-DELIVERY.md) traces back to the
 [TRIO field-research register](docs/research/TRIO-2026-10/README.md), which records
 observations, evidence and retest criteria for future EzVM improvements and a clean
 local/free agentic-demo devbox recipe.

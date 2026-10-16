@@ -145,6 +145,8 @@ Run the isolated tests without a VM, GPU, provider account or network:
 See [verification](DASHBOARD-VERIFICATION.md) for the actual local checks and their
 limits. The [design](design/VM-AI-DASHBOARD.md), [contracts](design/VM-AI-DASHBOARD-CONTRACTS.md)
 and [delivery slices](design/VM-AI-DASHBOARD-DELIVERY.md) remain the wider proposal.
+The [implementation/testing issue series](programme/dashboard/README.md) now owns
+the actionable scope, dependencies and closure evidence for that future work.
 Next useful work is persisted layouts, exhaustive registered-worker discovery with
 bounded scheduling, event/latency history, replayable adapter fixtures and a reviewed
 command broker for future human orchestration. None of those controls is implied by
