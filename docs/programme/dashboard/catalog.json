@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "programme": "EzVM VM & AI dashboard",
-  "status": "DASH-01 in review; remaining issues planned; TRIO paused",
+  "status": "DASH-01 accepted; DASH-02 in review; remaining issues planned; TRIO paused",
   "created": "2026-10-16",
   "baseline": {
     "commit": "d692be6a79a0c6bd3c1d246ff74096bc523b23e1",
@@ -15,7 +15,7 @@
       "title": "Build the evidence fixtures and research feedback loop",
       "path": "docs/programme/dashboard/issues/DASH-01-evidence-and-replay.md",
       "priority": "P0",
-      "status": "review",
+      "status": "accepted",
       "githubIssue": "https://github.com/techrote/ezvm/issues/27",
       "dependsOn": [],
       "rag": [
@@ -40,7 +40,7 @@
       "title": "Harden scoped observation adapters and registered-worker discovery",
       "path": "docs/programme/dashboard/issues/DASH-02-scoped-adapters-and-identities.md",
       "priority": "P0",
-      "status": "planned",
+      "status": "review",
       "githubIssue": "https://github.com/techrote/ezvm/issues/28",
       "dependsOn": [
         "DASH-01"

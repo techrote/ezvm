@@ -162,6 +162,10 @@ class DashboardControl(UIControl):
         policy = data.get('policy', {})
         lines += [('', None), (f'Workers: {guest.label()}', None),
                   (f'Roster {len(policy.get("actors", []))} | history {len(self.workers)}/{data.get("session_count", "—")}', None)]
+        coverage = data.get('status_coverage', {})
+        if 'registered' in coverage:
+            lines += [(f'Registered {coverage.get("sampled", 0)}/{coverage["registered"]} sampled | overdue {len(coverage.get("overdue", []))}', None),
+                      (f'Cycle <= {coverage.get("cycle_bound_seconds")}s | oldest {number(coverage.get("oldest_age_seconds"), 1)}s', None)]
         if self.filter_text:
             lines.append(('Filter: ' + self.filter_text, None))
         for worker in self.workers:
@@ -183,6 +187,16 @@ class DashboardControl(UIControl):
                  f'{selected.get("provider", "—")} / {selected.get("model", "—")}',
                  f'State: {selected.get("state", "unknown")} | observed {guest.label()} | acceptance: not inferred',
                  f'Root: {selected.get("root", "—")}']
+        source = selected.get('source', {})
+        if selected.get('registration'):
+            lines += [f'Registration: {selected["registration"]} | source age {number(selected.get("ageSeconds"), 1)}s',
+                      f'Origin: {selected.get("origin")} | epoch {str(selected.get("epoch", ""))[:12]}',
+                      f'Last known: {selected.get("lastKnownState", "unobserved")} | error: {selected.get("error") or "none"}']
+        if source:
+            lines += [f'Accepted baseline (declared): {source.get("accepted_baseline") or "unknown"}',
+                      f'Candidate: {source.get("candidate_root")}', f'Restart root (declared): {source.get("restart_root") or "unknown"}',
+                      f'Import: {source.get("import_path") or "not declared"} | {source.get("assertion")}',
+                      f'Executable file: {source.get("executable") or "not declared"}']
         if detail.get('id') != self.selected_id:
             return lines + ['', 'Reading selected session (other panes remain live)…']
         usage = selected.get('usage', {})
@@ -212,10 +226,12 @@ class DashboardControl(UIControl):
         if self.metrics_mode == 'Usage':
             guest = samples.get('guest', Sample())
             rows = guest.data.get('usage', [])
-            lines = [f'Enrolled OpenCode history | {guest.label()}',
+            lines = [f'Bounded enrolled OpenCode history | {guest.label()}',
                      'Provider/model  | input | cache read | output | reasoning',
                      'Raw OpenCode-normalized categories; no cross-field grand total.',
-                     'One database snapshot: duplicate ports NOT added. Includes compaction.', '']
+                     'One database snapshot: duplicate ports NOT added.',
+                     guest.data.get('usage_note', 'History coverage not supplied.'),
+                     'Scan coverage: ' + str(guest.data.get('history_scan', {})), '']
             for row in rows:
                 lines += [row['provider'] + ' / ' + row['model'],
                           f'  {number(row.get("input"))} | {number(row.get("cache_read"))} | {number(row.get("output"))} | {number(row.get("reasoning"))}',
@@ -344,6 +360,9 @@ class DashboardControl(UIControl):
         errors = [(key, s.error) for key, s in samples.items() if s.error]
         coverage = samples.get('guest', Sample()).data.get('status_coverage', {})
         note = f'Scoped status: {coverage.get("roots_sampled", "—")} roots / {coverage.get("failure_count", "—")} failed reads; idle ≠ accepted; unobserved ≠ idle'
+        if 'registered' in coverage:
+            note = (f'Registered {coverage.get("sampled", 0)}/{coverage["registered"]} | overdue {len(coverage.get("overdue", []))} | '
+                    f'oldest {number(coverage.get("oldest_age_seconds"), 1)}s | cycle <= {coverage.get("cycle_bound_seconds")}s | observe only')
         if errors:
             note = 'UNAVAILABLE / STALE  ' + ' | '.join(k+': '+v for k,v in errors)
         self.put(0, self.height-2, note, 'class:warning' if errors else 'class:muted', self.width)

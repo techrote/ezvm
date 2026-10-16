@@ -209,7 +209,7 @@ class ObservationTests(unittest.TestCase):
             root=Path(directory);state=root/'runtime/instances/demo';state.mkdir(parents=True)
             for name,data in [('access',{'state':'READY','launchId':'old'}),('runtime',{'launchId':'new'}),('instance',{})]:
                 (state/(name+'.json')).write_text(json.dumps(data))
-            with patch('ezvm_dashboard.collectors.subprocess.run') as proc,self.assertRaises(ValueError):guest_sample(root,{'instance':'demo'})
+            with patch('ezvm_dashboard.collectors.run_read') as proc,self.assertRaises(ValueError):guest_sample(root,{'instance':'demo'})
             proc.assert_not_called()
             self.assertFalse((root/'runtime/keys').exists())
 
@@ -254,7 +254,7 @@ class GuestFixtureTests(unittest.TestCase):
             db.execute('INSERT INTO message VALUES(?,?,?,?)',(mid,sid,json.dumps({'role':'assistant','providerID':'free','modelID':'small','tokens':tokens}),1))
         db.execute('INSERT INTO part VALUES(?,?,?)',(json.dumps({'type':'tool','tool':'bash','state':{'status':'completed','metadata':{'exit':1},'output':'FAIL real error'}}),1,'s1'))
         db.commit();db.close()
-        (self.workspace/'OWNER-MODEL-POLICY.json').write_text('{"owner_paused":true,"actors":[]}')
+        (self.workspace/'OWNER-MODEL-POLICY.json').write_text('{"owner_paused":true,"actors":[{"session":"s1"},{"session":"s2"}]}')
         self.config={'instance':'demo','workspace':str(self.workspace),'session_prefix':'TRIO-','ports':[4096,4098],'history_limit':40,'status_roots':8,'selected':'s1'}
 
     def tearDown(self):self.temp.cleanup()
@@ -266,9 +266,9 @@ class GuestFixtureTests(unittest.TestCase):
             if str(path).replace('\\','/')=='/proc/stat':return 'cpu 10 0 10 80 0 0 0 0\n'
             return original(path,*args,**kwargs)
         def response(url,timeout):
-            if fail_port and str(fail_port) in url:raise TimeoutError('scoped source failed')
+            if fail_port and str(fail_port) in url.full_url:raise TimeoutError('scoped source failed')
             return io.BytesIO(b'{}')
-        with patch('ezvm_dashboard.guest_probe.Path.home',return_value=self.home),patch.object(Path,'read_text',read),patch('ezvm_dashboard.guest_probe.os.getloadavg',return_value=(0,0,0),create=True),patch('ezvm_dashboard.guest_probe.build_opener') as op,patch('ezvm_dashboard.guest_probe.subprocess.run',return_value=types.SimpleNamespace(returncode=0,stdout='abc\n')):
+        with patch('ezvm_dashboard.guest_probe.Path.home',return_value=self.home),patch.object(Path,'read_text',read),patch('ezvm_dashboard.guest_probe.os.getloadavg',return_value=(0,0,0),create=True),patch('ezvm_dashboard.guest_probe.build_opener') as op,patch('ezvm_dashboard.guest_probe.run_read',return_value=types.SimpleNamespace(returncode=0,stdout='abc\n')):
             op.return_value.open.side_effect=response
             return collect(self.config)
 
@@ -296,10 +296,11 @@ class GuestFixtureTests(unittest.TestCase):
         after={str(p):p.read_bytes() for p in self.home.rglob('*') if p.is_file()}
         self.assertEqual(before,after)
 
-    def test_unsampled_roots_are_unobserved(self):
+    def test_unsampled_registered_roots_are_unknown_and_visibly_overdue(self):
         self.config['status_roots']=1
         result=self.probe()
-        self.assertEqual({w['id']:w['state'] for w in result['workers']},{'s1':'idle','s2':'unobserved'})
+        self.assertEqual({w['id']:w['state'] for w in result['workers']},{'s1':'idle','s2':'unknown'})
+        self.assertIn('s2',result['status_coverage']['overdue'])
 
 
 if __name__=='__main__':unittest.main()
