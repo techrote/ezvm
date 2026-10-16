@@ -192,8 +192,8 @@ class AdapterTests(unittest.TestCase):
                    'import_path': str(source), 'executable': str(wrapper)}
             result = a.source_assertions(root, row, candidate)
             self.assertEqual(result['assertion'], 'own-root-file')
-            self.assertEqual(result['restart_root'], str(other))
-            self.assertEqual(result['executable'], str(wrapper))
+            self.assertEqual(result['restart_root'], str(other.resolve()))
+            self.assertEqual(result['executable'], str(wrapper.resolve()))
             with self.assertRaises(ValueError):
                 a.source_assertions(root, dict(row, import_path=str(foreign)), candidate)
             with self.assertRaises(ValueError):
@@ -561,12 +561,12 @@ class ResponsivenessTests(unittest.TestCase):
                     await asyncio.sleep(.15)
                     for i in range(20):
                         text = f'marker{i}'
-                        mark = time.monotonic()
+                        mark = time.perf_counter()
                         pipe.send_text('\x06' + text)
                         while view.query != text:
-                            self.assertLess(time.monotonic() - mark, 2, 'Input dispatch stalled')
+                            self.assertLess(time.perf_counter() - mark, 2, 'Input dispatch stalled')
                             await asyncio.sleep(.002)
-                        latencies.append(time.monotonic() - mark)
+                        latencies.append(time.perf_counter() - mark)
                         await asyncio.sleep(.4)
                     while time.monotonic() - started < 10.2:
                         await asyncio.sleep(.05)
@@ -578,10 +578,12 @@ class ResponsivenessTests(unittest.TestCase):
             self.assertEqual(calls['slow'], 1)
             self.assertGreater(calls['healthy'], 30)
             p95 = sorted(latencies)[18]
+            self.assertGreater(p95, 0, 'Latency clock must resolve actual dispatch')
             self.assertLess(p95, .1, 'Required input-dispatch p95 <100ms')
             self.assertIn('stall', collector.snapshot()['guest'].error)
             METRICS['T03'] = {'stallSeconds': 10, 'slowCalls': calls['slow'], 'healthyPolls': calls['healthy'],
                 'inputSamples': len(latencies), 'inputP95Seconds': p95, 'inputMaxSeconds': max(latencies),
+                'inputClock': 'perf_counter', 'inputClockResolutionSeconds': time.get_clock_info('perf_counter').resolution,
                 'wallSeconds': time.monotonic() - started, 'cpuSeconds': time.process_time() - cpu,
                 'rssBytes': psutil.Process().memory_info().rss,
                 'kind': 'real prompt_toolkit pipe dispatch/DummyOutput; not physical terminal paint'}
