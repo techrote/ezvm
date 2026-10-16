@@ -6,7 +6,9 @@ Add-EzVmTest -Name 'DASH-08-T01: retained legacy launch reproduces inherited cap
     $result = Invoke-EzVmDash08ProcessScenario -Mode Legacy
     Assert-EzVmTrue ($result.ParentExited -and $result.FixtureSurvivedParent -and $result.HeartbeatContinued -and $result.FixtureStopped)
     Assert-EzVmEqual $result.CapturedOutputDrained $false
-    Assert-EzVmTrue ($result.CallerOutput.Contains('fixture-stdout'))
+    # Unused inherited pipe handles can delay EOF without becoming the child's
+    # active console stdout. Pipe lifetime, not child-byte contamination, is the oracle.
+    Assert-EzVmTrue ($result.CallerOutput.Contains('{"callerReturned":true}'))
     Write-Host ('DASH08_MEASUREMENT legacyMilliseconds=' + $result.ElapsedMilliseconds)
 }
 

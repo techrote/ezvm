@@ -93,6 +93,18 @@ try {
             throw ('Capture caller failed with exit ' + $parent.ExitCode)
         }
         $drained = [Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]@($stdout, $stderr), 1000)
+        # Correct detachment can finish the parent before the child initializes.
+        # Wait for a heartbeat byte: it follows identity/argv/stdin/log setup, so
+        # existence of a half-written identity file is not mistaken for readiness.
+        $heartbeatPath = Join-Path $directory 'heartbeat'
+        $readyClock = [Diagnostics.Stopwatch]::StartNew()
+        $observable = $false
+        while (-not $observable -and $readyClock.ElapsedMilliseconds -lt 5000) {
+            $heartbeat = Get-Item -LiteralPath $heartbeatPath -ErrorAction SilentlyContinue
+            $observable = $null -ne $heartbeat -and $heartbeat.Length -gt 0
+            if (-not $observable) { Start-Sleep -Milliseconds 20 }
+        }
+        if (-not $observable) { throw 'The bounded fixture did not publish initialized heartbeat/identity evidence.' }
         $identity = [IO.File]::ReadAllLines((Join-Path $directory 'child.identity'))
         $child = [Diagnostics.Process]::GetProcessById([int]$identity[0])
         $null = $child.Handle # cache the exact handle before later cleanup
