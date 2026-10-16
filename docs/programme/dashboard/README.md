@@ -10,9 +10,11 @@ adds explicit CI/packaging ownership. Existing EZVM-001..012 issue numbers are u
 
 Baseline `d692be6` supplies a working read-only prototype. See
 [the guide](../../DASHBOARD.md) and [measured verification](../../DASHBOARD-VERIFICATION.md).
-DASH-01/02/03/04 have partial foundations, not completed acceptance. All issues in
-this series remain **planned**. No new model, worker, VM mutation or TRIO test is
-required to validate this documentation.
+DASH-01 now has its fixture/research implementation in **review**; see its
+[evidence handoff](../../research/TRIO-2026-10/DASH-01-REPLAY.md).
+DASH-02/03/04 retain partial foundations, not completed acceptance. All remaining
+issues are **planned**. No new model, worker, VM mutation or TRIO test is
+required to validate this documentation or the DASH-01 corpus.
 
 Use the field study as first-person product research, not as a universal model
 ranking or a reason to redistribute the existing authenticated VM. The future
@@ -22,7 +24,7 @@ demonstration is a clean recipe with measured local/free support.
 
 | Issue | GitHub | Implementation/testing outcome | Priority | Dependencies | State |
 |---|---|---|---|---|---|
-| [DASH-01](issues/DASH-01-evidence-and-replay.md) | [#27](https://github.com/techrote/ezvm/issues/27) | Build the evidence fixtures and research feedback loop | P0 | — | planned |
+| [DASH-01](issues/DASH-01-evidence-and-replay.md) | [#27](https://github.com/techrote/ezvm/issues/27) | Build the evidence fixtures and research feedback loop | P0 | — | review |
 | [DASH-02](issues/DASH-02-scoped-adapters-and-identities.md) | [#28](https://github.com/techrote/ezvm/issues/28) | Harden scoped observation adapters and registered-worker discovery | P0 | DASH-01 | planned |
 | [DASH-03](issues/DASH-03-tiled-workspace-and-activity.md) | [#29](https://github.com/techrote/ezvm/issues/29) | Finish mdbm-style tiles, saved layouts and evidence browsing | P0 | DASH-02 | planned |
 | [DASH-04](issues/DASH-04-usage-and-performance-ledger.md) | [#30](https://github.com/techrote/ezvm/issues/30) | Implement a provenance-aware usage and performance ledger | P0 | DASH-02 | planned |
@@ -39,8 +41,8 @@ demonstration is a clean recipe with measured local/free support.
 The [catalogue JSON](catalog.json) holds stable IDs, paths, dependencies, RAG and
 research references, case IDs and release gates. The issue bodies own substantive
 scope and test assertions. Update both in the same change and reconcile the linked
-GitHub body. Publication preserves planned status; no future issue is accepted by
-opening the prototype PR.
+GitHub body. Publication alone accepts no future issue; DASH-01 review status is
+not yet accepted-revision qualification.
 
 ## Execution order and release gates
 

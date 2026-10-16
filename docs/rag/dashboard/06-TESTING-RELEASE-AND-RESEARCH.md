@@ -25,8 +25,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Run-Tests.ps1
 ```
 
 The first command is the issue-series integrity check. Future cases in issue bodies
-are test requirements, not a claim those suites already exist. New setup/CI is
-DASH-13 work. No dependency installation is required to validate this plan.
+are test requirements, not a claim those suites already exist. General setup/packaging
+CI is DASH-13 work. No dependency installation is required to validate this plan.
+DASH-01's implemented fixture-only checks are described separately below.
 
 ## Required evidence record
 
@@ -87,3 +88,36 @@ Decision files record alternatives, measured reasons, consequences and revisit t
 Public research is redacted/reviewed; raw prompts/reasoning, account data and full DBs
 remain private. Export previews enumerate content and hashes; no telemetry upload.
 One field test can motivate an issue without proving a universal model ranking.
+
+## Implemented DASH-01 offline evidence contract
+
+The [v1 corpus and runner](../../../dashboard/fixtures/dash01/README.md) implement
+16 synthetic scenarios and all 49 journal restart cuts. The pure projector imports
+no live adapter; guarded I/O is confined to a new disposable output root. Tests
+exercise real blocked socket/process constructors and unchanged outside sentinels.
+The audit hook is a trusted-runner regression tripwire, not a hostile-code sandbox.
+
+Canonical fixture hashes cover source/version/capture/redaction metadata, events and
+literal expected projections/counters. Known token/key/host-path sentinels are rejected
+recursively; human publication review remains mandatory. Recorded evidence requires
+an original artifact hash, but this corpus contains only explicitly synthetic data.
+Corrections append new identities and events while preserving original fixtures.
+Source and evidence error categories are independent: transport cannot be erased by
+a valid report or scored as a reasoning defect. PASS text, idle, missing/uncommitted
+reports and wrong imports never produce accepted tasks. Replay never dispatches.
+
+```powershell
+python -B -m unittest discover -s dashboard/tests -p test_evidence.py -v
+python -B dashboard/replay.py --source-revision (git rev-parse HEAD)
+```
+
+The runner emits exact content/result/manifest hashes, runtime and timing evidence;
+CI additionally records the actual checkout commit/tree. It verifies both original
+research Git blobs and every observation/action mapping. The [separate ledger](../../research/TRIO-2026-10/retest-map.json)
+requires exact implementation revisions and hashed committed receipts for verified
+fixture actions. Historical findings remain unresolved proposals. Receipt applicability
+fails when source content or replay results change. See the [handoff and ADR](../../research/TRIO-2026-10/DASH-01-REPLAY.md).
+
+DASH-01 CI runs pinned Python on Windows and Linux; Windows also runs the existing
+dashboard suite. This issue-owned regression lane does not qualify DASH-13 packaging,
+DASH-11 performance/recovery, live adapters, physical terminals or any release gate.
