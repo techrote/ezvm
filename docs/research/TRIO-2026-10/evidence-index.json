@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "study": "TRIO-2026-10",
+  "recordedAt": "2026-10-16T15:07:10.089132+00:00",
+  "privacy": "Summaries and hashes only; raw evidence is local-only and not automatically publishable.",
+  "sources": [
+    {
+      "id": "E01",
+      "description": "Operational pause handoff and remaining programme boundaries",
+      "kind": "controller handoff",
+      "sha256": "12b74df9c41489da555107d978932ce3dbb123c1ca7812b0b1319c43acd84452",
+      "bytes": 7537,
+      "availability": "local-only",
+      "capture_note": "Hash recorded at planning extraction; source content has its own event/capture timestamps. Historical actor lists are not current instructions."
+    },
+    {
+      "id": "E02",
+      "description": "Cohesive field-test report with model, infrastructure and verification limits",
+      "kind": "controller synthesis",
+      "sha256": "66bf8edf9f32736071ffec1c97ea6f5698dc04b14ef049641b066a0993a336aa",
+      "bytes": 10183,
+      "availability": "local-only",
+      "capture_note": "Hash recorded at planning extraction; source content has its own event/capture timestamps. Historical actor lists are not current instructions."
+    },
+    {
+      "id": "E03",
+      "description": "Committed Codex wrap-up review mirrored from the guest",
+      "kind": "source and verification record",
+      "sha256": "ce2ef4f8a3a9d5afbb9d861b20c3908692b35dcadda5a0fc4f0870809b794779",
+      "bytes": 4957,
+      "availability": "local-only",
+      "capture_note": "Hash recorded at planning extraction; source content has its own event/capture timestamps. Historical actor lists are not current instructions."
+    },
+    {
+      "id": "E04",
+      "description": "Component refs, source/test hashes and restart identity",
+      "kind": "manifest",
+      "sha256": "c035d14fd7ef486afef58eea01249515add5e694ef12c38472be8cec6c5bf26c",
+      "bytes": 25928,
+      "availability": "local-only",
+      "capture_note": "Hash recorded at planning extraction; source content has its own event/capture timestamps. Historical actor lists are not current instructions."
+    },
+    {
+      "id": "E05",
+      "description": "Host verification receipt for recovery bundle and 573 evidence files",
+      "kind": "hash verification receipt",
+      "sha256": "a37adcb6b03c5dfa917e74a4d96ed5d76d649a076f8ec9333e42aebb9c2eefda",
+      "bytes": 77309,
+      "availability": "local-only",
+      "capture_note": "Hash recorded at planning extraction; source content has its own event/capture timestamps. Historical actor lists are not current instructions."
+    },
+    {
+      "id": "E06",
+      "description": "Frozen 13:20UTC deduplicated remote/free usage snapshot",
+      "kind": "read-only usage audit",
+      "sha256": "12a635466fcbaf4f82b8f038a20d85de2c3f1a031a95e739f04d79cb6f1af7e6",
+      "bytes": 7059,
+      "availability": "local-only",
+      "capture_note": "Hash recorded at planning extraction; source content has its own event/capture timestamps. Historical actor lists are not current instructions."
+    },
+    {
+      "id": "E07",
+      "description": "Local admission timestamps around two provider429 windows",
+      "kind": "dispatch audit",
+      "sha256": "a8a039b0874e602b07f850d3976033f6efc0aca166c7b950cce8fbf8f78ffe40",
+      "bytes": 2268,
+      "availability": "local-only",
+      "capture_note": "Hash recorded at planning extraction; source content has its own event/capture timestamps. Historical actor lists are not current instructions."
+    },
+    {
+      "id": "E08",
+      "description": "Storage growth, bounded two-KAT trial and Strata trial summary",
+      "kind": "historical experiment receipt",
+      "sha256": "949abe675a25d8798bad00e56cb266b4e5b9c2351f1ad1cd290d38f8dce8adda",
+      "bytes": 4487,
+      "availability": "local-only",
+      "capture_note": "Hash recorded at planning extraction; source content has its own event/capture timestamps. Historical actor lists are not current instructions."
+    },
+    {
+      "id": "E09",
+      "description": "Exact idle attach clients and measured memory freed",
+      "kind": "process receipt",
+      "sha256": "53ab829921ab0012d4c930bb406d7f7b93c6bc3aae408ba65466ff957ee3dcee",
+      "bytes": 7553,
+      "availability": "local-only",
+      "capture_note": "Hash recorded at planning extraction; source content has its own event/capture timestamps. Historical actor lists are not current instructions."
+    },
+    {
+      "id": "E10",
+      "description": "Read-only Strata terminal metrics implementation",
+      "kind": "local helper source",
+      "sha256": "1732fe072346eb2c120fabd022fe4533262425d3620b27ef0021944cd55fb943",
+      "bytes": 10357,
+      "availability": "local-only",
+      "capture_note": "Hash recorded at planning extraction; source content has its own event/capture timestamps. Historical actor lists are not current instructions."
+    },
+    {
+      "id": "E11",
+      "description": "Measured Strata prompt/generation duration audit",
+      "kind": "native log audit",
+      "sha256": "07fd6a6c2d68dc2218e854ffa55c4b1185b9b20a0536b27b236bb27cfbefb828",
+      "bytes": 4549,
+      "availability": "local-only",
+      "capture_note": "Hash recorded at planning extraction; source content has its own event/capture timestamps. Historical actor lists are not current instructions."
+    },
+    {
+      "id": "E12",
+      "description": "Earlier standard-user Windows/WHPX EzVM audit; not rerun for this plan",
+      "kind": "historical reported audit",
+      "sha256": "9769d449083aee797eb1d43848ca7ba321a53365e75f2c4c927fbbb3ec730ac6",
+      "bytes": 11385,
+      "availability": "local-only",
+      "capture_note": "Hash recorded at planning extraction; source content has its own event/capture timestamps. Historical actor lists are not current instructions."
+    },
+    {
+      "id": "E13",
+      "description": "Ad-hoc worker admission guard inspected during planning",
+      "kind": "helper code inspection",
+      "sha256": "6c193c2c979990a54a3999fb64d5ab80130cff504e01563a93b347133de7939b",
+      "bytes": 3761,
+      "availability": "local-only",
+      "capture_note": "Hash recorded at planning extraction; source content has its own event/capture timestamps. Historical actor lists are not current instructions."
+    },
+    {
+      "id": "E14",
+      "description": "Explicit paused policy and carried project budgets",
+      "kind": "paused configuration snapshot",
+      "sha256": "b6bf08d9f313aabf04b5ba5eb163976ecadf92549bed334b46ff5e07e451af84",
+      "bytes": 1961,
+      "availability": "local-only",
+      "capture_note": "Hash recorded at planning extraction; source content has its own event/capture timestamps. Historical actor lists are not current instructions."
+    },
+    {
+      "id": "E15",
+      "description": "Idle engine, host GPU and VM resource snapshot at pause",
+      "kind": "runtime snapshot",
+      "sha256": "3a73384060500c20374ee644dbf96dd0d644bf80c7d0cd11ba48d717214b9b9e",
+      "bytes": 838,
+      "availability": "local-only",
+      "capture_note": "Hash recorded at planning extraction; source content has its own event/capture timestamps. Historical actor lists are not current instructions."
+    },
+    {
+      "id": "E16",
+      "description": "Deduplication and metric interpretation used by the remote usage audit",
+      "kind": "audit implementation",
+      "sha256": "78994f810701d26cb0459067828399ce3a9262d3020cbe1282bf35cdd3516189",
+      "bytes": 5805,
+      "availability": "local-only",
+      "capture_note": "Hash recorded at planning extraction; source content has its own event/capture timestamps. Historical actor lists are not current instructions."
+    },
+    {
+      "id": "E17",
+      "description": "Ordered restart queue, review gates and source identity",
+      "kind": "restart runbook",
+      "sha256": "957751743b62f61db3cce1ab75ad6bf3d9ed108715dab89ec602e657b7b4014e",
+      "bytes": 7023,
+      "availability": "local-only",
+      "capture_note": "Hash recorded at planning extraction; source content has its own event/capture timestamps. Historical actor lists are not current instructions."
+    }
+  ]
+}

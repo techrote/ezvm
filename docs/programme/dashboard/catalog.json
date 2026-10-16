@@ -1,0 +1,478 @@
+{
+  "schemaVersion": 1,
+  "programme": "EzVM VM & AI dashboard",
+  "status": "planned; prototype exists; TRIO paused",
+  "created": "2026-10-16",
+  "baseline": {
+    "commit": "d692be6a79a0c6bd3c1d246ff74096bc523b23e1",
+    "guide": "docs/DASHBOARD.md",
+    "verification": "docs/DASHBOARD-VERIFICATION.md"
+  },
+  "githubPublication": "published; GitHub issues linked to version-controlled specifications",
+  "issues": [
+    {
+      "id": "DASH-01",
+      "title": "Build the evidence fixtures and research feedback loop",
+      "path": "docs/programme/dashboard/issues/DASH-01-evidence-and-replay.md",
+      "priority": "P0",
+      "status": "planned",
+      "githubIssue": "https://github.com/techrote/ezvm/issues/27",
+      "dependsOn": [],
+      "rag": [
+        "docs/rag/dashboard/00-SCOPE-AND-STATE.md",
+        "docs/rag/dashboard/06-TESTING-RELEASE-AND-RESEARCH.md",
+        "docs/rag/08-TESTING-CI-RELEASE.md"
+      ],
+      "research": [
+        "TRIO-FR-03",
+        "TRIO-FR-17",
+        "TRIO-FR-20"
+      ],
+      "testCases": [
+        "DASH-01-T01",
+        "DASH-01-T02",
+        "DASH-01-T03",
+        "DASH-01-T04"
+      ]
+    },
+    {
+      "id": "DASH-02",
+      "title": "Harden scoped observation adapters and registered-worker discovery",
+      "path": "docs/programme/dashboard/issues/DASH-02-scoped-adapters-and-identities.md",
+      "priority": "P0",
+      "status": "planned",
+      "githubIssue": "https://github.com/techrote/ezvm/issues/28",
+      "dependsOn": [
+        "DASH-01"
+      ],
+      "rag": [
+        "docs/rag/dashboard/00-SCOPE-AND-STATE.md",
+        "docs/rag/dashboard/01-OBSERVATION-AND-METRICS.md",
+        "docs/rag/dashboard/06-TESTING-RELEASE-AND-RESEARCH.md",
+        "docs/rag/08-TESTING-CI-RELEASE.md"
+      ],
+      "research": [
+        "TRIO-FR-02",
+        "TRIO-FR-04",
+        "TRIO-FR-11",
+        "TRIO-FR-18"
+      ],
+      "testCases": [
+        "DASH-02-T01",
+        "DASH-02-T02",
+        "DASH-02-T03",
+        "DASH-02-T04",
+        "DASH-02-T05"
+      ]
+    },
+    {
+      "id": "DASH-03",
+      "title": "Finish mdbm-style tiles, saved layouts and evidence browsing",
+      "path": "docs/programme/dashboard/issues/DASH-03-tiled-workspace-and-activity.md",
+      "priority": "P0",
+      "status": "planned",
+      "githubIssue": "https://github.com/techrote/ezvm/issues/29",
+      "dependsOn": [
+        "DASH-02"
+      ],
+      "rag": [
+        "docs/rag/dashboard/00-SCOPE-AND-STATE.md",
+        "docs/rag/dashboard/02-TERMINAL-INTERACTION.md",
+        "docs/rag/dashboard/06-TESTING-RELEASE-AND-RESEARCH.md",
+        "docs/rag/08-TESTING-CI-RELEASE.md"
+      ],
+      "research": [
+        "TRIO-FR-08",
+        "TRIO-FR-13"
+      ],
+      "testCases": [
+        "DASH-03-T01",
+        "DASH-03-T02",
+        "DASH-03-T03",
+        "DASH-03-T04",
+        "DASH-03-T05"
+      ]
+    },
+    {
+      "id": "DASH-04",
+      "title": "Implement a provenance-aware usage and performance ledger",
+      "path": "docs/programme/dashboard/issues/DASH-04-usage-and-performance-ledger.md",
+      "priority": "P0",
+      "status": "planned",
+      "githubIssue": "https://github.com/techrote/ezvm/issues/30",
+      "dependsOn": [
+        "DASH-02"
+      ],
+      "rag": [
+        "docs/rag/dashboard/00-SCOPE-AND-STATE.md",
+        "docs/rag/dashboard/01-OBSERVATION-AND-METRICS.md",
+        "docs/rag/dashboard/06-TESTING-RELEASE-AND-RESEARCH.md",
+        "docs/rag/08-TESTING-CI-RELEASE.md"
+      ],
+      "research": [
+        "TRIO-FR-07",
+        "TRIO-FR-09",
+        "TRIO-FR-10",
+        "TRIO-FR-11",
+        "TRIO-FR-20"
+      ],
+      "testCases": [
+        "DASH-04-T01",
+        "DASH-04-T02",
+        "DASH-04-T03",
+        "DASH-04-T04",
+        "DASH-04-T05"
+      ]
+    },
+    {
+      "id": "DASH-05",
+      "title": "Add the durable command broker and operator pause/steering controls",
+      "path": "docs/programme/dashboard/issues/DASH-05-durable-commands-and-pause.md",
+      "priority": "P0",
+      "status": "planned",
+      "githubIssue": "https://github.com/techrote/ezvm/issues/31",
+      "dependsOn": [
+        "DASH-11"
+      ],
+      "rag": [
+        "docs/rag/dashboard/00-SCOPE-AND-STATE.md",
+        "docs/rag/dashboard/03-CONTROLS-AND-REVIEW.md",
+        "docs/rag/dashboard/04-CAPACITY-AND-MODELS.md",
+        "docs/rag/dashboard/06-TESTING-RELEASE-AND-RESEARCH.md",
+        "docs/rag/08-TESTING-CI-RELEASE.md"
+      ],
+      "research": [
+        "TRIO-FR-01",
+        "TRIO-FR-18"
+      ],
+      "testCases": [
+        "DASH-05-T01",
+        "DASH-05-T02",
+        "DASH-05-T03",
+        "DASH-05-T04",
+        "DASH-05-T05"
+      ]
+    },
+    {
+      "id": "DASH-06",
+      "title": "Build independent review, rework and evidence-gated task queues",
+      "path": "docs/programme/dashboard/issues/DASH-06-review-rework-and-evidence.md",
+      "priority": "P1",
+      "status": "planned",
+      "githubIssue": "https://github.com/techrote/ezvm/issues/32",
+      "dependsOn": [
+        "DASH-05"
+      ],
+      "rag": [
+        "docs/rag/dashboard/00-SCOPE-AND-STATE.md",
+        "docs/rag/dashboard/03-CONTROLS-AND-REVIEW.md",
+        "docs/rag/dashboard/06-TESTING-RELEASE-AND-RESEARCH.md",
+        "docs/rag/08-TESTING-CI-RELEASE.md"
+      ],
+      "research": [
+        "TRIO-FR-02",
+        "TRIO-FR-03",
+        "TRIO-FR-04",
+        "TRIO-FR-05",
+        "TRIO-FR-06",
+        "TRIO-FR-13",
+        "TRIO-FR-16",
+        "TRIO-FR-17"
+      ],
+      "testCases": [
+        "DASH-06-T01",
+        "DASH-06-T02",
+        "DASH-06-T03",
+        "DASH-06-T04",
+        "DASH-06-T05"
+      ]
+    },
+    {
+      "id": "DASH-07",
+      "title": "Add model availability, shared admission pools and bounded automations",
+      "path": "docs/programme/dashboard/issues/DASH-07-model-pools-and-automations.md",
+      "priority": "P1",
+      "status": "planned",
+      "githubIssue": "https://github.com/techrote/ezvm/issues/33",
+      "dependsOn": [
+        "DASH-05",
+        "DASH-06"
+      ],
+      "rag": [
+        "docs/rag/dashboard/00-SCOPE-AND-STATE.md",
+        "docs/rag/dashboard/03-CONTROLS-AND-REVIEW.md",
+        "docs/rag/dashboard/04-CAPACITY-AND-MODELS.md",
+        "docs/rag/dashboard/06-TESTING-RELEASE-AND-RESEARCH.md",
+        "docs/rag/08-TESTING-CI-RELEASE.md"
+      ],
+      "research": [
+        "TRIO-FR-01",
+        "TRIO-FR-10",
+        "TRIO-FR-11",
+        "TRIO-FR-12",
+        "TRIO-FR-13",
+        "TRIO-FR-16",
+        "TRIO-FR-18",
+        "TRIO-FR-20"
+      ],
+      "testCases": [
+        "DASH-07-T01",
+        "DASH-07-T02",
+        "DASH-07-T03",
+        "DASH-07-T04",
+        "DASH-07-T05"
+      ]
+    },
+    {
+      "id": "DASH-08",
+      "title": "Qualify lifecycle prerequisites for dashboard-managed devboxes",
+      "path": "docs/programme/dashboard/issues/DASH-08-lifecycle-prerequisites.md",
+      "priority": "P0",
+      "status": "planned",
+      "githubIssue": "https://github.com/techrote/ezvm/issues/34",
+      "dependsOn": [
+        "DASH-01"
+      ],
+      "rag": [
+        "docs/rag/dashboard/00-SCOPE-AND-STATE.md",
+        "docs/rag/dashboard/05-PROVISIONING-AND-DEVBOX.md",
+        "docs/rag/dashboard/06-TESTING-RELEASE-AND-RESEARCH.md",
+        "docs/rag/02-HOST-QEMU-CONTRACT.md",
+        "docs/rag/03-QCOW2-STATE-CONTRACT.md",
+        "docs/rag/05-NETWORK-SSH-CONTRACT.md",
+        "docs/rag/06-SECURITY-PORTABILITY-CONTRACT.md",
+        "docs/rag/07-CLI-STATE-CONTRACT.md",
+        "docs/rag/08-TESTING-CI-RELEASE.md"
+      ],
+      "research": [
+        "TRIO-FR-14",
+        "TRIO-FR-15"
+      ],
+      "testCases": [
+        "DASH-08-T01",
+        "DASH-08-T02",
+        "DASH-08-T03",
+        "DASH-08-T04"
+      ]
+    },
+    {
+      "id": "DASH-09",
+      "title": "Implement previewable stopped-only provisioning and recoverable disk growth",
+      "path": "docs/programme/dashboard/issues/DASH-09-previewable-provisioning.md",
+      "priority": "P1",
+      "status": "planned",
+      "githubIssue": "https://github.com/techrote/ezvm/issues/35",
+      "dependsOn": [
+        "DASH-05",
+        "DASH-08"
+      ],
+      "rag": [
+        "docs/rag/dashboard/00-SCOPE-AND-STATE.md",
+        "docs/rag/dashboard/03-CONTROLS-AND-REVIEW.md",
+        "docs/rag/dashboard/05-PROVISIONING-AND-DEVBOX.md",
+        "docs/rag/dashboard/06-TESTING-RELEASE-AND-RESEARCH.md",
+        "docs/rag/02-HOST-QEMU-CONTRACT.md",
+        "docs/rag/03-QCOW2-STATE-CONTRACT.md",
+        "docs/rag/05-NETWORK-SSH-CONTRACT.md",
+        "docs/rag/06-SECURITY-PORTABILITY-CONTRACT.md",
+        "docs/rag/07-CLI-STATE-CONTRACT.md",
+        "docs/rag/08-TESTING-CI-RELEASE.md"
+      ],
+      "research": [
+        "TRIO-FR-07"
+      ],
+      "testCases": [
+        "DASH-09-T01",
+        "DASH-09-T02",
+        "DASH-09-T03",
+        "DASH-09-T04",
+        "DASH-09-T05"
+      ]
+    },
+    {
+      "id": "DASH-10",
+      "title": "Build a reproducible local/free agentic demonstration devbox",
+      "path": "docs/programme/dashboard/issues/DASH-10-clean-demo-devbox.md",
+      "priority": "P1",
+      "status": "planned",
+      "githubIssue": "https://github.com/techrote/ezvm/issues/36",
+      "dependsOn": [
+        "DASH-06",
+        "DASH-07",
+        "DASH-09",
+        "DASH-13"
+      ],
+      "rag": [
+        "docs/rag/dashboard/00-SCOPE-AND-STATE.md",
+        "docs/rag/dashboard/04-CAPACITY-AND-MODELS.md",
+        "docs/rag/dashboard/05-PROVISIONING-AND-DEVBOX.md",
+        "docs/rag/dashboard/06-TESTING-RELEASE-AND-RESEARCH.md",
+        "docs/rag/02-HOST-QEMU-CONTRACT.md",
+        "docs/rag/03-QCOW2-STATE-CONTRACT.md",
+        "docs/rag/05-NETWORK-SSH-CONTRACT.md",
+        "docs/rag/06-SECURITY-PORTABILITY-CONTRACT.md",
+        "docs/rag/07-CLI-STATE-CONTRACT.md",
+        "docs/rag/08-TESTING-CI-RELEASE.md"
+      ],
+      "research": [
+        "TRIO-FR-15",
+        "TRIO-FR-19"
+      ],
+      "testCases": [
+        "DASH-10-T01",
+        "DASH-10-T02",
+        "DASH-10-T03",
+        "DASH-10-T04",
+        "DASH-10-T05"
+      ]
+    },
+    {
+      "id": "DASH-11",
+      "title": "Establish recovery, pause and performance release gates",
+      "path": "docs/programme/dashboard/issues/DASH-11-recovery-and-performance-gates.md",
+      "priority": "P0",
+      "status": "planned",
+      "githubIssue": "https://github.com/techrote/ezvm/issues/37",
+      "dependsOn": [
+        "DASH-02",
+        "DASH-03",
+        "DASH-04",
+        "DASH-13"
+      ],
+      "rag": [
+        "docs/rag/dashboard/00-SCOPE-AND-STATE.md",
+        "docs/rag/dashboard/01-OBSERVATION-AND-METRICS.md",
+        "docs/rag/dashboard/02-TERMINAL-INTERACTION.md",
+        "docs/rag/dashboard/06-TESTING-RELEASE-AND-RESEARCH.md",
+        "docs/rag/08-TESTING-CI-RELEASE.md"
+      ],
+      "research": [
+        "TRIO-FR-01",
+        "TRIO-FR-02",
+        "TRIO-FR-05",
+        "TRIO-FR-06",
+        "TRIO-FR-07",
+        "TRIO-FR-08",
+        "TRIO-FR-12",
+        "TRIO-FR-14",
+        "TRIO-FR-17",
+        "TRIO-FR-19"
+      ],
+      "testCases": [
+        "DASH-11-T01",
+        "DASH-11-T02",
+        "DASH-11-T03",
+        "DASH-11-T04",
+        "DASH-11-T05"
+      ]
+    },
+    {
+      "id": "DASH-12",
+      "title": "Evaluate bounded embedded terminal viewing and explicit input ownership",
+      "path": "docs/programme/dashboard/issues/DASH-12-optional-terminal-embedding.md",
+      "priority": "P2",
+      "status": "planned",
+      "githubIssue": "https://github.com/techrote/ezvm/issues/38",
+      "dependsOn": [
+        "DASH-03",
+        "DASH-05"
+      ],
+      "rag": [
+        "docs/rag/dashboard/00-SCOPE-AND-STATE.md",
+        "docs/rag/dashboard/02-TERMINAL-INTERACTION.md",
+        "docs/rag/dashboard/03-CONTROLS-AND-REVIEW.md",
+        "docs/rag/dashboard/06-TESTING-RELEASE-AND-RESEARCH.md",
+        "docs/rag/08-TESTING-CI-RELEASE.md"
+      ],
+      "research": [
+        "TRIO-FR-08"
+      ],
+      "testCases": [
+        "DASH-12-T01",
+        "DASH-12-T02",
+        "DASH-12-T03",
+        "DASH-12-T04"
+      ]
+    },
+    {
+      "id": "DASH-13",
+      "title": "Add reproducible dashboard CI, packaging and compatibility checks",
+      "path": "docs/programme/dashboard/issues/DASH-13-ci-packaging-and-compatibility.md",
+      "priority": "P0",
+      "status": "planned",
+      "githubIssue": "https://github.com/techrote/ezvm/issues/39",
+      "dependsOn": [
+        "DASH-01",
+        "DASH-02",
+        "DASH-03",
+        "DASH-04"
+      ],
+      "rag": [
+        "docs/rag/dashboard/00-SCOPE-AND-STATE.md",
+        "docs/rag/dashboard/06-TESTING-RELEASE-AND-RESEARCH.md",
+        "docs/rag/08-TESTING-CI-RELEASE.md"
+      ],
+      "research": [
+        "TRIO-FR-15",
+        "TRIO-FR-19"
+      ],
+      "testCases": [
+        "DASH-13-T01",
+        "DASH-13-T02",
+        "DASH-13-T03",
+        "DASH-13-T04",
+        "DASH-13-T05"
+      ]
+    }
+  ],
+  "gates": [
+    {
+      "id": "READONLY",
+      "title": "Qualified read-only dashboard",
+      "requires": [
+        "DASH-01",
+        "DASH-02",
+        "DASH-03",
+        "DASH-04",
+        "DASH-13",
+        "DASH-11"
+      ],
+      "enables": "Release qualified observation; does not enable worker/VM mutations."
+    },
+    {
+      "id": "CONTROL",
+      "title": "Human-controlled worker workflow",
+      "requires": [
+        "DASH-05",
+        "DASH-06",
+        "DASH-07"
+      ],
+      "enables": "Owned pause/steering/review/rework and policy-bound automation after all transitive prerequisites."
+    },
+    {
+      "id": "PROVISION",
+      "title": "Supported provisioning",
+      "requires": [
+        "DASH-08",
+        "DASH-09"
+      ],
+      "enables": "Accepted stopped-only resource changes through authoritative APIs; separate explicit resume."
+    },
+    {
+      "id": "DEVBOX",
+      "title": "Clean demonstration devbox",
+      "requires": [
+        "DASH-10"
+      ],
+      "enables": "Qualified clean local/free recipe and demonstration, including all transitive prerequisites."
+    },
+    {
+      "id": "EMBED",
+      "title": "Optional embedded terminal decision",
+      "requires": [
+        "DASH-12"
+      ],
+      "enables": "Measured go/no-go for embedding; not a dependency of the other release gates."
+    }
+  ]
+}
