@@ -1,6 +1,6 @@
 # DASH-03 — Finish mdbm-style tiles, saved layouts and evidence browsing
 
-Status: **PLANNED** | Priority: **P0** | GitHub issue: **not published**
+Status: **PLANNED** | Priority: **P0** | GitHub issue: [#29](https://github.com/techrote/ezvm/issues/29)
 
 Dependencies: [DASH-02](DASH-02-scoped-adapters-and-identities.md).
 Research: TRIO-FR-08, TRIO-FR-13 in the [field register](../../../research/TRIO-2026-10/README.md).

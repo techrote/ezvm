@@ -1,6 +1,6 @@
 # DASH-07 — Add model availability, shared admission pools and bounded automations
 
-Status: **PLANNED** | Priority: **P1** | GitHub issue: **not published**
+Status: **PLANNED** | Priority: **P1** | GitHub issue: [#33](https://github.com/techrote/ezvm/issues/33)
 
 Dependencies: [DASH-05](DASH-05-durable-commands-and-pause.md), [DASH-06](DASH-06-review-rework-and-evidence.md).
 Research: TRIO-FR-01, TRIO-FR-10, TRIO-FR-11, TRIO-FR-12, TRIO-FR-13, TRIO-FR-16, TRIO-FR-18, TRIO-FR-20 in the [field register](../../../research/TRIO-2026-10/README.md).

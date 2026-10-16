@@ -5,9 +5,9 @@
 Deliver v0.1 of a portable Windows-first QEMU + QCOW2 coding-agent VM manager through dependency-ordered GitHub issues. Every issue is intended to be executable by a coding agent without additional design assistance.
 
 The separate post-v0.1 [VM & AI dashboard issue programme](dashboard/README.md)
-contains repository-local implementation/testing issues and supporting RAG for the
-optional companion. Its DASH IDs do not renumber this accepted EZVM-001..012
-catalogue or imply GitHub publication. TRIO remains paused.
+contains implementation/testing issues and supporting RAG for the optional companion,
+now published as GitHub issues #27 through #39. Its DASH IDs do not renumber this
+accepted EZVM-001..012 catalogue. TRIO remains paused.
 
 ## Plan review
 

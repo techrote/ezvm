@@ -1,6 +1,6 @@
 # DASH-12 — Evaluate bounded embedded terminal viewing and explicit input ownership
 
-Status: **PLANNED** | Priority: **P2** | GitHub issue: **not published**
+Status: **PLANNED** | Priority: **P2** | GitHub issue: [#38](https://github.com/techrote/ezvm/issues/38)
 
 Dependencies: [DASH-03](DASH-03-tiled-workspace-and-activity.md), [DASH-05](DASH-05-durable-commands-and-pause.md).
 Research: TRIO-FR-08 in the [field register](../../../research/TRIO-2026-10/README.md).

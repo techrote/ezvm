@@ -1,6 +1,6 @@
 # DASH-04 — Implement a provenance-aware usage and performance ledger
 
-Status: **PLANNED** | Priority: **P0** | GitHub issue: **not published**
+Status: **PLANNED** | Priority: **P0** | GitHub issue: [#30](https://github.com/techrote/ezvm/issues/30)
 
 Dependencies: [DASH-02](DASH-02-scoped-adapters-and-identities.md).
 Research: TRIO-FR-07, TRIO-FR-09, TRIO-FR-10, TRIO-FR-11, TRIO-FR-20 in the [field register](../../../research/TRIO-2026-10/README.md).

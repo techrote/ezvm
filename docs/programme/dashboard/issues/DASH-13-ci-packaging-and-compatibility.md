@@ -1,6 +1,6 @@
 # DASH-13 — Add reproducible dashboard CI, packaging and compatibility checks
 
-Status: **PLANNED** | Priority: **P0** | GitHub issue: **not published**
+Status: **PLANNED** | Priority: **P0** | GitHub issue: [#39](https://github.com/techrote/ezvm/issues/39)
 
 Dependencies: [DASH-01](DASH-01-evidence-and-replay.md), [DASH-02](DASH-02-scoped-adapters-and-identities.md), [DASH-03](DASH-03-tiled-workspace-and-activity.md), [DASH-04](DASH-04-usage-and-performance-ledger.md).
 Research: TRIO-FR-15, TRIO-FR-19 in the [field register](../../../research/TRIO-2026-10/README.md).

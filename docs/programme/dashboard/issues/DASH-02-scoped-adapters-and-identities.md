@@ -1,6 +1,6 @@
 # DASH-02 — Harden scoped observation adapters and registered-worker discovery
 
-Status: **PLANNED** | Priority: **P0** | GitHub issue: **not published**
+Status: **PLANNED** | Priority: **P0** | GitHub issue: [#28](https://github.com/techrote/ezvm/issues/28)
 
 Dependencies: [DASH-01](DASH-01-evidence-and-replay.md).
 Research: TRIO-FR-02, TRIO-FR-04, TRIO-FR-11, TRIO-FR-18 in the [field register](../../../research/TRIO-2026-10/README.md).

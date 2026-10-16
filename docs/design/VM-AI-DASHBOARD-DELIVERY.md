@@ -7,8 +7,8 @@ Use those issue bodies for future execution. This page is navigation, not a seco
 status or acceptance ledger.
 
 The original DASH-01..12 identifiers are preserved; DASH-13 adds explicit
-CI/packaging work. All are repository-local planned issues, not published GitHub
-numbers. The existing read-only prototype is a partial foundation, not completion
+CI/packaging work. All remain planned, published as GitHub issues #27 through #39.
+The programme catalogue maps the stable DASH IDs to those issue numbers. The existing read-only prototype is a partial foundation, not completion
 of the whole observation gate. TRIO remains paused.
 
 ## Sequence

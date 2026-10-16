@@ -1,6 +1,6 @@
 # DASH-06 — Build independent review, rework and evidence-gated task queues
 
-Status: **PLANNED** | Priority: **P1** | GitHub issue: **not published**
+Status: **PLANNED** | Priority: **P1** | GitHub issue: [#32](https://github.com/techrote/ezvm/issues/32)
 
 Dependencies: [DASH-05](DASH-05-durable-commands-and-pause.md).
 Research: TRIO-FR-02, TRIO-FR-03, TRIO-FR-04, TRIO-FR-05, TRIO-FR-06, TRIO-FR-13, TRIO-FR-16, TRIO-FR-17 in the [field register](../../../research/TRIO-2026-10/README.md).

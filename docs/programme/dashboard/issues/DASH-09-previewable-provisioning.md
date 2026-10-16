@@ -1,6 +1,6 @@
 # DASH-09 — Implement previewable stopped-only provisioning and recoverable disk growth
 
-Status: **PLANNED** | Priority: **P1** | GitHub issue: **not published**
+Status: **PLANNED** | Priority: **P1** | GitHub issue: [#35](https://github.com/techrote/ezvm/issues/35)
 
 Dependencies: [DASH-05](DASH-05-durable-commands-and-pause.md), [DASH-08](DASH-08-lifecycle-prerequisites.md).
 Research: TRIO-FR-07 in the [field register](../../../research/TRIO-2026-10/README.md).

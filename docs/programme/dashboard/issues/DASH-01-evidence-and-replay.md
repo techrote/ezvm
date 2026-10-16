@@ -1,6 +1,6 @@
 # DASH-01 — Build the evidence fixtures and research feedback loop
 
-Status: **PLANNED** | Priority: **P0** | GitHub issue: **not published**
+Status: **PLANNED** | Priority: **P0** | GitHub issue: [#27](https://github.com/techrote/ezvm/issues/27)
 
 Dependencies: None.
 Research: TRIO-FR-03, TRIO-FR-17, TRIO-FR-20 in the [field register](../../../research/TRIO-2026-10/README.md).

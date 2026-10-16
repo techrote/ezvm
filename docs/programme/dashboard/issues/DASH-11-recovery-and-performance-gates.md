@@ -1,6 +1,6 @@
 # DASH-11 — Establish recovery, pause and performance release gates
 
-Status: **PLANNED** | Priority: **P0** | GitHub issue: **not published**
+Status: **PLANNED** | Priority: **P0** | GitHub issue: [#37](https://github.com/techrote/ezvm/issues/37)
 
 Dependencies: [DASH-02](DASH-02-scoped-adapters-and-identities.md), [DASH-03](DASH-03-tiled-workspace-and-activity.md), [DASH-04](DASH-04-usage-and-performance-ledger.md), [DASH-13](DASH-13-ci-packaging-and-compatibility.md).
 Research: TRIO-FR-01, TRIO-FR-02, TRIO-FR-05, TRIO-FR-06, TRIO-FR-07, TRIO-FR-08, TRIO-FR-12, TRIO-FR-14, TRIO-FR-17, TRIO-FR-19 in the [field register](../../../research/TRIO-2026-10/README.md).

@@ -1,6 +1,6 @@
 # DASH-08 — Qualify lifecycle prerequisites for dashboard-managed devboxes
 
-Status: **PLANNED** | Priority: **P0** | GitHub issue: **not published**
+Status: **PLANNED** | Priority: **P0** | GitHub issue: [#34](https://github.com/techrote/ezvm/issues/34)
 
 Dependencies: [DASH-01](DASH-01-evidence-and-replay.md).
 Research: TRIO-FR-14, TRIO-FR-15 in the [field register](../../../research/TRIO-2026-10/README.md).

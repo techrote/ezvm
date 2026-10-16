@@ -8,7 +8,7 @@
     "guide": "docs/DASHBOARD.md",
     "verification": "docs/DASHBOARD-VERIFICATION.md"
   },
-  "githubPublication": "none; repository-local issue bodies",
+  "githubPublication": "published; GitHub issues linked to version-controlled specifications",
   "issues": [
     {
       "id": "DASH-01",
@@ -16,7 +16,7 @@
       "path": "docs/programme/dashboard/issues/DASH-01-evidence-and-replay.md",
       "priority": "P0",
       "status": "planned",
-      "githubIssue": null,
+      "githubIssue": "https://github.com/techrote/ezvm/issues/27",
       "dependsOn": [],
       "rag": [
         "docs/rag/dashboard/00-SCOPE-AND-STATE.md",
@@ -41,7 +41,7 @@
       "path": "docs/programme/dashboard/issues/DASH-02-scoped-adapters-and-identities.md",
       "priority": "P0",
       "status": "planned",
-      "githubIssue": null,
+      "githubIssue": "https://github.com/techrote/ezvm/issues/28",
       "dependsOn": [
         "DASH-01"
       ],
@@ -71,7 +71,7 @@
       "path": "docs/programme/dashboard/issues/DASH-03-tiled-workspace-and-activity.md",
       "priority": "P0",
       "status": "planned",
-      "githubIssue": null,
+      "githubIssue": "https://github.com/techrote/ezvm/issues/29",
       "dependsOn": [
         "DASH-02"
       ],
@@ -99,7 +99,7 @@
       "path": "docs/programme/dashboard/issues/DASH-04-usage-and-performance-ledger.md",
       "priority": "P0",
       "status": "planned",
-      "githubIssue": null,
+      "githubIssue": "https://github.com/techrote/ezvm/issues/30",
       "dependsOn": [
         "DASH-02"
       ],
@@ -130,7 +130,7 @@
       "path": "docs/programme/dashboard/issues/DASH-05-durable-commands-and-pause.md",
       "priority": "P0",
       "status": "planned",
-      "githubIssue": null,
+      "githubIssue": "https://github.com/techrote/ezvm/issues/31",
       "dependsOn": [
         "DASH-11"
       ],
@@ -159,7 +159,7 @@
       "path": "docs/programme/dashboard/issues/DASH-06-review-rework-and-evidence.md",
       "priority": "P1",
       "status": "planned",
-      "githubIssue": null,
+      "githubIssue": "https://github.com/techrote/ezvm/issues/32",
       "dependsOn": [
         "DASH-05"
       ],
@@ -193,7 +193,7 @@
       "path": "docs/programme/dashboard/issues/DASH-07-model-pools-and-automations.md",
       "priority": "P1",
       "status": "planned",
-      "githubIssue": null,
+      "githubIssue": "https://github.com/techrote/ezvm/issues/33",
       "dependsOn": [
         "DASH-05",
         "DASH-06"
@@ -229,7 +229,7 @@
       "path": "docs/programme/dashboard/issues/DASH-08-lifecycle-prerequisites.md",
       "priority": "P0",
       "status": "planned",
-      "githubIssue": null,
+      "githubIssue": "https://github.com/techrote/ezvm/issues/34",
       "dependsOn": [
         "DASH-01"
       ],
@@ -261,7 +261,7 @@
       "path": "docs/programme/dashboard/issues/DASH-09-previewable-provisioning.md",
       "priority": "P1",
       "status": "planned",
-      "githubIssue": null,
+      "githubIssue": "https://github.com/techrote/ezvm/issues/35",
       "dependsOn": [
         "DASH-05",
         "DASH-08"
@@ -295,7 +295,7 @@
       "path": "docs/programme/dashboard/issues/DASH-10-clean-demo-devbox.md",
       "priority": "P1",
       "status": "planned",
-      "githubIssue": null,
+      "githubIssue": "https://github.com/techrote/ezvm/issues/36",
       "dependsOn": [
         "DASH-06",
         "DASH-07",
@@ -332,7 +332,7 @@
       "path": "docs/programme/dashboard/issues/DASH-11-recovery-and-performance-gates.md",
       "priority": "P0",
       "status": "planned",
-      "githubIssue": null,
+      "githubIssue": "https://github.com/techrote/ezvm/issues/37",
       "dependsOn": [
         "DASH-02",
         "DASH-03",
@@ -372,7 +372,7 @@
       "path": "docs/programme/dashboard/issues/DASH-12-optional-terminal-embedding.md",
       "priority": "P2",
       "status": "planned",
-      "githubIssue": null,
+      "githubIssue": "https://github.com/techrote/ezvm/issues/38",
       "dependsOn": [
         "DASH-03",
         "DASH-05"
@@ -400,7 +400,7 @@
       "path": "docs/programme/dashboard/issues/DASH-13-ci-packaging-and-compatibility.md",
       "priority": "P0",
       "status": "planned",
-      "githubIssue": null,
+      "githubIssue": "https://github.com/techrote/ezvm/issues/39",
       "dependsOn": [
         "DASH-01",
         "DASH-02",

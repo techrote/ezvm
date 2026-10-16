@@ -1,8 +1,8 @@
 # VM & AI dashboard implementation and testing programme
 
-This is the executable **repository-local issue series** for future dashboard work.
-The 13 issue bodies below are ready to assign or later publish to GitHub. They are
-not GitHub tickets, not scheduled work and not a request to restart TRIO.
+This is the executable issue series for future dashboard work, published as
+GitHub issues #27 through #39 with version-controlled specifications below.
+Publication does not schedule implementation or restart TRIO.
 Stable `DASH-01`–`DASH-12` identifiers are retained from the design; `DASH-13`
 adds explicit CI/packaging ownership. Existing EZVM-001..012 issue numbers are unchanged.
 
@@ -20,26 +20,27 @@ demonstration is a clean recipe with measured local/free support.
 
 ## Issue catalogue
 
-| Issue | Implementation/testing outcome | Priority | Dependencies | State |
-|---|---|---|---|---|
-| [DASH-01](issues/DASH-01-evidence-and-replay.md) | Build the evidence fixtures and research feedback loop | P0 | — | planned |
-| [DASH-02](issues/DASH-02-scoped-adapters-and-identities.md) | Harden scoped observation adapters and registered-worker discovery | P0 | DASH-01 | planned |
-| [DASH-03](issues/DASH-03-tiled-workspace-and-activity.md) | Finish mdbm-style tiles, saved layouts and evidence browsing | P0 | DASH-02 | planned |
-| [DASH-04](issues/DASH-04-usage-and-performance-ledger.md) | Implement a provenance-aware usage and performance ledger | P0 | DASH-02 | planned |
-| [DASH-05](issues/DASH-05-durable-commands-and-pause.md) | Add the durable command broker and operator pause/steering controls | P0 | DASH-11 | planned |
-| [DASH-06](issues/DASH-06-review-rework-and-evidence.md) | Build independent review, rework and evidence-gated task queues | P1 | DASH-05 | planned |
-| [DASH-07](issues/DASH-07-model-pools-and-automations.md) | Add model availability, shared admission pools and bounded automations | P1 | DASH-05, DASH-06 | planned |
-| [DASH-08](issues/DASH-08-lifecycle-prerequisites.md) | Qualify lifecycle prerequisites for dashboard-managed devboxes | P0 | DASH-01 | planned |
-| [DASH-09](issues/DASH-09-previewable-provisioning.md) | Implement previewable stopped-only provisioning and recoverable disk growth | P1 | DASH-05, DASH-08 | planned |
-| [DASH-10](issues/DASH-10-clean-demo-devbox.md) | Build a reproducible local/free agentic demonstration devbox | P1 | DASH-06, DASH-07, DASH-09, DASH-13 | planned |
-| [DASH-11](issues/DASH-11-recovery-and-performance-gates.md) | Establish recovery, pause and performance release gates | P0 | DASH-02, DASH-03, DASH-04, DASH-13 | planned |
-| [DASH-12](issues/DASH-12-optional-terminal-embedding.md) | Evaluate bounded embedded terminal viewing and explicit input ownership | P2 | DASH-03, DASH-05 | planned |
-| [DASH-13](issues/DASH-13-ci-packaging-and-compatibility.md) | Add reproducible dashboard CI, packaging and compatibility checks | P0 | DASH-01, DASH-02, DASH-03, DASH-04 | planned |
+| Issue | GitHub | Implementation/testing outcome | Priority | Dependencies | State |
+|---|---|---|---|---|---|
+| [DASH-01](issues/DASH-01-evidence-and-replay.md) | [#27](https://github.com/techrote/ezvm/issues/27) | Build the evidence fixtures and research feedback loop | P0 | — | planned |
+| [DASH-02](issues/DASH-02-scoped-adapters-and-identities.md) | [#28](https://github.com/techrote/ezvm/issues/28) | Harden scoped observation adapters and registered-worker discovery | P0 | DASH-01 | planned |
+| [DASH-03](issues/DASH-03-tiled-workspace-and-activity.md) | [#29](https://github.com/techrote/ezvm/issues/29) | Finish mdbm-style tiles, saved layouts and evidence browsing | P0 | DASH-02 | planned |
+| [DASH-04](issues/DASH-04-usage-and-performance-ledger.md) | [#30](https://github.com/techrote/ezvm/issues/30) | Implement a provenance-aware usage and performance ledger | P0 | DASH-02 | planned |
+| [DASH-05](issues/DASH-05-durable-commands-and-pause.md) | [#31](https://github.com/techrote/ezvm/issues/31) | Add the durable command broker and operator pause/steering controls | P0 | DASH-11 | planned |
+| [DASH-06](issues/DASH-06-review-rework-and-evidence.md) | [#32](https://github.com/techrote/ezvm/issues/32) | Build independent review, rework and evidence-gated task queues | P1 | DASH-05 | planned |
+| [DASH-07](issues/DASH-07-model-pools-and-automations.md) | [#33](https://github.com/techrote/ezvm/issues/33) | Add model availability, shared admission pools and bounded automations | P1 | DASH-05, DASH-06 | planned |
+| [DASH-08](issues/DASH-08-lifecycle-prerequisites.md) | [#34](https://github.com/techrote/ezvm/issues/34) | Qualify lifecycle prerequisites for dashboard-managed devboxes | P0 | DASH-01 | planned |
+| [DASH-09](issues/DASH-09-previewable-provisioning.md) | [#35](https://github.com/techrote/ezvm/issues/35) | Implement previewable stopped-only provisioning and recoverable disk growth | P1 | DASH-05, DASH-08 | planned |
+| [DASH-10](issues/DASH-10-clean-demo-devbox.md) | [#36](https://github.com/techrote/ezvm/issues/36) | Build a reproducible local/free agentic demonstration devbox | P1 | DASH-06, DASH-07, DASH-09, DASH-13 | planned |
+| [DASH-11](issues/DASH-11-recovery-and-performance-gates.md) | [#37](https://github.com/techrote/ezvm/issues/37) | Establish recovery, pause and performance release gates | P0 | DASH-02, DASH-03, DASH-04, DASH-13 | planned |
+| [DASH-12](issues/DASH-12-optional-terminal-embedding.md) | [#38](https://github.com/techrote/ezvm/issues/38) | Evaluate bounded embedded terminal viewing and explicit input ownership | P2 | DASH-03, DASH-05 | planned |
+| [DASH-13](issues/DASH-13-ci-packaging-and-compatibility.md) | [#39](https://github.com/techrote/ezvm/issues/39) | Add reproducible dashboard CI, packaging and compatibility checks | P0 | DASH-01, DASH-02, DASH-03, DASH-04 | planned |
 
 The [catalogue JSON](catalog.json) holds stable IDs, paths, dependencies, RAG and
 research references, case IDs and release gates. The issue bodies own substantive
-scope and test assertions. Update both in the same change. GitHub URLs are null
-until actual publication; never invent ticket numbers or mark a draft accepted.
+scope and test assertions. Update both in the same change and reconcile the linked
+GitHub body. Publication preserves planned status; no future issue is accepted by
+opening the prototype PR.
 
 ## Execution order and release gates
 
@@ -86,8 +87,8 @@ and a recorded reason. Do not silently redefine the released core v0.1 contract.
 
 Before assignment, reconcile the selected source, owner changes and accepted
 dependencies. Inspect remote main/issues/comments only when remote operations are
-authorized; otherwise state the local baseline and external review gap. Publishing
-these bodies is a separate action. Preserve mixed contributions and avoid including
+authorized; otherwise state the local baseline and external review gap. These bodies
+were published under the owner's explicit instruction on 16 October 2026. Preserve mixed contributions and avoid including
 the owner's unrelated `Keys.ps1` / `Runtime.ps1` patches in a dashboard commit.
 
 ## Common closure requirements

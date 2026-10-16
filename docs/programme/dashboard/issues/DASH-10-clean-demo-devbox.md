@@ -1,6 +1,6 @@
 # DASH-10 — Build a reproducible local/free agentic demonstration devbox
 
-Status: **PLANNED** | Priority: **P1** | GitHub issue: **not published**
+Status: **PLANNED** | Priority: **P1** | GitHub issue: [#36](https://github.com/techrote/ezvm/issues/36)
 
 Dependencies: [DASH-06](DASH-06-review-rework-and-evidence.md), [DASH-07](DASH-07-model-pools-and-automations.md), [DASH-09](DASH-09-previewable-provisioning.md), [DASH-13](DASH-13-ci-packaging-and-compatibility.md).
 Research: TRIO-FR-15, TRIO-FR-19 in the [field register](../../../research/TRIO-2026-10/README.md).

@@ -1,6 +1,6 @@
 # DASH-05 — Add the durable command broker and operator pause/steering controls
 
-Status: **PLANNED** | Priority: **P0** | GitHub issue: **not published**
+Status: **PLANNED** | Priority: **P0** | GitHub issue: [#31](https://github.com/techrote/ezvm/issues/31)
 
 Dependencies: [DASH-11](DASH-11-recovery-and-performance-gates.md).
 Research: TRIO-FR-01, TRIO-FR-18 in the [field register](../../../research/TRIO-2026-10/README.md).
