@@ -56,3 +56,17 @@ profile, with no operator-specific helper knowledge. Record time to useful resul
 manual intervention. Test recovery after a deliberately paused session using fixtures first.
 Select hardware tiers only after measuring actual memory, storage and throughput requirements.
 Publish outcomes with exact revisions and unchanged failing examples, not only successful demos.
+
+## DASH-01 executable feedback loop
+
+The [retest ledger](retest-map.json) maps all 20 observations and 48 original proposed
+actions to actual issues and retest cases, with bounded fixture coverage and explicit
+unresolved reasons. It distinguishes proposed, implemented and verified actions using
+exact revision and hashed committed-receipt references. The historical findings themselves
+remain proposed; passing synthetic cases does not resolve them.
+
+See the [DASH-01 implementation and evidence handoff](DASH-01-REPLAY.md),
+[public replay corpus](../../../dashboard/fixtures/dash01/README.md) and
+[ADR/evidence template](../ADR-EVIDENCE-TEMPLATE.md). The runner verifies the original
+`observations.json` and `evidence-index.json` Git blob pins before reporting success.
+Original evidence is preserved; private logs are neither loaded nor published.

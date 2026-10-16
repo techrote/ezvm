@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "hashAlgorithm": "sha256-canonical-json-v1",
+  "fixtures": [
+    {
+      "id": "idle-deduplicated",
+      "sha256": "461b1a0165c6b3f673f1fee4bb4c4c1faea88ada91466c51e3f27c301c67b2d4"
+    },
+    {
+      "id": "streaming",
+      "sha256": "e087cd304d808e96bbf054b0d2d436815aec55d95fc4ea9bf5cd432d2cf562af"
+    },
+    {
+      "id": "tool-running",
+      "sha256": "f5a2600dfb1ef5529f4e472dd5c4bd90d0c8005213be7a14aa9b8e36f693e2ab"
+    },
+    {
+      "id": "retry-quota",
+      "sha256": "a24cd6f97ccba187759e7e56bf3e6264fc230699edc1c19656c5f6662e2aef3b"
+    },
+    {
+      "id": "transport-failure",
+      "sha256": "76164592caf216de0e826e7ffc6611af1c5aef54293de05ecb571fe520073e98"
+    },
+    {
+      "id": "stale-source",
+      "sha256": "e65814da6d66012a6de6269232b987cdbd07a825d05f599c0fcb05e21fc887f5"
+    },
+    {
+      "id": "incorrect-import",
+      "sha256": "e7cdda0e08848778a5c7ae356706431e394cef7a6a86c79f954b178b98f01730"
+    },
+    {
+      "id": "missing-report",
+      "sha256": "16afd68e7c60b57ac6a6c738ca149d86c7f9eaa76f861675e34e5a6dacea1af3"
+    },
+    {
+      "id": "failed-exit-with-pass",
+      "sha256": "987f279b2ff5a92d6bff208151aef60371418868a8f4c5e76a8e715a7051ed36"
+    },
+    {
+      "id": "paused-restart",
+      "sha256": "e9c51bf25807d6ba48794602e02e05c7b3b350a94ab175711a342bc7c61477d6"
+    },
+    {
+      "id": "corrected-import",
+      "sha256": "381c46b1e2f336d6a804e7a28276e61dba8c56460cba4a191a795380dbeaff4a"
+    },
+    {
+      "id": "superseded-source",
+      "sha256": "838ee08dd921750fe07599864658b735ee82d803c8e2375bb031a036bdc1395e"
+    },
+    {
+      "id": "corrected-source",
+      "sha256": "15349ab6d605d1e33f74bf995c3ce728401190f46b06a56004af0c6700526b4c"
+    },
+    {
+      "id": "epoch-reuse",
+      "sha256": "bc715b34e0e81ddeee27ad56e37e891988ce2e87ed6e53ef36beb151068911cd"
+    },
+    {
+      "id": "uncommitted-report",
+      "sha256": "4836bfecafa48b8dd117cc5b18799127c687db077c745e88d6822917a854ab9d"
+    },
+    {
+      "id": "transport-with-valid-report",
+      "sha256": "cc275069a2b9bd9ac88772f6819d817a14a58c1ad36ca3bba70b62d4f7cdd83f"
+    }
+  ],
+  "originalArtifacts": [
+    {
+      "path": "docs/research/TRIO-2026-10/observations.json",
+      "revision": "20dfca35bdd2fc8eab0b5fc52ae1b612b14d0e5e",
+      "gitBlob": "d2ef3057d8f68fd6eacd0bdc097fd89c4d4fdec5"
+    },
+    {
+      "path": "docs/research/TRIO-2026-10/evidence-index.json",
+      "revision": "20dfca35bdd2fc8eab0b5fc52ae1b612b14d0e5e",
+      "gitBlob": "3438550d210633cf6375f98c9dbe596b0f3a6942"
+    }
+  ]
+}
