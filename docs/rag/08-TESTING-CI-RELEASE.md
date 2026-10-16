@@ -29,6 +29,12 @@ The repository contract remains an independent check. Checkout is pinned to a
 reviewed full commit SHA, workflow permissions are read-only and jobs have bounded
 timeouts.
 
+All ezvm Actions workflows use GitHub-hosted runners exclusively. Windows jobs
+use `windows-2022`; the DASH-01 replay matrix also uses `ubuntu-24.04`. The same
+runner policy applies to manual portability/security qualification and the
+release qualification lane. Runner changes do not relax operation deadlines,
+acceptance checks or the explicit WHPX execution SKIP.
+
 Local PowerShell 7 on a non-Windows host can provide additional control-plane
 evidence, but does not substitute for either Windows lane. Windows file-lock and
 native argument parsing tests must execute on Windows before this issue is
@@ -417,8 +423,8 @@ PID reuse, interrupted replacement and one-level-chain coverage. Both required
 Windows PowerShell lanes run the Windows-only cases; non-Windows skips are not
 Windows qualification.
 
-The owner-approved expensive qualification runs the existing complete real
-portability scenario with `-SecurityQualification` on Avrea Windows 2025 8-vCPU.
+The manual security qualification runs the existing complete real portability
+scenario with `-SecurityQualification` on GitHub-hosted `windows-2022`.
 It retains all twelve acceptance markers and the 2400-second build / 900-second
 READY bounds. Additional checks use actual SSH/SCP for a binary file round trip,
 preserve an existing host destination after remote transfer failure, reject
@@ -444,7 +450,7 @@ extracted and its public version command is executed as a regression.
 
 The final expensive integration lane is
 EZVM-012 real release qualification. It runs once per release-candidate PR on
-the owner-approved Avrea Windows 2025 8-vCPU runner and invokes the accepted
+GitHub-hosted `windows-2022` and invokes the accepted
 security/portability scenario with ReleaseQualification. It starts from a fresh
 source-only copied root and adds release-only evidence for:
 
@@ -468,7 +474,7 @@ The accepted 2400-second prepared-base build bound and 900-second per-launch REA
 bound are unchanged. The workflow timeout is 180 minutes only to contain the
 additional required release boots; it does not relax an operation's acceptance
 deadline. Hosted execution uses explicit TCG and records WHPX execution as SKIP.
-The Avrea Windows Server host is outside the supported Windows-client end-user
+The GitHub-hosted Windows Server host is outside the supported Windows-client end-user
 baseline, so doctor itself is evidence-producing rather than coerced to overall
 ready; managed QEMU and all applicable checks must still report their exact
 state. A supported physical Windows client procedure is documented separately
