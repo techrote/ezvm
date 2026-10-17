@@ -1,0 +1,37 @@
+name: Read existing release failure evidence
+
+on:
+  push:
+    branches: [ezvm-012-read-failure-evidence]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Retrieve existing failed job log without rerunning qualification
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --max-time 60 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/jobs/117229632749/logs" \
+            -o "$RUNNER_TEMP/ezvm-release-failed-job.log"
+          echo 'Existing failed run 38977204627; job 117229632749; no test replay or VM mutation.'
+          sha256sum "$RUNNER_TEMP/ezvm-release-failed-job.log"
+          grep -E 'EZVM0(10|11|12)_(STEP|REAL_.*=PASS|FAILED_AT|.*ERROR)|##\[error\]|FullyQualifiedErrorId|CategoryInfo' "$RUNNER_TEMP/ezvm-release-failed-job.log" | tail -n 70 || true
+          tail -n 45 "$RUNNER_TEMP/ezvm-release-failed-job.log"
+      - name: Retain original log bytes for bounded local inspection
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ezvm-existing-failed-release-log
+          path: ${{ runner.temp }}/ezvm-release-failed-job.log
+          if-no-files-found: error
+          retention-days: 7
