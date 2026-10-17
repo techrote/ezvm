@@ -29,10 +29,45 @@ The repository contract remains an independent check. Checkout is pinned to a
 reviewed full commit SHA, workflow permissions are read-only and jobs have bounded
 timeouts.
 
+All ezvm Actions workflows use GitHub-hosted runners exclusively. Windows jobs
+use `windows-2022`; the DASH-01 replay matrix also uses `ubuntu-24.04`. The same
+runner policy applies to manual portability/security qualification and the
+release qualification lane. Runner changes do not relax operation deadlines,
+acceptance checks or the explicit WHPX execution SKIP.
+
 Local PowerShell 7 on a non-Windows host can provide additional control-plane
 evidence, but does not substitute for either Windows lane. Windows file-lock and
 native argument parsing tests must execute on Windows before this issue is
 accepted. No QEMU, guest boot or WHPX execution is part of EZVM-001 acceptance.
+
+### Standard-user private-DACL regression (CI-POC-001 / #47)
+
+`.github/workflows/private-acl.yml` adds an independent, bounded GitHub-hosted
+Windows lane for each supported PowerShell engine. Its temporary ordinary local
+account is a disposable runner fixture only. It does not change any existing
+account, grant privileges, elevate the tested process, register a runner, or
+enable a hypervisor. The child proves absence of administrator membership and
+audit/ownership/backup/restore privileges before and after testing.
+
+Clean Git clones from an exact public source bundle separate historical commit
+`d5265c804d0d8494d8171482a85aca563b181e05` from the proposed candidate. The old
+module must reproduce `SeSecurityPrivilege` in both original failing ACL tests
+and the new inherited-file/protected-directory cases. The candidate then runs
+the actual repository and complete control-plane entry points, with no failures
+or skips, under that same standard-user process. Source commit/tree and key-source
+SHA-256 must remain unchanged. A missing expected old failure is a test failure;
+an administrative runner account is not standard-user acceptance.
+
+Retained receipts identify each old failure, the fixed suite, exact sources,
+PowerShell version, observed token properties, exit, timestamps and fixture
+cleanup. Only receipts and test-process logs are uploaded; source bundles,
+temporary keys, account credentials and user profiles are excluded. The fixture
+account and owned source/test tree are removed; the disposable host removes its
+temporary user profile at job teardown. Existing Windows CI remains required;
+the full hosted release job follows the temporary CI-PoC deferral below when
+applicable. This software regression provides
+no full WHPX or performance acceptance for Runloc #21. See the
+[finding, controls and operator procedure](../research/CI-POC-001-PRIVATE-DACL.md).
 
 ## Required CI layers
 
@@ -429,8 +464,8 @@ PID reuse, interrupted replacement and one-level-chain coverage. Both required
 Windows PowerShell lanes run the Windows-only cases; non-Windows skips are not
 Windows qualification.
 
-The owner-approved expensive qualification runs the existing complete real
-portability scenario with `-SecurityQualification` on Avrea Windows 2025 8-vCPU.
+The manual security qualification runs the existing complete real portability
+scenario with `-SecurityQualification` on GitHub-hosted `windows-2022`.
 It retains all twelve acceptance markers and the 2400-second build / 900-second
 READY bounds. Additional checks use actual SSH/SCP for a binary file round trip,
 preserve an existing host destination after remote transfer failure, reject
@@ -455,8 +490,9 @@ CI builds it twice to require byte-identical SHA-256 output. The package is
 extracted and its public version command is executed as a regression.
 
 The final expensive integration lane is
-EZVM-012 real release qualification. It runs once per release-candidate PR on
-the owner-approved Avrea Windows 2025 8-vCPU runner and invokes the accepted
+EZVM-012 real release qualification. Except for the temporary CI-PoC deferral
+below, it runs once per applicable same-repository release-candidate PR on
+GitHub-hosted `windows-2022` and invokes the accepted
 security/portability scenario with ReleaseQualification. It starts from a fresh
 source-only copied root and adds release-only evidence for:
 
@@ -480,11 +516,49 @@ The accepted 2400-second prepared-base build bound and 900-second per-launch REA
 bound are unchanged. The workflow timeout is 180 minutes only to contain the
 additional required release boots; it does not relax an operation's acceptance
 deadline. Hosted execution uses explicit TCG and records WHPX execution as SKIP.
-The Avrea Windows Server host is outside the supported Windows-client end-user
+The GitHub-hosted Windows Server host is outside the supported Windows-client end-user
 baseline, so doctor itself is evidence-producing rather than coerced to overall
 ready; managed QEMU and all applicable checks must still report their exact
 state. A supported physical Windows client procedure is documented separately
 for optional WHPX runtime evidence.
+
+### Temporary CI-PoC hosted TCG deferral
+
+On **2026-10-17**, the owner explicitly deferred the approximately three-hour
+automatic full hosted TCG run until the end of the Runloc CI proof of concept.
+This is a temporary exception to the automatic EZVM-012 release requirement,
+implemented only in `.github/workflows/ezvm-012-real-release.yml`:
+
+| Trigger and source | Full hosted TCG release job | Deferral notice |
+| --- | --- | --- |
+| Manual `workflow_dispatch`, including a CI-PoC ref | Runs in full | Not run |
+| Same-repository PR whose head starts `ci-poc-` | SKIP: owner-deferred | Runs |
+| Same-repository PR from `ezvm-ci-whpx-pilot` | SKIP: owner-deferred | Runs |
+| Other same-repository PR matching the workflow paths | Runs in full | Not run |
+| Fork PR, including either CI-PoC branch form | SKIP: existing repository gate | Not run |
+
+Branch comparisons use GitHub Actions' normal case-insensitive string semantics.
+The notice has no checkout or VM work and explicitly records **unmeasured TCG**
+coverage. [GitHub reports a skipped job as a successful status](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions);
+that status and a successful notice job are not qualification PASS evidence.
+The original full job, harness, assertions, 180-minute containment bound and
+explicit accelerator reporting remain available through manual dispatch.
+
+The existing workflow-level concurrency group and `cancel-in-progress: true`
+remain intact. A replacement run for the same PR supersedes the previous run;
+confirm its actual cancellation separately rather than inferring it from a
+skipped job. This exception changes no other workflow, software/ACL check,
+physical WHPX acceptance criterion, branch rule or treatment of actual test
+failures.
+
+**Expiry:** remove this workflow condition/notice and the matching AGENTS
+exception, or replace them with the reviewed qualified-WHPX/hosted-fallback
+policy, when [Runloc CI-POC-003 / #23](https://github.com/techrote/runloc/issues/23)
+completes. Until then, record each affected full TCG run as deferred/unmeasured.
+The exception is not permission to publish a release with invented qualification
+or to make the hosted fallback permanently unavailable.
+
+### Release publication
 
 .github/workflows/release.yml is intentionally tag-only for v0.1.0 and has the
 minimal contents: write permission required to publish a GitHub release. Before
@@ -502,3 +576,15 @@ automation connection cannot create that Git ref, the repository must be left
 release-ready and the exact accepted main SHA plus the single required tag-push
 action must be recorded; no release may be claimed published until the GitHub
 release exists.
+
+## Optional qualification profiling
+
+The full release/portability harness may receive `-TelemetryPath` to observe its
+original calls. [The telemetry contract](../QUALIFICATION-TELEMETRY.md) defines
+bounded create-only JSONL, nested monotonic intervals, aggregate counters for
+every repeated hash, actual tool/image identities, and failure interpretation.
+It must preserve original source files, module roots, parameters, returned values,
+errors, assertions and deadlines. No cache, skipped validation or performance
+acceptance is introduced. Nested durations overlap; nested failures can be the
+original expected-refusal controls. Only complete original scenario evidence,
+actual exit status and independent owned cleanup determine qualification.

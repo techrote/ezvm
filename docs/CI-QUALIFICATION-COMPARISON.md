@@ -35,7 +35,30 @@ Repository currently has no private runner registered. Ordinary PRs still start 
 hosted workflow; private comparisons are explicit on-demand dispatches in this first
 version. Automatic opt-in comparisons of approved PRs are a later controller extension.
 
-## Clean pilot
+## Supervised CI-POC-001 pilot
+
+[Runloc CI-POC-001](https://github.com/techrote/runloc/issues/21) now owns the
+acceptance boundary in `poc/windows-whpx/`. Use its pinned candidate and dedicated
+`Invoke-WhpxPilot.ps1` process for the timed physical qualification. That controller
+checks exact public source bytes, runs the candidate's synthetic ACL preflight,
+contains all launched descendants in owned Windows Jobs, preserves the complete
+original scenario, and independently checks every completion marker and cleanup.
+It also requests the optional telemetry described below.
+
+The complete physical result must satisfy the 60-minute target and 90-minute hard
+wall, including preflight, source checks, evidence and cleanup. A receipt alone
+cannot establish success: the matching digest, terminal supervisor marker and
+actual supervisor exit zero are also required. Source changes, forced cleanup,
+incomplete output, failure to restore the source root, or retained qualification
+fixtures invalidate acceptance. A preflight-only result never qualifies WHPX.
+
+The historical wrapper below is retained for provenance and comparison tests.
+It is not the CI-POC-001 acceptance entry point: it lacks the new outer deadline,
+complete marker oracle and independent descendant/fixture cleanup proof. Runner
+registration and any migration of required CI gates remain the later Runloc
+CI-POC-002 and CI-POC-003 tasks; this source update performs neither action.
+
+## Historical clean pilot wrapper
 
 Use a separate clean Git checkout containing this harness, with no owner patches.
 The script records commit/tree, account/host, requested accelerator, timestamps,
@@ -59,6 +82,12 @@ The original TRIO QEMU session and other user VMs must never be used as cleanup 
 Default qualification remains TCG for existing callers. WHPX must be requested;
 base metadata and every READY result must agree with it. Feature detection alone,
 PASS text with nonzero exit, or incomplete logs cannot yield a WHPX PASS.
+
+The original full harness also accepts optional `-TelemetryPath` for bounded,
+nested phase and repeated integrity/hash evidence. See
+[the telemetry schema and interpretation](QUALIFICATION-TELEMETRY.md). This
+observation does not implement the controller's hard wall or owned cleanup, and
+does not replace the original release assertions or completion requirements.
 
 ## On-demand runner, after a successful pilot
 
