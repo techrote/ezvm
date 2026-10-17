@@ -14,10 +14,10 @@ concurrency:
 
 jobs:
   real-security:
-    # Owner-authorized expensive lane; ordinary Windows CI remains GitHub-hosted.
+    # Historical qualification remains an explicit manual run on GitHub-hosted Windows.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    name: Real security and portability (Avrea 8-core Windows TCG; WHPX SKIP)
-    runs-on: avrea-windows-2025-8-vcpu
+    name: Real security and portability (Windows TCG; WHPX SKIP)
+    runs-on: windows-2022
     timeout-minutes: 150
     steps:
       - name: Checkout candidate source
@@ -31,7 +31,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           git rev-parse HEAD 'HEAD^{tree}'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Write-Host ('EZVM011_REQUESTED_RUNNER=avrea-windows-2025-8-vcpu; observedCPU=' + [Environment]::ProcessorCount)
+          Write-Host ('EZVM011_REQUESTED_RUNNER=windows-2022; observedCPU=' + [Environment]::ProcessorCount)
           $PSVersionTable
       - name: Qualify verified bootstrap, keys, transfers, refusals and complete cold portability
         shell: powershell

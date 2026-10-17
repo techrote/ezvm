@@ -23,8 +23,7 @@ permissions:
 jobs:
   real-portability:
     name: Real QCOW2 and Ubuntu portability (Windows TCG; WHPX SKIP)
-    # This TCG qualification is CPU-bound; use the Avrea 8-vCPU Windows lane.
-    runs-on: avrea-windows-2025-8-vcpu
+    runs-on: windows-2022
     timeout-minutes: 150
     steps:
       - name: Checkout reviewed source

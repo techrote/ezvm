@@ -15,6 +15,7 @@ Read AGENTS.md first, then the documents referenced by the current issue.
 | 06-SECURITY-PORTABILITY-CONTRACT.md | Trust boundaries, secrets, relocation and recovery |
 | 07-CLI-STATE-CONTRACT.md | Command surface, configuration and instance state schemas |
 | 08-TESTING-CI-RELEASE.md | Automated qualification and release requirements |
+| [DASH-08-LIFECYCLE-CONTRACT.md](DASH-08-LIFECYCLE-CONTRACT.md) | Scoped native-process ownership/deadline amendment; parent WHPX acceptance remains held |
 
 ## Source precedence
 
