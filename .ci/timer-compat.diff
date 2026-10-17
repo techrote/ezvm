@@ -1,0 +1,96 @@
+diff --git a/.github/workflows/ezvm-012-real-release.yml b/.github/workflows/ezvm-012-real-release.yml
+index 3aa5b02..f754af8 100644
+--- a/.github/workflows/ezvm-012-real-release.yml
++++ b/.github/workflows/ezvm-012-real-release.yml
+@@ -7,6 +7,8 @@ on:
+       - .github/workflows/ezvm-012-real-release.yml
+       - .github/workflows/release.yml
+       - scripts/Invoke-EzVm010RealPortability.ps1
++      - scripts/TcgQualification.ps1
++      - tests/TcgQualification.Tests.ps1
+       - scripts/New-EzVmReleasePackage.ps1
+       - scripts/Publish-EzVmGitHubRelease.ps1
+       - src/EzVm/**
+@@ -52,5 +54,5 @@ jobs:
+         shell: powershell
+         run: |
+           $ErrorActionPreference = 'Stop'
+-          .\scripts\Invoke-EzVm010RealPortability.ps1 -ReleaseQualification
++          .\scripts\Invoke-EzVm010RealPortability.ps1 -ReleaseQualification -TcgTimerCheckWorkaround
+           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+diff --git a/docs/rag/08-TESTING-CI-RELEASE.md b/docs/rag/08-TESTING-CI-RELEASE.md
+index cd2b9ba..1c4cb4b 100644
+--- a/docs/rag/08-TESTING-CI-RELEASE.md
++++ b/docs/rag/08-TESTING-CI-RELEASE.md
+@@ -496,3 +496,19 @@ automation connection cannot create that Git ref, the repository must be left
+ release-ready and the exact accepted main SHA plus the single required tag-push
+ action must be recorded; no release may be claimed published until the GitHub
+ release exists.
++
++### Hosted TCG legacy timer compatibility fixture
++
++The release lane explicitly opts into `-TcgTimerCheckWorkaround`. This modifies
++only the fresh disposable base fixture: a GRUB fragment appends `no_timer_check`
++and `update-grub` must succeed before the existing cloud-init finalizer can
++publish the base. Original/effective template hashes and normal recipe provenance
++identify the adjustment. The checkout, public recipe, normal WHPX behavior and
++QEMU/CPU arguments are unchanged. The flag is refused outside release mode.
++
++Every subsequent authenticated guest start must show the effective option,
++positive IO-APIC interrupt counts, a clocksource and advancing uptime. This is a
++legacy boot self-check workaround, not APIC/timer disablement or a waiver of any
++release assertion/deadline. The initial vendor-image boot remains unmodified and
++can still fail. No automatic retry or failure-to-SKIP conversion is added. See the
++[observed failure, primary sources and evidence boundary](../research/TRIO-2026-10/DASH-02-TCG-QUALIFICATION.md).
+diff --git a/scripts/Invoke-EzVm010RealPortability.ps1 b/scripts/Invoke-EzVm010RealPortability.ps1
+index 7ed11ec..62a1400 100644
+--- a/scripts/Invoke-EzVm010RealPortability.ps1
++++ b/scripts/Invoke-EzVm010RealPortability.ps1
+@@ -1,9 +1,12 @@
+ #requires -Version 5.1
+ [CmdletBinding()]
+-param([string]$Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')), [switch]$SecurityQualification, [switch]$ReleaseQualification)
++param([string]$Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')), [switch]$SecurityQualification, [switch]$ReleaseQualification, [switch]$TcgTimerCheckWorkaround)
+ 
+ $ErrorActionPreference = 'Stop'
+ $ProgressPreference = 'SilentlyContinue'
++if ($TcgTimerCheckWorkaround -and -not $ReleaseQualification) {
++    throw 'The TCG timer workaround is restricted to explicit disposable release qualification.'
++}
+ if ($ReleaseQualification) { $SecurityQualification = $true }
+ if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+     throw 'EZVM-010 real qualification requires Windows and the reviewed managed Windows QEMU runtime.'
+@@ -20,6 +23,19 @@ $rootARenamed = $false
+ foreach ($relative in @('ezvm.ps1', 'src', 'config', 'manifests', 'guest', 'scripts', 'tests', 'docs', 'README.md', 'AGENTS.md', 'THIRD-PARTY-NOTICES.md', '.github', '.gitattributes', '.gitignore')) {
+     Copy-Item -LiteralPath (Join-Path $sourceRoot $relative) -Destination $rootA -Recurse -Force
+ }
++# Opt-in fixture adjustment is confined to this freshly created copy, never the
++# checkout, vendor image, a published base, or an owner's runtime.
++. (Join-Path $PSScriptRoot 'TcgQualification.ps1')
++if ($TcgTimerCheckWorkaround) {
++    $templatePath = Join-Path $rootA 'guest/base-cloud-init/user-data.yaml'
++    $template = [IO.File]::ReadAllText($templatePath)
++    $effective = New-EzVmTcgTimerQualificationSeed -Template $template
++    $originalHash = (Get-FileHash -LiteralPath $templatePath -Algorithm SHA256).Hash.ToLowerInvariant()
++    [IO.File]::WriteAllText($templatePath, $effective, (New-Object Text.UTF8Encoding($false)))
++    $effectiveHash = (Get-FileHash -LiteralPath $templatePath -Algorithm SHA256).Hash.ToLowerInvariant()
++    Write-Host ('EZVM012_TCG_FIXTURE=opt-in-no_timer_check; originalTemplateSha256=' + $originalHash + '; effectiveTemplateSha256=' + $effectiveHash)
++    Write-Host 'EZVM012_TCG_FIXTURE_LIMIT=The initial vendor-image boot is unmodified; subsequent prepared-base boots use the compatibility option.'
++}
+ $Root = $rootA
+ Import-Module (Join-Path $Root 'src/EzVm/EzVm.psd1') -Force -ErrorAction Stop
+ $active = New-Object 'System.Collections.Generic.List[string]'
+@@ -92,6 +108,13 @@ function Start-EzVm010Guest {
+         throw
+     }
+     Write-Host ('EZVM010_STEP=guest_ready; instance=' + $Name + '; at=' + [DateTime]::UtcNow.ToString('o'))
++    if ($TcgTimerCheckWorkaround) {
++        $timerEvidence = (Invoke-EzVm010Guest -Name $Name -Script (Get-EzVmTcgTimerQualificationProbe) -TimeoutSeconds 60).Trim()
++        if ($timerEvidence -cnotmatch '^EZVM012_TCG_TIMER_COMPATIBILITY=PASS; clocksource=[a-z0-9_-]+; before=[0-9.]+; after=[0-9.]+$') {
++            throw 'Authenticated guest omitted the required TCG timer compatibility evidence.'
++        }
++        Write-Host ('EZVM012_TCG_INSTANCE=' + $Name + '; ' + $timerEvidence)
++    }
+ }
+ 
+ function Stop-EzVm010Guest {

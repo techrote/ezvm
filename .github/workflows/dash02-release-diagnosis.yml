@@ -1,48 +1,97 @@
-name: DASH-02 release diagnosis
+name: DASH-02 TCG compatibility preflight
 
 on:
   push:
     branches: [ezvm-028-release-diagnosis]
 
 permissions:
-  contents: read
-  actions: read
+  contents: write
 
 jobs:
-  diagnose:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
+  preflight:
+    runs-on: windows-2022
+    timeout-minutes: 15
     steps:
-      - name: Extract existing disposable-CI clone boot evidence
-        shell: bash
+      - name: Checkout the reviewed preflight inputs without stored credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Construct the exact candidate without moving any remote branch
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config core.autocrlf false
+          git config core.eol lf
+          git checkout -- .ci/timer-compat.diff scripts/TcgQualification.ps1 tests/TcgQualification.Tests.ps1 docs/research/TRIO-2026-10/DASH-02-TCG-QUALIFICATION.md
+          $candidate = Join-Path $env:RUNNER_TEMP 'candidate with spaces'
+          git worktree add --detach $candidate b88ddf949d34bcb5e02b1b5452c63bc39184751f
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($path in @('scripts/TcgQualification.ps1','tests/TcgQualification.Tests.ps1','docs/research/TRIO-2026-10/DASH-02-TCG-QUALIFICATION.md')) {
+            $text = [IO.File]::ReadAllText((Join-Path $env:GITHUB_WORKSPACE $path)).Replace("`r`n", "`n")
+            [IO.File]::WriteAllText((Join-Path $candidate $path), $text, (New-Object Text.UTF8Encoding($false)))
+          }
+          Set-Location -LiteralPath $candidate
+          git apply --index (Join-Path $env:GITHUB_WORKSPACE '.ci/timer-compat.diff')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git add scripts/TcgQualification.ps1 tests/TcgQualification.Tests.ps1 docs/research/TRIO-2026-10/DASH-02-TCG-QUALIFICATION.md
+          git -c user.name='EzVM preflight' -c user.email='261801702+techrote@users.noreply.github.com' commit -m 'Test exact TCG compatibility candidate'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $tree = (git rev-parse 'HEAD^{tree}').Trim()
+          if ($tree -cne 'ba4be2d9aa5f1a90d8c7dca455c0b4cfee8c0132') { throw "Candidate tree mismatch: $tree" }
+          "EZVM_PREFLIGHT_ROOT=$candidate" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host ('EXACT_CANDIDATE_TREE=' + $tree)
+      - name: Run existing recipe and new timer tests on Windows PowerShell 5.1 and pinned 7
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location -LiteralPath $env:EZVM_PREFLIGHT_ROOT
+          .\scripts\Test-Repository.ps1
+          .\scripts\Test-DashboardPlan.ps1
+          $testScript = Join-Path $env:RUNNER_TEMP 'tcg-tests.ps1'
+          $body = @'
+          param([string]$Root)
+          $ErrorActionPreference = 'Stop'
+          $script:EzVmRepositoryRoot = $Root
+          . (Join-Path $Root 'tests/TestHarness.ps1')
+          Import-Module (Join-Path $Root 'src/EzVm/EzVm.psd1') -Force
+          . (Join-Path $Root 'tests/BaseRecipe.Tests.ps1')
+          . (Join-Path $Root 'tests/TcgQualification.Tests.ps1')
+          Write-Host ('EXECUTING_POWERSHELL=' + $PSVersionTable.PSVersion)
+          Invoke-EzVmTestSuite
+          '@
+          [IO.File]::WriteAllText($testScript, $body, (New-Object Text.UTF8Encoding($false)))
+          & (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -File $testScript -Root $env:EZVM_PREFLIGHT_ROOT
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $ps7 = .\scripts\Install-TestPowerShell.ps1 -DestinationRoot $env:RUNNER_TEMP
+          & $ps7 -NoProfile -File $testScript -Root $env:EZVM_PREFLIGHT_ROOT
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Preserve verified Git blobs only; no commits, branches or PRs are changed
+        shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-          gh api --allow-escape-sequences "repos/$GITHUB_REPOSITORY/actions/jobs/117229632749/logs" > "$RUNNER_TEMP/failed-release.log"
-          python - <<'PY'
-          import hashlib, os, pathlib, re
-          p = pathlib.Path(os.environ['RUNNER_TEMP'])
-          raw = (p / 'failed-release.log').read_bytes()
-          lines = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', raw.decode('utf-8', 'replace')).splitlines()
-          selected, active = [], False
-          for line in lines:
-              if 'STATE_FILE=' in line:
-                  active = '\\ezvm010-stateful\\' in line
-              if active:
-                  selected.append(line)
-          text = 'Original job 117229632749; log SHA256=' + hashlib.sha256(raw).hexdigest() + '\n' + '\n'.join(selected) + '\n'
-          (p / 'stateful-boot.txt').write_text(text, encoding='utf-8')
-          print('Extracted stateful clone lines:', len(selected))
-          if not selected:
-              raise SystemExit('Missing stateful clone diagnostic section')
-          PY
-      - name: Retain original public CI log and targeted clone evidence
+          $ErrorActionPreference = 'Stop'
+          Set-Location -LiteralPath $env:EZVM_PREFLIGHT_ROOT
+          if (@(git status --porcelain).Count -ne 0) { throw 'Candidate changed during qualification.' }
+          $headers = @{ Authorization = ('Bearer ' + $env:GH_TOKEN); Accept = 'application/vnd.github+json' }
+          $files = @(git diff --name-only b88ddf949d34bcb5e02b1b5452c63bc39184751f HEAD)
+          $records = @()
+          foreach ($path in $files) {
+            $expected = (git hash-object -- $path).Trim()
+            $body = @{ content = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $env:EZVM_PREFLIGHT_ROOT $path))); encoding = 'base64' } | ConvertTo-Json -Compress
+            $blob = Invoke-RestMethod -Method Post -Uri ($env:GITHUB_API_URL + '/repos/' + $env:GITHUB_REPOSITORY + '/git/blobs') -Headers $headers -ContentType 'application/json' -Body $body
+            if ($blob.sha -cne $expected) { throw "Blob identity mismatch: $path" }
+            $records += [ordered]@{ path = $path; sha = $expected; sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          $receipt = [ordered]@{ status = 'PASS'; scope = 'Windows pure recipe and qualification helpers; no VM execution'; sourceCommit = (git rev-parse HEAD).Trim(); sourceTree = (git rev-parse 'HEAD^{tree}').Trim(); files = $records }
+          $json = $receipt | ConvertTo-Json -Depth 6
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'tcg-preflight.json'), $json, (New-Object Text.UTF8Encoding($false)))
+          Write-Output $json
+      - name: Retain the bounded preflight receipt
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: dash02-stateful-boot-diagnosis
-          path: |
-            ${{ runner.temp }}/stateful-boot.txt
-            ${{ runner.temp }}/failed-release.log
-          retention-days: 3
+          name: dash02-tcg-preflight
+          path: ${{ runner.temp }}/tcg-preflight.json
           if-no-files-found: error
+          retention-days: 14
