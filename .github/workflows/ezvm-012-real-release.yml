@@ -25,8 +25,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  ci-poc-tcg-deferred:
+    # Owner-authorized on 2026-10-17 until Runloc CI-POC-003 (#23) completes.
+    # Keep a visible SKIP notice and the existing workflow concurrency group.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (startsWith(github.event.pull_request.head.ref, 'ci-poc-') ||
+       github.event.pull_request.head.ref == 'ezvm-ci-whpx-pilot')
+    name: Hosted TCG deferral notice (not qualification)
+    runs-on: windows-2022
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Record temporary owner-authorized deferral
+        shell: powershell
+        run: |
+          Write-Host 'EZVM012_HOSTED_TCG=SKIP: owner deferred automatic full TCG for CI-PoC on 2026-10-17; coverage is unmeasured.'
+          @'
+          ## Full hosted TCG deferred for CI-PoC
+          The owner authorized this temporary PR deferral on 2026-10-17.
+          TCG coverage and performance are unmeasured; this notice is not a qualification PASS.
+          Software and standard-user ACL checks continue. Physical WHPX acceptance remains required.
+          Manual workflow_dispatch remains available. Remove or replace this exception when
+          [Runloc CI-POC-003](https://github.com/techrote/runloc/issues/23) completes.
+          '@ | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding UTF8
+
   real-release:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Temporary owner exception above defers only these same-repository CI-PoC PRs.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       !startsWith(github.event.pull_request.head.ref, 'ci-poc-') &&
+       github.event.pull_request.head.ref != 'ezvm-ci-whpx-pilot')
     name: Real v0.1 end-to-end release (Windows TCG; WHPX SKIP)
     runs-on: windows-2022
     timeout-minutes: 180

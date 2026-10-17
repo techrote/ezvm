@@ -2,6 +2,8 @@ function Set-EzVmPrivateAcl {
     param([Parameter(Mandatory = $true)][string]$Path, [switch]$Directory)
     $full = Assert-EzVmSafePath -Path $Path -Description 'Private permission target'
     if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return }
+    $target = if ($Directory) { [IO.DirectoryInfo]::new($full) } else { [IO.FileInfo]::new($full) }
+    if (-not $target.Exists) { throw 'Private permission target must be an existing object of the requested file or directory type.' }
     $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
     $acl = if ($Directory) { New-Object Security.AccessControl.DirectorySecurity } else { New-Object Security.AccessControl.FileSecurity }
     if (-not $Directory) { Assert-EzVmSingleLinkFile -Path $full }
@@ -11,13 +13,27 @@ function Set-EzVmPrivateAcl {
     $rule = [Security.AccessControl.FileSystemAccessRule]::new($sid, [Security.AccessControl.FileSystemRights]::FullControl,
         $inheritance, [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow)
     $acl.AddAccessRule($rule)
-    Set-Acl -LiteralPath $full -AclObject $acl -ErrorAction Stop
-    $observed = Get-Acl -LiteralPath $full -ErrorAction Stop
+    # Persist only the owner and DACL modified above. The PowerShell Set-Acl
+    # provider first requests all sections, including the unrelated SACL; its
+    # fallback can still require SeSecurityPrivilege on an already protected
+    # DACL (including the file just restricted by icacls). Do not touch audit
+    # rules, group ownership or process privileges to set private permissions.
+    $sections = [Security.AccessControl.AccessControlSections]'Owner, Access'
+    if ($PSVersionTable.PSVersion.Major -le 5) {
+        $target.SetAccessControl($acl)
+        $observed = $target.GetAccessControl($sections)
+    }
+    else {
+        [IO.FileSystemAclExtensions]::SetAccessControl($target, $acl)
+        $observed = [IO.FileSystemAclExtensions]::GetAccessControl($target, $sections)
+    }
     $rules = @($observed.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))
     if (-not $observed.AreAccessRulesProtected -or $observed.GetOwner([Security.Principal.SecurityIdentifier]).Value -cne $sid.Value -or
         $rules.Count -ne 1 -or $rules[0].IdentityReference.Value -cne $sid.Value -or
         $rules[0].AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or
-        $rules[0].FileSystemRights -ne [Security.AccessControl.FileSystemRights]::FullControl) {
+        $rules[0].FileSystemRights -ne [Security.AccessControl.FileSystemRights]::FullControl -or
+        $rules[0].IsInherited -or $rules[0].InheritanceFlags -ne $inheritance -or
+        $rules[0].PropagationFlags -ne [Security.AccessControl.PropagationFlags]::None) {
         throw 'Private Windows ACL verification failed; no broad or inherited access is accepted.'
     }
 }

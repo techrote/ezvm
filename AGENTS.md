@@ -72,6 +72,30 @@ Use three layers where applicable:
 
 Never silently convert a hardware or environment limitation into a PASS. If a check cannot run, emit an explicit SKIP with the reason and keep other coverage authoritative.
 
+### Temporary CI-PoC hosted TCG exception (owner instruction, 2026-10-17)
+
+The owner explicitly deferred the approximately three-hour automatic hosted TCG
+release qualification until the end of the Runloc CI proof of concept. For
+same-repository PR branches beginning `ci-poc-` and the existing
+`ezvm-ci-whpx-pilot` branch, `.github/workflows/ezvm-012-real-release.yml` therefore
+skips only its full TCG release job and emits an explicit deferral notice.
+Manual `workflow_dispatch` remains available; other same-repository PRs retain
+the complete job, and fork PRs retain the existing refusal to run it.
+
+This scoped scheduling exception supersedes the requirement to wait for this
+automatic full TCG run on those CI-PoC PRs. Keep repository/control-plane checks,
+both supported Windows PowerShell lanes, standard-user ACL regressions and all
+other applicable checks. Deferred TCG coverage is unmeasured, not PASS; physical
+WHPX acceptance and functional failure handling are unchanged. Do not alter
+branch protection or apply this exception to unrelated work.
+
+Remove this exception and its workflow notice/condition, or replace them with
+the reviewed qualified-WHPX/hosted-fallback policy, when
+[Runloc CI-POC-003 / #23](https://github.com/techrote/runloc/issues/23) completes.
+Restore automatic hosted qualification before treating the temporary deferral
+as a permanent release policy. See the testing RAG's
+[decision table](docs/rag/08-TESTING-CI-RELEASE.md#temporary-ci-poc-hosted-tcg-deferral).
+
 ## Branch, PR and merge workflow
 
 Each implementation issue is completed end-to-end by the executing agent.
