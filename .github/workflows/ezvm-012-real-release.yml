@@ -7,6 +7,8 @@ on:
       - .github/workflows/ezvm-012-real-release.yml
       - .github/workflows/release.yml
       - scripts/Invoke-EzVm010RealPortability.ps1
+      - scripts/TcgQualification.ps1
+      - tests/TcgQualification.Tests.ps1
       - scripts/New-EzVmReleasePackage.ps1
       - scripts/Publish-EzVmGitHubRelease.ps1
       - src/EzVm/**
@@ -52,5 +54,5 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          .\scripts\Invoke-EzVm010RealPortability.ps1 -ReleaseQualification
+          .\scripts\Invoke-EzVm010RealPortability.ps1 -ReleaseQualification -TcgTimerCheckWorkaround
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

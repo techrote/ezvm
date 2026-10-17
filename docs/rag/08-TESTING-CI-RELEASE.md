@@ -496,3 +496,19 @@ automation connection cannot create that Git ref, the repository must be left
 release-ready and the exact accepted main SHA plus the single required tag-push
 action must be recorded; no release may be claimed published until the GitHub
 release exists.
+
+### Hosted TCG legacy timer compatibility fixture
+
+The release lane explicitly opts into `-TcgTimerCheckWorkaround`. This modifies
+only the fresh disposable base fixture: a GRUB fragment appends `no_timer_check`
+and `update-grub` must succeed before the existing cloud-init finalizer can
+publish the base. Original/effective template hashes and normal recipe provenance
+identify the adjustment. The checkout, public recipe, normal WHPX behavior and
+QEMU/CPU arguments are unchanged. The flag is refused outside release mode.
+
+Every subsequent authenticated guest start must show the effective option,
+positive IO-APIC interrupt counts, a clocksource and advancing uptime. This is a
+legacy boot self-check workaround, not APIC/timer disablement or a waiver of any
+release assertion/deadline. The initial vendor-image boot remains unmodified and
+can still fail. No automatic retry or failure-to-SKIP conversion is added. See the
+[observed failure, primary sources and evidence boundary](../research/TRIO-2026-10/DASH-02-TCG-QUALIFICATION.md).

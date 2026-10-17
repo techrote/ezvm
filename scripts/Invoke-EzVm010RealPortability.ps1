@@ -1,9 +1,12 @@
 #requires -Version 5.1
 [CmdletBinding()]
-param([string]$Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')), [switch]$SecurityQualification, [switch]$ReleaseQualification)
+param([string]$Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')), [switch]$SecurityQualification, [switch]$ReleaseQualification, [switch]$TcgTimerCheckWorkaround)
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+if ($TcgTimerCheckWorkaround -and -not $ReleaseQualification) {
+    throw 'The TCG timer workaround is restricted to explicit disposable release qualification.'
+}
 if ($ReleaseQualification) { $SecurityQualification = $true }
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     throw 'EZVM-010 real qualification requires Windows and the reviewed managed Windows QEMU runtime.'
@@ -19,6 +22,19 @@ $rootARenamed = $false
 # A fresh qualification root must never incorporate an existing user's runtime.
 foreach ($relative in @('ezvm.ps1', 'src', 'config', 'manifests', 'guest', 'scripts', 'tests', 'docs', 'README.md', 'AGENTS.md', 'THIRD-PARTY-NOTICES.md', '.github', '.gitattributes', '.gitignore')) {
     Copy-Item -LiteralPath (Join-Path $sourceRoot $relative) -Destination $rootA -Recurse -Force
+}
+# Opt-in fixture adjustment is confined to this freshly created copy, never the
+# checkout, vendor image, a published base, or an owner's runtime.
+. (Join-Path $PSScriptRoot 'TcgQualification.ps1')
+if ($TcgTimerCheckWorkaround) {
+    $templatePath = Join-Path $rootA 'guest/base-cloud-init/user-data.yaml'
+    $template = [IO.File]::ReadAllText($templatePath)
+    $effective = New-EzVmTcgTimerQualificationSeed -Template $template
+    $originalHash = (Get-FileHash -LiteralPath $templatePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    [IO.File]::WriteAllText($templatePath, $effective, (New-Object Text.UTF8Encoding($false)))
+    $effectiveHash = (Get-FileHash -LiteralPath $templatePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    Write-Host ('EZVM012_TCG_FIXTURE=opt-in-no_timer_check; originalTemplateSha256=' + $originalHash + '; effectiveTemplateSha256=' + $effectiveHash)
+    Write-Host 'EZVM012_TCG_FIXTURE_LIMIT=The initial vendor-image boot is unmodified; subsequent prepared-base boots use the compatibility option.'
 }
 $Root = $rootA
 Import-Module (Join-Path $Root 'src/EzVm/EzVm.psd1') -Force -ErrorAction Stop
@@ -92,6 +108,13 @@ function Start-EzVm010Guest {
         throw
     }
     Write-Host ('EZVM010_STEP=guest_ready; instance=' + $Name + '; at=' + [DateTime]::UtcNow.ToString('o'))
+    if ($TcgTimerCheckWorkaround) {
+        $timerEvidence = (Invoke-EzVm010Guest -Name $Name -Script (Get-EzVmTcgTimerQualificationProbe) -TimeoutSeconds 60).Trim()
+        if ($timerEvidence -cnotmatch '^EZVM012_TCG_TIMER_COMPATIBILITY=PASS; clocksource=[a-z0-9_-]+; before=[0-9.]+; after=[0-9.]+$') {
+            throw 'Authenticated guest omitted the required TCG timer compatibility evidence.'
+        }
+        Write-Host ('EZVM012_TCG_INSTANCE=' + $Name + '; ' + $timerEvidence)
+    }
 }
 
 function Stop-EzVm010Guest {
