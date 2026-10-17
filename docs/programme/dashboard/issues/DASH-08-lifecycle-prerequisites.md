@@ -1,6 +1,6 @@
 # DASH-08 — Qualify lifecycle prerequisites for dashboard-managed devboxes
 
-Status: **PLANNED** | Priority: **P0** | GitHub issue: [#34](https://github.com/techrote/ezvm/issues/34)
+Status: **IN-PROGRESS** | Priority: **P0** | GitHub issue: [#34](https://github.com/techrote/ezvm/issues/34)
 
 Dependencies: [DASH-01](DASH-01-evidence-and-replay.md).
 Research: TRIO-FR-14, TRIO-FR-15 in the [field register](../../../research/TRIO-2026-10/README.md).
@@ -16,6 +16,7 @@ Read the [programme and common closure rules](../README.md) plus these RAG contr
 - [06-SECURITY-PORTABILITY-CONTRACT](../../../rag/06-SECURITY-PORTABILITY-CONTRACT.md)
 - [07-CLI-STATE-CONTRACT](../../../rag/07-CLI-STATE-CONTRACT.md)
 - [08-TESTING-CI-RELEASE](../../../rag/08-TESTING-CI-RELEASE.md)
+- [DASH-08-LIFECYCLE-CONTRACT](../../../rag/DASH-08-LIFECYCLE-CONTRACT.md)
 
 ## Problem and baseline
 
@@ -40,8 +41,9 @@ Reconcile the selected revision before editing; preserve working implementation.
 
 ## Test cases
 
-These are required future cases, not claims of existing or passing tests. Use
-fixtures/process stubs first; physical/live qualification is separately identified.
+These original requirements are retained. The software child adds native-process
+and deterministic coverage for T01/T02/T03; existing core regressions remain
+required. T04 still requires actual supported-host evidence, not a fixture PASS.
 
 - **DASH-08-T01 — Bounded start lifetime:** A disposable runner holds the simulated VM open after public start returns; timeout/caller interruption preserves the documented process/log ownership.
 - **DASH-08-T02 — Readiness stages:** SSH, cloud-init, coding-ready and tool deadlines fail independently with accurate errors and preserved diagnostic evidence.
@@ -60,3 +62,16 @@ Apply the programme's common closure rules: original criteria and tests accounte
 for, actual source/result identities, reviewed implementation and RAG updates, and
 verification at the accepted revision. A dependent gate stays closed until those
 prerequisites are accepted. This document does not authorize a TRIO restart.
+
+## Implementation checkpoint
+
+Accepted dependency: DASH-01 on main `d5265c804d0d8494d8171482a85aca563b181e05`.
+The [pre-fix matrix and qualification handoff](../../../research/TRIO-2026-10/DASH-08-LIFECYCLE.md)
+records the captured-start reproduction and the distinct historical/unreproduced
+findings. [Software child #44](https://github.com/techrote/ezvm/issues/44) owns the
+native handle/deadline repair on `ezvm-034-lifecycle-prerequisites`.
+
+No original acceptance criterion is checked off by this publication. Required
+exact-head CI, review, merge/accepted-revision checks and actual standard-user
+WHPX evidence remain separate. Parent #34 and PROVISION stay held; TRIO stays
+paused. DASH-02 is a parallel issue, not a new prerequisite or a test target.

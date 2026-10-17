@@ -27,8 +27,8 @@ concurrency:
 jobs:
   real-release:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    name: Real v0.1 end-to-end release (Avrea 8-core Windows TCG; WHPX SKIP)
-    runs-on: avrea-windows-2025-8-vcpu
+    name: Real v0.1 end-to-end release (Windows TCG; WHPX SKIP)
+    runs-on: windows-2022
     timeout-minutes: 180
     steps:
       - name: Checkout candidate source
@@ -44,7 +44,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           git rev-parse HEAD 'HEAD^{tree}'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Write-Host ('EZVM012_REQUESTED_RUNNER=avrea-windows-2025-8-vcpu; observedCPU=' + [Environment]::ProcessorCount)
+          Write-Host ('EZVM012_REQUESTED_RUNNER=windows-2022; observedCPU=' + [Environment]::ProcessorCount)
           Write-Host 'EZVM012_WHPX_EXECUTION=SKIP: hosted qualification uses explicit TCG; no WHPX runtime PASS is claimed.'
           $PSVersionTable
 

@@ -10,11 +10,12 @@ adds explicit CI/packaging ownership. Existing EZVM-001..012 issue numbers are u
 
 Baseline `d692be6` supplies a working read-only prototype. See
 [the guide](../../DASHBOARD.md) and [measured verification](../../DASHBOARD-VERIFICATION.md).
-DASH-01 now has its fixture/research implementation in **review**; see its
-[evidence handoff](../../research/TRIO-2026-10/DASH-01-REPLAY.md).
-DASH-02/03/04 retain partial foundations, not completed acceptance. All remaining
-issues are **planned**. No new model, worker, VM mutation or TRIO test is
-required to validate this documentation or the DASH-01 corpus.
+DASH-01 is accepted on main `d5265c804d0d8494d8171482a85aca563b181e05`; see its
+[evidence handoff](../../research/TRIO-2026-10/DASH-01-REPLAY.md) and issue closure.
+DASH-08 is **in progress** with a [scoped software repair and held WHPX gate](../../research/TRIO-2026-10/DASH-08-LIFECYCLE.md).
+This branch does not include the separately reviewed DASH-02 candidate in PR #42;
+other catalogue rows describe the selected source baseline, not that PR's live
+status. No original TRIO VM or owner working tree is a test target.
 
 Use the field study as first-person product research, not as a universal model
 ranking or a reason to redistribute the existing authenticated VM. The future
@@ -24,14 +25,14 @@ demonstration is a clean recipe with measured local/free support.
 
 | Issue | GitHub | Implementation/testing outcome | Priority | Dependencies | State |
 |---|---|---|---|---|---|
-| [DASH-01](issues/DASH-01-evidence-and-replay.md) | [#27](https://github.com/techrote/ezvm/issues/27) | Build the evidence fixtures and research feedback loop | P0 | — | review |
+| [DASH-01](issues/DASH-01-evidence-and-replay.md) | [#27](https://github.com/techrote/ezvm/issues/27) | Build the evidence fixtures and research feedback loop | P0 | — | accepted |
 | [DASH-02](issues/DASH-02-scoped-adapters-and-identities.md) | [#28](https://github.com/techrote/ezvm/issues/28) | Harden scoped observation adapters and registered-worker discovery | P0 | DASH-01 | planned |
 | [DASH-03](issues/DASH-03-tiled-workspace-and-activity.md) | [#29](https://github.com/techrote/ezvm/issues/29) | Finish mdbm-style tiles, saved layouts and evidence browsing | P0 | DASH-02 | planned |
 | [DASH-04](issues/DASH-04-usage-and-performance-ledger.md) | [#30](https://github.com/techrote/ezvm/issues/30) | Implement a provenance-aware usage and performance ledger | P0 | DASH-02 | planned |
 | [DASH-05](issues/DASH-05-durable-commands-and-pause.md) | [#31](https://github.com/techrote/ezvm/issues/31) | Add the durable command broker and operator pause/steering controls | P0 | DASH-11 | planned |
 | [DASH-06](issues/DASH-06-review-rework-and-evidence.md) | [#32](https://github.com/techrote/ezvm/issues/32) | Build independent review, rework and evidence-gated task queues | P1 | DASH-05 | planned |
 | [DASH-07](issues/DASH-07-model-pools-and-automations.md) | [#33](https://github.com/techrote/ezvm/issues/33) | Add model availability, shared admission pools and bounded automations | P1 | DASH-05, DASH-06 | planned |
-| [DASH-08](issues/DASH-08-lifecycle-prerequisites.md) | [#34](https://github.com/techrote/ezvm/issues/34) | Qualify lifecycle prerequisites for dashboard-managed devboxes | P0 | DASH-01 | planned |
+| [DASH-08](issues/DASH-08-lifecycle-prerequisites.md) | [#34](https://github.com/techrote/ezvm/issues/34) | Qualify lifecycle prerequisites for dashboard-managed devboxes | P0 | DASH-01 | in-progress |
 | [DASH-09](issues/DASH-09-previewable-provisioning.md) | [#35](https://github.com/techrote/ezvm/issues/35) | Implement previewable stopped-only provisioning and recoverable disk growth | P1 | DASH-05, DASH-08 | planned |
 | [DASH-10](issues/DASH-10-clean-demo-devbox.md) | [#36](https://github.com/techrote/ezvm/issues/36) | Build a reproducible local/free agentic demonstration devbox | P1 | DASH-06, DASH-07, DASH-09, DASH-13 | planned |
 | [DASH-11](issues/DASH-11-recovery-and-performance-gates.md) | [#37](https://github.com/techrote/ezvm/issues/37) | Establish recovery, pause and performance release gates | P0 | DASH-02, DASH-03, DASH-04, DASH-13 | planned |
@@ -41,8 +42,8 @@ demonstration is a clean recipe with measured local/free support.
 The [catalogue JSON](catalog.json) holds stable IDs, paths, dependencies, RAG and
 research references, case IDs and release gates. The issue bodies own substantive
 scope and test assertions. Update both in the same change and reconcile the linked
-GitHub body. Publication alone accepts no future issue; DASH-01 review status is
-not yet accepted-revision qualification.
+GitHub body. Publication alone accepts no future issue; the scoped DASH-08 software repair
+does not satisfy its remaining standard-user/WHPX or PROVISION acceptance.
 
 ## Execution order and release gates
 
