@@ -13,16 +13,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Checkout failed source without credentials
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          ref: b88ddf949d34bcb5e02b1b5452c63bc39184751f
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Bundle tracked source for offline analysis
-        shell: bash
-        run: git bundle create "$RUNNER_TEMP/dash02-source.bundle" HEAD refs/remotes/origin/main
-      - name: Read existing failed log; do not rerun qualification
+      - name: Extract existing disposable-CI clone boot evidence
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -30,27 +21,28 @@ jobs:
           set -euo pipefail
           gh api --allow-escape-sequences "repos/$GITHUB_REPOSITORY/actions/jobs/117229632749/logs" > "$RUNNER_TEMP/failed-release.log"
           python - <<'PY'
-          import hashlib, os, pathlib, re, subprocess
+          import hashlib, os, pathlib, re
           p = pathlib.Path(os.environ['RUNNER_TEMP'])
           raw = (p / 'failed-release.log').read_bytes()
           lines = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', raw.decode('utf-8', 'replace')).splitlines()
-          wanted = re.compile(r'EZVM0(?:10|11|12)|\bPASS\b|\bFAIL\b|timed out|deadline|Exception|Error:|##\[error\]', re.I)
-          matches = [line for line in lines if wanted.search(line)]
-          result = ['Original job: 117229632749', 'Log SHA256: ' + hashlib.sha256(raw).hexdigest(), 'Log lines: ' + str(len(lines)), 'Exact failed source: ' + subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), 'Source tree: ' + subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip(), '--- Last 100 milestone/error matches ---']
-          result += [line[:1200] for line in matches[-100:]]
-          result += ['--- Final 80 log lines ---'] + [line[:1200] for line in lines[-80:]]
-          text = '\n'.join(result) + '\n'
-          (p / 'release-diagnosis.txt').write_text(text, encoding='utf-8')
-          for line in result:
-              print('LOG ' + line)
+          selected, active = [], False
+          for line in lines:
+              if 'STATE_FILE=' in line:
+                  active = '\\ezvm010-stateful\\' in line
+              if active:
+                  selected.append(line)
+          text = 'Original job 117229632749; log SHA256=' + hashlib.sha256(raw).hexdigest() + '\n' + '\n'.join(selected) + '\n'
+          (p / 'stateful-boot.txt').write_text(text, encoding='utf-8')
+          print('Extracted stateful clone lines:', len(selected))
+          if not selected:
+              raise SystemExit('Missing stateful clone diagnostic section')
           PY
-      - name: Retain bounded diagnosis and tracked Git source only
-        if: always()
+      - name: Retain original public CI log and targeted clone evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: dash02-release-diagnosis
+          name: dash02-stateful-boot-diagnosis
           path: |
-            ${{ runner.temp }}/release-diagnosis.txt
-            ${{ runner.temp }}/dash02-source.bundle
+            ${{ runner.temp }}/stateful-boot.txt
+            ${{ runner.temp }}/failed-release.log
           retention-days: 3
           if-no-files-found: error
