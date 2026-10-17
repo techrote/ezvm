@@ -123,6 +123,28 @@ temporary script and invokes it using a short, explicitly bounded `-File` argume
 No password is written to that script or command line. Original failure artifacts
 remain retained; a later successful test run must establish the correction.
 
+The [second hosted attempt](https://github.com/techrote/ezvm/actions/runs/39051034110)
+at `d49647dd817bb5c4bf7d86da1b9ab4dcbf52f99a` launched both children, but
+setup joined three `Get-Command git` application paths into one invalid command.
+The fixture now selects the first application and validates its absolute file
+path. Checked Git calls retain stdout/stderr and require numeric exit zero;
+ordinary native progress on stderr cannot trigger PowerShell 5.1's error-action
+handling before the actual exit is observed. A narrow local preference applies
+only to the native invocation; PowerShell setup and ACL assertions still stop
+on error. Tests exercise successful stderr, native nonzero and missing commands.
+
+Both second-attempt host receipts also recorded an exited child with an unavailable
+exit code. The fixture eagerly retains the returned process handle before its
+bounded wait, following the [upstream PowerShell process-handle fix](https://github.com/PowerShell/PowerShell/pull/20749).
+Explicit .NET getter calls propagate unavailable-handle/exit exceptions instead
+of accepting a null property as evidence. Success still requires a numeric zero
+and the exact-source child receipt. Regression tests cover exact zero/nonzero
+codes, unavailable status, and timeout termination that leaves an unrelated
+owned test child running. These synthetic launch tests create no account and
+grant no privilege. Both engine lanes in the second attempt removed their temporary
+accounts and quarantined their failed fixture trees for hosted-machine teardown;
+they do not establish an ACL regression pass.
+
 Implementation and initial self-review: the assigned ChatGPT coding subagent,
 using public EzVM source and primary Microsoft/PowerShell references. No private
 owner patch was read or copied. The primary assistant independently reviewed the

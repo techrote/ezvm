@@ -11,10 +11,12 @@ Set-StrictMode -Version 2.0
 if ($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or
     [Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'This account fixture runs only on disposable GitHub-hosted Windows runners.' }
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$head = ((& git -C $root rev-parse HEAD) -join '').Trim()
-if ($LASTEXITCODE -ne 0 -or $head -cnotmatch '^[a-f0-9]{40}$') { throw 'Cannot identify the exact candidate.' }
-$state = @(& git -C $root status --porcelain --untracked-files=all)
-if ($LASTEXITCODE -ne 0 -or $state.Count) { throw 'Hosted ACL fixture requires a clean source checkout.' }
+. (Join-Path $PSScriptRoot 'PrivateAclHostedSupport.ps1')
+$git = Resolve-PrivateAclFixtureGit
+$head = ((Invoke-PrivateAclFixtureGit -Executable $git -Arguments @('-C', $root, 'rev-parse', 'HEAD') -Operation 'Candidate identity') -join '').Trim()
+if ($head -cnotmatch '^[a-f0-9]{40}$') { throw 'Cannot identify the exact candidate.' }
+$state = @(Invoke-PrivateAclFixtureGit -Executable $git -Arguments @('-C', $root, 'status', '--porcelain', '--untracked-files=all') -Operation 'Candidate status')
+if ($state.Count) { throw 'Hosted ACL fixture requires a clean source checkout.' }
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath $output) { throw 'Hosted ACL evidence destination must be new.' }
 [void][IO.Directory]::CreateDirectory($output)
@@ -42,8 +44,7 @@ try {
     }
     ([IO.DirectoryInfo]::new($fixture)).SetAccessControl($acl)
     $bundle = Join-Path $fixture 'source.bundle'
-    & git -C $root bundle create $bundle HEAD
-    if ($LASTEXITCODE -ne 0) { throw 'Could not stage the immutable public source bundle.' }
+    Invoke-PrivateAclFixtureGit -Executable $git -Arguments @('-C', $root, 'bundle', 'create', $bundle, 'HEAD') -Operation 'Public source bundle creation'
     $candidate = Join-Path $fixture 'candidate'
     $baseline = Join-Path $fixture 'baseline'
     $evidence = Join-Path $fixture 'evidence'
@@ -51,20 +52,19 @@ try {
     [void][IO.Directory]::CreateDirectory($testTemp)
     $executable = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
     if ($ExpectedMajor -eq 7) { $executable = & (Join-Path $PSScriptRoot 'Install-TestPowerShell.ps1') -DestinationRoot $fixture }
-    $git = (Get-Command git -CommandType Application -ErrorAction Stop).Source
+    $support = Join-Path $fixture 'PrivateAclHostedSupport.ps1'
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'PrivateAclHostedSupport.ps1') -Destination $support -ErrorAction Stop
     function ConvertTo-AclFixtureLiteral { param([string]$Value) return ("'" + $Value.Replace("'", "''") + "'") }
     $command = @(
         '$ErrorActionPreference = ''Stop''',
         ('$env:TEMP = ' + (ConvertTo-AclFixtureLiteral $testTemp)),
         '$env:TMP = $env:TEMP',
-        ('& ' + (ConvertTo-AclFixtureLiteral $git) + ' clone --no-checkout ' + (ConvertTo-AclFixtureLiteral $bundle) + ' ' + (ConvertTo-AclFixtureLiteral $candidate)),
-        'if ($LASTEXITCODE -ne 0) { throw ''Candidate clone failed.'' }',
-        ('& ' + (ConvertTo-AclFixtureLiteral $git) + ' -C ' + (ConvertTo-AclFixtureLiteral $candidate) + ' checkout --detach ' + $head),
-        'if ($LASTEXITCODE -ne 0) { throw ''Candidate checkout failed.'' }',
-        ('& ' + (ConvertTo-AclFixtureLiteral $git) + ' clone --no-checkout ' + (ConvertTo-AclFixtureLiteral $bundle) + ' ' + (ConvertTo-AclFixtureLiteral $baseline)),
-        'if ($LASTEXITCODE -ne 0) { throw ''Baseline clone failed.'' }',
-        ('& ' + (ConvertTo-AclFixtureLiteral $git) + ' -C ' + (ConvertTo-AclFixtureLiteral $baseline) + ' checkout --detach d5265c804d0d8494d8171482a85aca563b181e05'),
-        'if ($LASTEXITCODE -ne 0) { throw ''Baseline checkout failed.'' }',
+        ('. ' + (ConvertTo-AclFixtureLiteral $support)),
+        ('$git = ' + (ConvertTo-AclFixtureLiteral $git)),
+        ('Invoke-PrivateAclFixtureGit -Executable $git -Arguments @(''clone'', ''--no-checkout'', ' + (ConvertTo-AclFixtureLiteral $bundle) + ', ' + (ConvertTo-AclFixtureLiteral $candidate) + ') -Operation ''Candidate clone'''),
+        ('Invoke-PrivateAclFixtureGit -Executable $git -Arguments @(''-C'', ' + (ConvertTo-AclFixtureLiteral $candidate) + ', ''checkout'', ''--detach'', ''' + $head + ''') -Operation ''Candidate checkout'''),
+        ('Invoke-PrivateAclFixtureGit -Executable $git -Arguments @(''clone'', ''--no-checkout'', ' + (ConvertTo-AclFixtureLiteral $bundle) + ', ' + (ConvertTo-AclFixtureLiteral $baseline) + ') -Operation ''Baseline clone'''),
+        ('Invoke-PrivateAclFixtureGit -Executable $git -Arguments @(''-C'', ' + (ConvertTo-AclFixtureLiteral $baseline) + ', ''checkout'', ''--detach'', ''d5265c804d0d8494d8171482a85aca563b181e05'') -Operation ''Baseline checkout'''),
         ('& ' + (ConvertTo-AclFixtureLiteral (Join-Path $candidate 'scripts/Invoke-PrivateAclQualification.ps1')) +
             ' -BaselineRoot ' + (ConvertTo-AclFixtureLiteral $baseline) + ' -ExpectedCommit ' + $head +
             ' -ExpectedMajor ' + $ExpectedMajor + ' -OutputDirectory ' + (ConvertTo-AclFixtureLiteral $evidence)),
@@ -80,22 +80,14 @@ try {
     if (($executable.Length + $launchArguments.Length + 4) -gt 1024) { throw 'Standard-user fixture launch exceeds the native command-line bound.' }
     $credential = [Management.Automation.PSCredential]::new(($env:COMPUTERNAME + '\' + $account.Name), $password)
     $child = Start-Process -FilePath $executable -ArgumentList $launchArguments -Credential $credential -LoadUserProfile -WorkingDirectory $fixture -RedirectStandardOutput (Join-Path $output 'process.stdout.log') -RedirectStandardError (Join-Path $output 'process.stderr.log') -PassThru
-    if (-not $child.WaitForExit(600000)) {
-        # The retained Process handle identifies this one owned child; no PID
-        # search, wildcard termination, elevation or retry with privileges.
-        $child.Kill()
-        $result.childExited = $child.WaitForExit(5000)
-        throw 'Standard-user ACL qualification exceeded its ten-minute wall.'
-    }
-    $result.childExited = $true
-    $result.childExitCode = $child.ExitCode
+    Wait-PrivateAclFixtureChild -Process $child -Receipt $result
     if (Test-Path -LiteralPath $evidence -PathType Container) {
         foreach ($name in @('receipt.json', 'fixed-suite.log')) {
             $path = Join-Path $evidence $name
             if (Test-Path -LiteralPath $path -PathType Leaf) { Copy-Item -LiteralPath $path -Destination (Join-Path $output $name) }
         }
     }
-    if ($child.ExitCode -ne 0) { throw ('Standard-user child failed with exit code ' + $child.ExitCode + '; inspect its retained logs/receipt.') }
+    if ($result.childExitCode -ne 0) { throw ('Standard-user child failed with exit code ' + $result.childExitCode + '; inspect its retained logs/receipt.') }
     $receipt = Get-Content -LiteralPath (Join-Path $output 'receipt.json') -Raw | ConvertFrom-Json
     if ($receipt.outcome -cne 'pass' -or $receipt.exitCode -ne 0 -or -not $receipt.sourceUnchanged -or $receipt.candidate.commit -cne $head) { throw 'Child receipt did not establish exact-source ACL success.' }
 }
