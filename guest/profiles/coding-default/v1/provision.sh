@@ -205,19 +205,60 @@ for policy_line in 'passwordauthentication no' 'kbdinteractiveauthentication no'
     printf '%s\n' "$sshd_policy" | grep -Fx -- "$policy_line" >/dev/null || fail 'effective SSH policy must allow public keys and disable password, keyboard-interactive and root login'
 done
 
-# A real, disposable venv checks ensurepip and the installed wheel payload too.
-# No network or package installation is involved. The directory is private to
-# this invocation and cannot overwrite a workspace or retain login material.
-venv_directory=$(mktemp -d /var/lib/ezvm/.venv-check.XXXXXX) || fail 'could not allocate the temporary Python validation directory'
+# A real disposable venv still runs the standard offline ensurepip bootstrap.
+# Prefer existing volatile storage: thousands of throwaway pip/bytecode writes
+# must not needlessly traverse the QCOW2 disk on every provision/validation.
+# The workspace's disk-backed read/write check above remains independent.
+# BEGIN EZVM_PYTHON_VENV_PROBE
+root_path /run directory
+venv_parent=/var/lib/ezvm
+if [ "$(stat -f -c '%T' -- /run)" = tmpfs ]; then
+    venv_parent=/run
+    printf '%s\n' 'EZVM_GUEST_VENV_STORAGE=tmpfs' >&2
+else
+    printf '%s\n' 'EZVM_GUEST_VENV_STORAGE=disk' >&2
+fi
+venv_directory=$(mktemp -d "$venv_parent/.venv-check.XXXXXX") || fail 'could not allocate the temporary Python validation directory'
 chown "$coder_uid:$coder_gid" "$venv_directory"
-runuser -u coder -- env -i PATH="$PATH" HOME=/home/coder USER=coder LOGNAME=coder LC_ALL=C \
-    timeout 90 sh -eu -c '
-        python3 -m venv "$1/env"
-        "$1/env/bin/python" -c "import sys; assert sys.prefix != sys.base_prefix"
-        "$1/env/bin/python" -m pip --version >/dev/null
-    ' sh "$venv_directory" >/dev/null 2>&1 || fail 'Python venv with pip is unavailable or exceeded its 90 second validation deadline'
+# TMPDIR also confines ensurepip/pip's nested temporary files to this private
+# invocation. Explicit symlinks let the interpreter run on noexec /run mounts;
+# all validation uses python -m, never an executable created in the scratch dir.
+# -I excludes user site packages, the current directory and PYTHON* overrides.
+# Hard-stop only this disposable probe process group at the deadline. A TERM-
+# terminated shell can otherwise leave an ensurepip descendant holding scratch.
+# Readiness publication and cleanup are outside this group; no VM is killed.
+if runuser -u coder -- env -i PATH="$PATH" HOME=/home/coder USER=coder LOGNAME=coder LC_ALL=C TMPDIR="$venv_directory" \
+    timeout --signal=KILL 90s sh -eu -c '
+        venv_step() {
+            phase=$1
+            shift
+            printf "EZVM_GUEST_VENV_STAGE=%s\n" "$phase" >&2
+            if "$@" >/dev/null 2>&1; then
+                return 0
+            else
+                step_status=$?
+                printf "EZVM_GUEST_VENV_STEP_FAILURE=%s; exit=%s\n" "$phase" "$step_status" >&2
+                return "$step_status"
+            fi
+        }
+        venv_step create python3 -I -m venv --symlinks "$1/env"
+        venv_step interpreter "$1/env/bin/python" -I -c "import sys; assert sys.prefix != sys.base_prefix"
+        venv_step pip "$1/env/bin/python" -I -m pip --version
+        printf "%s\n" "EZVM_GUEST_VENV_COMPLETE=1" >&2
+    ' sh "$venv_directory"; then
+    :
+else
+    venv_status=$?
+    printf 'EZVM_GUEST_VENV_EXIT=%s\n' "$venv_status" >&2
+    case "$venv_status" in
+        124) fail 'Python venv validation exceeded its 90 second deadline; see the last EZVM_GUEST_VENV_STAGE' ;;
+        137) fail 'Python venv validation was killed; the 90 second hard deadline or an external kill is not readiness' ;;
+        *) fail 'Python venv validation command failed; see EZVM_GUEST_VENV_STEP_FAILURE and EZVM_GUEST_VENV_EXIT' ;;
+    esac
+fi
 rm -rf -- "$venv_directory"
 venv_directory=''
+# END EZVM_PYTHON_VENV_PROBE
 
 if [ "$mode" = provision ]; then
     ready_temporary=$(mktemp /var/lib/ezvm/.ready.XXXXXX) || fail 'could not allocate the readiness marker'
