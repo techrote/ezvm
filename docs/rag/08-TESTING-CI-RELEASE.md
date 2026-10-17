@@ -71,6 +71,18 @@ no full WHPX or performance acceptance for Runloc #21. See the
 
 ## Required CI layers
 
+### Optional local accelerator comparison
+
+The [paired qualification pilot](../CI-QUALIFICATION-COMPARISON.md) keeps hosted
+TCG execution independent of the optional explicitly dispatched private WHPX lane.
+It does not replace required hosted checks or claim equivalent accelerator coverage.
+Both lanes bind evidence to the same exact candidate SHA/comparison ID. A missing,
+busy or unreachable private runner must not hold hosted execution or imply PASS.
+Private execution remains optional and trusted-source-only; runner registration
+requires a successful measured pilot and is not performed by opening a dashboard.
+The existing TCG qualification default is preserved; explicit WHPX runs verify
+actual base/READY accelerator metadata and complete zero-exit evidence.
+
 ### Repository contract
 
 Fast checks on every PR:
@@ -564,3 +576,15 @@ automation connection cannot create that Git ref, the repository must be left
 release-ready and the exact accepted main SHA plus the single required tag-push
 action must be recorded; no release may be claimed published until the GitHub
 release exists.
+
+## Optional qualification profiling
+
+The full release/portability harness may receive `-TelemetryPath` to observe its
+original calls. [The telemetry contract](../QUALIFICATION-TELEMETRY.md) defines
+bounded create-only JSONL, nested monotonic intervals, aggregate counters for
+every repeated hash, actual tool/image identities, and failure interpretation.
+It must preserve original source files, module roots, parameters, returned values,
+errors, assertions and deadlines. No cache, skipped validation or performance
+acceptance is introduced. Nested durations overlap; nested failures can be the
+original expected-refusal controls. Only complete original scenario evidence,
+actual exit status and independent owned cleanup determine qualification.

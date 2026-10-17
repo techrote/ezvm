@@ -1,9 +1,16 @@
 #requires -Version 5.1
 [CmdletBinding()]
-param([string]$Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')), [switch]$SecurityQualification, [switch]$ReleaseQualification)
+param(
+    [string]$Root = '',
+    [switch]$SecurityQualification,
+    [switch]$ReleaseQualification,
+    [ValidateSet('tcg', 'whpx')][string]$Accelerator = 'tcg',
+    [string]$TelemetryPath = ''
+)
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+if (-not $Root) { $Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')) }
 if ($ReleaseQualification) { $SecurityQualification = $true }
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     throw 'EZVM-010 real qualification requires Windows and the reviewed managed Windows QEMU runtime.'
@@ -21,7 +28,7 @@ foreach ($relative in @('ezvm.ps1', 'src', 'config', 'manifests', 'guest', 'scri
     Copy-Item -LiteralPath (Join-Path $sourceRoot $relative) -Destination $rootA -Recurse -Force
 }
 $Root = $rootA
-Import-Module (Join-Path $Root 'src/EzVm/EzVm.psd1') -Force -ErrorAction Stop
+$qualificationModule = Import-Module (Join-Path $Root 'src/EzVm/EzVm.psd1') -Force -ErrorAction Stop -PassThru
 $active = New-Object 'System.Collections.Generic.List[string]'
 $sourceName = 'ezvm010-source'
 $cloneName = 'ezvm010-stateful'
@@ -82,9 +89,9 @@ function Start-EzVm010Guest {
     if (-not $active.Contains($Name)) { $active.Add($Name) }
     Write-Host ('EZVM010_STEP=guest_start; instance=' + $Name + '; at=' + [DateTime]::UtcNow.ToString('o') + '; root=' + $Root)
     try {
-        $ready = Start-EzVmReadyInstance -Root $Root -InstanceName $Name -Accelerator tcg -ReadyTimeoutSeconds 900
-        if ($ready.state -cne 'READY' -or $ready.accelerator -cne 'tcg' -or $ready.sshHost -cne '127.0.0.1') {
-            throw "Guest '$Name' did not reach coding READY under explicit TCG and localhost-only SSH."
+        $ready = Start-EzVmReadyInstance -Root $Root -InstanceName $Name -Accelerator $Accelerator -ReadyTimeoutSeconds 900
+        if ($ready.state -cne 'READY' -or $ready.accelerator -cne $Accelerator -or $ready.sshHost -cne '127.0.0.1') {
+            throw "Guest '$Name' did not reach coding READY under explicit $Accelerator and localhost-only SSH."
         }
     }
     catch {
@@ -170,17 +177,41 @@ function Assert-EzVm010PreservedSyntheticState {
     }
 }
 
+$telemetry = $null
+$qualificationFailed = $true
+if ($TelemetryPath) {
+    . (Join-Path $PSScriptRoot 'QualificationTelemetry.ps1')
+    $telemetry = New-EzVmQualificationTelemetry -Path $TelemetryPath
+    try {
+        Enable-EzVmQualificationTelemetry -State $telemetry -Module $qualificationModule
+        # Refresh only exported function references from this same loaded module;
+        # do not reload its files or change the original module's default root.
+        Import-Module -ModuleInfo $qualificationModule -Force
+    }
+    catch { Close-EzVmQualificationTelemetry -State $telemetry -Failed $true; throw }
+}
+
 try {
     Write-Host ('EZVM010_STARTED_AT=' + [DateTime]::UtcNow.ToString('o'))
     Write-Host ('EZVM010_QUALIFICATION_ROOT=' + $work)
-    Write-Host 'EZVM010_ACCELERATOR=tcg'
-    Write-Host 'EZVM010_WHPX_EXECUTION=SKIP: GitHub-hosted qualification uses explicit TCG; no WHPX execution PASS is claimed.'
+    Write-Host ('EZVM010_ACCELERATOR=' + $Accelerator)
+    if ($Accelerator -ceq 'tcg') {
+        Write-Host 'EZVM010_WHPX_EXECUTION=SKIP: qualification uses explicit TCG; no WHPX execution PASS is claimed.'
+    }
+    else {
+        Write-Host 'EZVM010_WHPX_EXECUTION=PENDING: physical execution has not completed.'
+    }
     if ($ReleaseQualification) {
         $null = Assert-EzVm012Doctor
         Write-Host 'EZVM012_REAL_FRESH_ROOT_DOCTOR=PASS'
     }
     $bootstrap = Install-EzVmQemuRuntime -Root $Root
     Write-Host ('EZVM010_REAL_QEMU=' + $bootstrap.version)
+    if ($null -ne $telemetry) {
+        foreach ($tool in @(@{ kind = 'qemu-system'; path = $bootstrap.qemuSystem }, @{ kind = 'qemu-img'; path = $bootstrap.qemuImg })) {
+            Write-EzVmQualificationIdentity -State $telemetry -Kind $tool.kind -Version $bootstrap.version -SizeBytes (Get-Item -LiteralPath $tool.path).Length -Sha256 (Get-EzVmFileDigest -Path $tool.path -Algorithm SHA256)
+        }
+    }
     if ($ReleaseQualification) {
         $null = Assert-EzVm012Doctor -RequireManagedQemu
         Write-Host 'EZVM012_REAL_BOOTSTRAP_DOCTOR=PASS'
@@ -258,11 +289,17 @@ try {
     Write-Host 'EZVM010_STEP=prepare_real_guest'
     $source = Invoke-EzVmSourceImageAcquire -Root $Root
     Write-Host ('EZVM010_REAL_SOURCE_SHA256=' + $source.sha256)
+    if ($null -ne $telemetry) {
+        Write-EzVmQualificationIdentity -State $telemetry -Kind source-image -Sha256 $source.sha256 -SizeBytes (Get-Item -LiteralPath $source.path).Length
+    }
     Write-Host ('EZVM010_STEP=base_build_started; at=' + [DateTime]::UtcNow.ToString('o'))
-    $base = Invoke-EzVmBaseBuild -Root $Root -Accelerator tcg -BuildTimeoutSeconds 2400
+    $base = Invoke-EzVmBaseBuild -Root $Root -Accelerator $Accelerator -BuildTimeoutSeconds 2400
     Write-Host ('EZVM010_STEP=base_build_completed; at=' + [DateTime]::UtcNow.ToString('o') + '; base=' + $base.baseId)
     $prepared = Test-EzVmPreparedBase -Root $Root -BaseId $base.baseId
-    if ($prepared.Manifest.build.accelerator -cne 'tcg') { throw 'Base build did not record explicit TCG.' }
+    if ($prepared.Manifest.build.accelerator -cne $Accelerator) { throw 'Base build did not record the explicitly requested accelerator.' }
+    if ($null -ne $telemetry) {
+        Write-EzVmQualificationIdentity -State $telemetry -Kind prepared-base -Sha256 $prepared.Manifest.baseSha256 -SizeBytes (Get-Item -LiteralPath $prepared.Image).Length
+    }
     $sourceCreate = @{ Root = $Root; InstanceName = $sourceName; BaseId = $base.baseId }
     if (-not $ReleaseQualification) { $sourceCreate.Profile = 'light' }
     $created = New-EzVmManagedInstance @sourceCreate
@@ -431,7 +468,12 @@ sync
         Copy-Item -LiteralPath $entry.FullName -Destination $rootB -Recurse -Force
     }
     $Root = $rootB
-    Import-Module (Join-Path $Root 'src/EzVm/EzVm.psd1') -Force -ErrorAction Stop
+    if ($null -ne $telemetry) { Disable-EzVmQualificationTelemetry -State $telemetry }
+    $qualificationModule = Import-Module (Join-Path $Root 'src/EzVm/EzVm.psd1') -Force -ErrorAction Stop -PassThru
+    if ($null -ne $telemetry) {
+        Enable-EzVmQualificationTelemetry -State $telemetry -Module $qualificationModule
+        Import-Module -ModuleInfo $qualificationModule -Force
+    }
     # The complete source root was proven stopped before copying. Keep it
     # recoverable but unavailable at its original path throughout B's checks,
     # so neither loaded defaults nor stale absolute paths can fall back to A.
@@ -475,7 +517,9 @@ sync
         Write-Host 'EZVM012_REAL_RELOCATED_DOCTOR_AND_RESTART=PASS'
         Write-Host 'EZVM012_REAL_COMPLETE_END_TO_END=PASS'
     }
+    if ($Accelerator -ceq 'whpx') { Write-Host 'EZVM010_WHPX_EXECUTION=PASS' }
     Write-Host ('EZVM010_COMPLETED_AT=' + [DateTime]::UtcNow.ToString('o'))
+    $qualificationFailed = $false
 }
 catch {
     Write-Host 'EZVM010_REAL_DIAGNOSTICS_BEGIN'
@@ -529,5 +573,9 @@ finally {
         catch {
             Write-Host ('EZVM010_SOURCE_ROOT_RESTORE_ERROR=source preserved at ' + $heldRootA + ': ' + $_.Exception.Message)
         }
+    }
+    if ($null -ne $telemetry) {
+        try { Disable-EzVmQualificationTelemetry -State $telemetry }
+        finally { Close-EzVmQualificationTelemetry -State $telemetry -Failed $qualificationFailed }
     }
 }
