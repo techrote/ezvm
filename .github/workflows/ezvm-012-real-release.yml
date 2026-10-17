@@ -2,6 +2,15 @@ name: EZVM-012 real release qualification
 
 on:
   workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact candidate SHA; empty uses the dispatched workflow ref
+        type: string
+        required: false
+      comparison_id:
+        description: Correlates an independent optional private WHPX run
+        type: string
+        required: false
   pull_request:
     paths:
       - .github/workflows/ezvm-012-real-release.yml
@@ -27,24 +36,34 @@ concurrency:
 jobs:
   real-release:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    name: Real v0.1 end-to-end release (Avrea 8-core Windows TCG; WHPX SKIP)
-    runs-on: avrea-windows-2025-8-vcpu
+    name: Real v0.1 end-to-end release (Windows TCG; WHPX SKIP)
+    runs-on: windows-2022
     timeout-minutes: 180
     steps:
+      - name: Validate explicitly supplied candidate
+        shell: powershell
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          if ($env:CANDIDATE_SHA -and $env:CANDIDATE_SHA -cnotmatch '^[a-f0-9]{40}$') { throw 'Exact candidate SHA required.' }
+
       - name: Checkout candidate source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ inputs.candidate_sha || github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Record runner and exact source identity
         shell: powershell
+        env:
+          COMPARISON_ID: ${{ inputs.comparison_id }}
         run: |
           $ErrorActionPreference = 'Stop'
           git rev-parse HEAD 'HEAD^{tree}'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Write-Host ('EZVM012_REQUESTED_RUNNER=avrea-windows-2025-8-vcpu; observedCPU=' + [Environment]::ProcessorCount)
+          Write-Host ('EZVM012_REQUESTED_RUNNER=windows-2022; observedCPU=' + [Environment]::ProcessorCount)
+          Write-Host ('EZVM012_COMPARISON_ID=' + $env:COMPARISON_ID)
           Write-Host 'EZVM012_WHPX_EXECUTION=SKIP: hosted qualification uses explicit TCG; no WHPX runtime PASS is claimed.'
           $PSVersionTable
 

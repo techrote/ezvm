@@ -1,0 +1,63 @@
+name: Optional private WHPX qualification
+run-name: Private WHPX ${{ inputs.comparison_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact explicitly approved same-repository candidate SHA
+        required: true
+        type: string
+      comparison_id:
+        description: Pair identifier shared with the hosted TCG run
+        required: true
+        type: string
+      runner_name:
+        description: Exact online idle runner selected by host-side dispatch
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  private-qualification:
+    name: Optional Windows WHPX qualification
+    runs-on: [self-hosted, Windows, X64, ezvm-whpx, '${{ inputs.runner_name }}']
+    timeout-minutes: 90
+    steps:
+      - name: Validate candidate and dedicated runner
+        shell: powershell
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          EXPECTED_RUNNER: ${{ inputs.runner_name }}
+        run: |
+          if ($env:CANDIDATE_SHA -cnotmatch '^[a-f0-9]{40}$') { throw 'Exact candidate SHA required.' }
+          if ($env:RUNNER_NAME -cne $env:EXPECTED_RUNNER) { throw 'Wrong private runner.' }
+
+      - name: Checkout exact approved candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Timed clean-source WHPX qualification
+        shell: powershell
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          COMPARISON_ID: ${{ inputs.comparison_id }}
+        run: |
+          .\scripts\Invoke-EzVmQualificationPilot.ps1 -Root $env:GITHUB_WORKSPACE -Accelerator whpx -ExpectedCommit $env:CANDIDATE_SHA -ComparisonId $env:COMPARISON_ID
+          exit $LASTEXITCODE
+
+      - name: Preserve qualification receipt and bounded diagnostic log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: private-whpx-${{ inputs.comparison_id }}
+          path: |
+            runtime/qualification-pilot/**/receipt.json
+            runtime/qualification-pilot/**/qualification.log
+          if-no-files-found: warn
+          retention-days: 14

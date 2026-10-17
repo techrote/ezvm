@@ -36,6 +36,18 @@ accepted. No QEMU, guest boot or WHPX execution is part of EZVM-001 acceptance.
 
 ## Required CI layers
 
+### Optional local accelerator comparison
+
+The [paired qualification pilot](../CI-QUALIFICATION-COMPARISON.md) keeps hosted
+TCG execution independent of the optional explicitly dispatched private WHPX lane.
+It does not replace required hosted checks or claim equivalent accelerator coverage.
+Both lanes bind evidence to the same exact candidate SHA/comparison ID. A missing,
+busy or unreachable private runner must not hold hosted execution or imply PASS.
+Private execution remains optional and trusted-source-only; runner registration
+requires a successful measured pilot and is not performed by opening a dashboard.
+The existing TCG qualification default is preserved; explicit WHPX runs verify
+actual base/READY accelerator metadata and complete zero-exit evidence.
+
 ### Repository contract
 
 Fast checks on every PR:

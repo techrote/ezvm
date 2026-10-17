@@ -1,9 +1,15 @@
 #requires -Version 5.1
 [CmdletBinding()]
-param([string]$Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')), [switch]$SecurityQualification, [switch]$ReleaseQualification)
+param(
+    [string]$Root = '',
+    [switch]$SecurityQualification,
+    [switch]$ReleaseQualification,
+    [ValidateSet('tcg', 'whpx')][string]$Accelerator = 'tcg'
+)
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+if (-not $Root) { $Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')) }
 if ($ReleaseQualification) { $SecurityQualification = $true }
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     throw 'EZVM-010 real qualification requires Windows and the reviewed managed Windows QEMU runtime.'
@@ -82,9 +88,9 @@ function Start-EzVm010Guest {
     if (-not $active.Contains($Name)) { $active.Add($Name) }
     Write-Host ('EZVM010_STEP=guest_start; instance=' + $Name + '; at=' + [DateTime]::UtcNow.ToString('o') + '; root=' + $Root)
     try {
-        $ready = Start-EzVmReadyInstance -Root $Root -InstanceName $Name -Accelerator tcg -ReadyTimeoutSeconds 900
-        if ($ready.state -cne 'READY' -or $ready.accelerator -cne 'tcg' -or $ready.sshHost -cne '127.0.0.1') {
-            throw "Guest '$Name' did not reach coding READY under explicit TCG and localhost-only SSH."
+        $ready = Start-EzVmReadyInstance -Root $Root -InstanceName $Name -Accelerator $Accelerator -ReadyTimeoutSeconds 900
+        if ($ready.state -cne 'READY' -or $ready.accelerator -cne $Accelerator -or $ready.sshHost -cne '127.0.0.1') {
+            throw "Guest '$Name' did not reach coding READY under explicit $Accelerator and localhost-only SSH."
         }
     }
     catch {
@@ -173,8 +179,13 @@ function Assert-EzVm010PreservedSyntheticState {
 try {
     Write-Host ('EZVM010_STARTED_AT=' + [DateTime]::UtcNow.ToString('o'))
     Write-Host ('EZVM010_QUALIFICATION_ROOT=' + $work)
-    Write-Host 'EZVM010_ACCELERATOR=tcg'
-    Write-Host 'EZVM010_WHPX_EXECUTION=SKIP: GitHub-hosted qualification uses explicit TCG; no WHPX execution PASS is claimed.'
+    Write-Host ('EZVM010_ACCELERATOR=' + $Accelerator)
+    if ($Accelerator -ceq 'tcg') {
+        Write-Host 'EZVM010_WHPX_EXECUTION=SKIP: qualification uses explicit TCG; no WHPX execution PASS is claimed.'
+    }
+    else {
+        Write-Host 'EZVM010_WHPX_EXECUTION=PENDING: physical execution has not completed.'
+    }
     if ($ReleaseQualification) {
         $null = Assert-EzVm012Doctor
         Write-Host 'EZVM012_REAL_FRESH_ROOT_DOCTOR=PASS'
@@ -259,10 +270,10 @@ try {
     $source = Invoke-EzVmSourceImageAcquire -Root $Root
     Write-Host ('EZVM010_REAL_SOURCE_SHA256=' + $source.sha256)
     Write-Host ('EZVM010_STEP=base_build_started; at=' + [DateTime]::UtcNow.ToString('o'))
-    $base = Invoke-EzVmBaseBuild -Root $Root -Accelerator tcg -BuildTimeoutSeconds 2400
+    $base = Invoke-EzVmBaseBuild -Root $Root -Accelerator $Accelerator -BuildTimeoutSeconds 2400
     Write-Host ('EZVM010_STEP=base_build_completed; at=' + [DateTime]::UtcNow.ToString('o') + '; base=' + $base.baseId)
     $prepared = Test-EzVmPreparedBase -Root $Root -BaseId $base.baseId
-    if ($prepared.Manifest.build.accelerator -cne 'tcg') { throw 'Base build did not record explicit TCG.' }
+    if ($prepared.Manifest.build.accelerator -cne $Accelerator) { throw 'Base build did not record the explicitly requested accelerator.' }
     $sourceCreate = @{ Root = $Root; InstanceName = $sourceName; BaseId = $base.baseId }
     if (-not $ReleaseQualification) { $sourceCreate.Profile = 'light' }
     $created = New-EzVmManagedInstance @sourceCreate
@@ -475,6 +486,7 @@ sync
         Write-Host 'EZVM012_REAL_RELOCATED_DOCTOR_AND_RESTART=PASS'
         Write-Host 'EZVM012_REAL_COMPLETE_END_TO_END=PASS'
     }
+    if ($Accelerator -ceq 'whpx') { Write-Host 'EZVM010_WHPX_EXECUTION=PASS' }
     Write-Host ('EZVM010_COMPLETED_AT=' + [DateTime]::UtcNow.ToString('o'))
 }
 catch {
