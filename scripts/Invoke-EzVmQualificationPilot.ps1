@@ -36,7 +36,15 @@ try {
     [void][IO.Directory]::CreateDirectory($probeDir)
     $probe = Join-Path $probeDir 'not-a-key.txt'
     [IO.File]::WriteAllText($probe, 'Synthetic qualification ACL preflight; no credential.')
-    & (Get-Module EzVm) { param($Directory, $File) Set-EzVmPrivateAcl -Path $Directory -Directory; Set-EzVmPrivateAcl -Path $File } $probeDir $probe
+    $receipt.phase = 'private-key-acl-preflight'
+    & (Get-Module EzVm) {
+        param($Directory, $File)
+        Set-EzVmPrivateAcl -Path $Directory -Directory
+        Set-EzVmPrivateAcl -Path $File
+        # The native restriction followed by exact ACL replacement is a distinct
+        # prerequisite: generic Set-EzVmPrivateAcl alone can succeed on this host.
+        Protect-EzVmControllerPrivateKey -Path $File
+    } $probeDir $probe
     $receipt.phase = 'host-preflight'
     $os = Get-CimInstance Win32_OperatingSystem
     $receipt.host = @{ os = $os.Caption; version = $os.Version; logicalCpu = [Environment]::ProcessorCount;

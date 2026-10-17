@@ -17,6 +17,11 @@ of the hosted job. Its absence, queue or failure cannot delay hosted completion.
 Keep only the intended hosted release check required in branch protection. A pending
 optional private run must not become a generic "all checks must finish" merge gate.
 
+This initial comparison mode does not shorten the required merge wait by itself.
+Promoting a private result to satisfy the release gate needs a separate reviewed
+policy after reliable measurements; merely adding an optional fast job cannot
+replace a still-required hosted check.
+
 The host-side dispatcher sends the hosted request **before** checking private
 availability. It then requires an online, idle Windows/X64 runner with both
 `ezvm-whpx` and a unique custom label equal to that runner's registered name.
@@ -43,7 +48,8 @@ qualification creates its own fresh temporary roots/VMs; it never reuses trio-la
 # After prerequisite checks pass, omit -PreflightOnly for the full timed pilot.
 ```
 
-Preflight uses synthetic non-key ACL fixtures and checks free RAM/disk. Failure
+Preflight uses synthetic non-key ACL fixtures, including the exact private-key
+protection path (native restriction plus ACL replacement), and checks free RAM/disk. Failure
 does not create a guest or claim a speed measurement. It neither elevates itself
 nor applies the owner's two patches. The complete run preserves existing internal
 launch/readiness/stop deadlines; caller interruption may leave diagnostic fixture
@@ -93,6 +99,26 @@ The focused tests assert actual stub dispatch counts/order for online/offline/bu
 unknown/failing runners, shared candidate identity, no false PASS, and the original
 guest-start function's effective-accelerator refusal. They are not physical WHPX,
 registered-runner or GitHub workflow execution qualification.
+
+## First local pilot observation, 17 October 2026
+
+Clean candidate `0ab4736cf3b946cbe25211fcdbe55866cb06db88` passed the
+initial generic ACL check and fresh pinned QEMU bootstrap. The full control-plane
+suite reported 356 PASS / 2 FAIL / 0 SKIP: both failures were the upstream
+private-key ACL path requiring `SeSecurityPrivilege` on the current account.
+An independent synthetic non-key probe reproduced the same failure.
+
+The owned qualification child was stopped after 422.83 seconds, during tiny image
+checks and before any qualification QEMU guest existed. There were no child
+processes or fixture QEMU processes at the ownership-checked stop. This is an
+incomplete attempt, not a WHPX speed measurement or release qualification PASS.
+Other user VMs were untouched. The corrected preflight now checks the exact
+private-key path before downloading or starting qualification.
+
+Runner registration remains deferred until this clean-source prerequisite is
+resolved and a complete timed pilot succeeds. Neither owner patch was copied;
+no privilege change or elevation was attempted. An accepted upstream fix or a
+deliberately chosen runner account is needed before rerunning the full pilot.
 
 GitHub routing reference: https://docs.github.com/en/actions/reference/runners/self-hosted-runners
 Runner setup: https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners
