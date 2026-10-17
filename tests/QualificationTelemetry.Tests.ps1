@@ -99,12 +99,24 @@ Add-EzVmTest -Name 'Qualification telemetry: original terminating error and prec
         try { Get-EzVmDoctorReport -Root 'synthetic private path' | ForEach-Object { $output.Add($_) } } catch { $caught = $_ }
         Assert-EzVmEqual $caught.Exception.Message 'synthetic private diagnostic must stay out of telemetry'
         Assert-EzVmEqual @($output.ToArray()) @('synthetic output before error')
+        # ReadAllText does not share an existing writer on Windows. Inspect the
+        # retained evidence after the failed session is finalized and closed.
+        Assert-EzVmTrue $State.stream.CanWrite
+        Disable-EzVmQualificationTelemetry -State $State
+        Close-EzVmQualificationTelemetry -State $State -Failed $true
+        Assert-EzVmTrue (-not $State.stream.CanWrite)
+        Assert-EzVmTrue (-not $State.writerFailed)
+        Assert-EzVmEqual $State.stack.Count 0
         $text = [IO.File]::ReadAllText((Join-Path $Directory 'timing.jsonl'))
         Assert-EzVmTrue (-not $text.Contains('synthetic private'))
         Assert-EzVmTrue (-not $text.Contains('synthetic output'))
-        $event = @($text -split "`n" | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })[-1]
+        $events = @($text -split "`n" | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
+        Assert-EzVmEqual $events.Count 4
+        $event = $events[-2]
         Assert-EzVmEqual $event.event failure
         Assert-EzVmEqual $event.operation Get-EzVmDoctorReport
+        Assert-EzVmEqual $events[-1].event failure
+        Assert-EzVmEqual $events[-1].operation full-release
     }
 }
 
