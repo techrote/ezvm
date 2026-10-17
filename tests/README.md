@@ -236,3 +236,30 @@ execution as SKIP and never silently substitutes a pass for an unavailable
 capability or failed check. Record its successful run and exact tested commit
 as acceptance evidence. No real account, token or private diagnostic artifact
 is part of the fixture or repository.
+
+## Guest Python probe process regressions
+
+On a disposable Linux test host with GNU `timeout`, `runuser`, a pre-existing
+`nobody` account and `/dev/shm` tmpfs:
+
+```sh
+sudo "$(command -v python3)" -I tests/guest/test_venv_probe.py
+```
+
+This extracts the actual coding-profile shell probe and cleanup. Filesystem and
+account adapters redirect managed paths to fresh temporary fixtures and map coder
+to nobody; no guest account or mount is created. Two native cases run real
+venv/ensurepip/pip on tmpfs and disk. Fault executables cover each child phase,
+missing Python, timeout/KILL, a TERM handler, an ensurepip-style descendant,
+unsafe `/run` ownership/permissions/symlinks and failed allocation. Each failure
+must preserve outside sentinels, clean scratch and invalidate stale READY.
+Fault timers are shortened to one second only in the timeout adapter, which
+asserts the unchanged production 90-second arguments. Owned PID/start identities
+and pidfds protect fault-fixture cleanup. These are Linux process tests, not a
+Windows TCG/WHPX or whole-guest PASS. Missing capabilities fail this dedicated lane.
+
+The `Guest venv probe` job in core CI uses the existing pinned Python 3.12.10 test
+interpreter on GitHub-hosted Ubuntu 24.04, logs source hashes/HEAD/tree, and rejects
+checkout mutation. It installs no extra Python packages. Windows recipe/digest
+regressions remain in `Profiles.Tests.ps1`; the normal full release lane proves
+integration with actual guest finalization, reset, cloning and relocation.

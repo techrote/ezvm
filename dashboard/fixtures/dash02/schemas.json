@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "kind": "synthetic-schema-samples",
+  "source": {
+    "repository": "techrote/ezvm",
+    "baseline": "d5265c804d0d8494d8171482a85aca563b181e05",
+    "basis": "Existing guest_probe.py read projection and disposable SQLite schema capture; not a private live database export",
+    "upstreamVersionQualification": "Structural contracts only; no universal OpenCode or engine version compatibility claim"
+  },
+  "sqlite": {
+    "contract": "session-message-part-v1",
+    "user_version": 0,
+    "requiredColumns": {
+      "session": {"id": "TEXT", "title": "TEXT", "directory": "TEXT", "time_updated": "INTEGER"},
+      "message": {"id": "TEXT", "session_id": "TEXT", "data": "TEXT", "time_created": "INTEGER"},
+      "part": {"session_id": "TEXT", "data": "TEXT", "time_created": "INTEGER"}
+    },
+    "captureMethod": "PRAGMA table_info on disposable synthetic fixtures; extra columns allowed, changed required types refused"
+  },
+  "opencodeStatus": {
+    "contract": "idle-busy-retry-v1",
+    "method": "GET /session/status with explicitly registered directory",
+    "samples": [{}, {"fixture-session": {"type": "busy"}}, {"fixture-session": {"type": "idle"}}, {"fixture-session": {"type": "retry", "attempt": 1, "message": "synthetic quota wait", "next": 12345}}],
+    "refused": [[], {"fixture-session": {"type": "future-status"}}, {"fixture-session": {"type": "retry", "attempt": true}}]
+  },
+  "strata": {"contract": "strata-layout-v1", "path": "/metrics", "sample": {"engine": {"max_context": 8192}, "live": {"state": "idle"}, "totals": {}, "requests": []}},
+  "lmstudio": {"contract": "lmstudio-layout-v1", "path": "/api/v0/models", "sample": {"data": [{"id": "synthetic-unloaded-model", "state": "not-loaded"}]}},
+  "ezvm": {"intentVersions": [1, 2], "runtimeVersion": 1, "accessVersion": 2, "method": "Passive persisted identity plus exact PID/start/executable/argument fingerprint; never readiness/control authority"}
+}

@@ -181,9 +181,22 @@ Add-EzVmTest -Name 'Coding profile: guest validation retains bounded functional 
     Assert-EzVmTrue -Condition ($guest -notmatch '(?i)chown\s+-R|os\.walk\(') -Message 'Provisioning must not recursively rewrite existing workspace content.'
     Assert-EzVmTrue -Condition ($guest.Contains('passwd -S coder') -and $guest.Contains('passwd -S root'))
     Assert-EzVmTrue -Condition ($guest.Contains('sudo -n -- /usr/bin/id -u'))
-    Assert-EzVmTrue -Condition ($guest.Contains('timeout 90 sh -eu -c') -and $guest.Contains('python3 -m venv') -and $guest.Contains('-m pip --version'))
+    Assert-EzVmTrue -Condition ($guest.Contains('timeout --signal=KILL 90s sh -eu -c') -and $guest.Contains('python3 -I -m venv --symlinks') -and $guest.Contains('-m pip --version'))
     Assert-EzVmTrue -Condition ($guest.Contains('provisioningState: "complete"') -and $guest.Contains('mv -f -- "$ready_temporary" /var/lib/ezvm/ready.json'))
     Assert-EzVmTrue -Condition ($guest.Contains('rm -f -- /var/lib/ezvm/ready.json')) -Message 'A failed live validation must invalidate stale completion evidence.'
     Assert-EzVmTrue -Condition ($guest -notmatch '(?i)curl\s+[^\r\n]*\|\s*(sh|bash)|wget\s+[^\r\n]*\|\s*(sh|bash)|apt(-get)?\s+install') -Message 'Instance provisioning validates the stable base and must not run an unreviewed installer.'
     Assert-EzVmTrue -Condition (($profile.ManifestJson + $guest) -notmatch '(?i)PRIVATE KEY|github_pat_|ghp_[A-Za-z0-9]|__[A-Z0-9_]+__')
+}
+
+Add-EzVmTest -Name 'Coding profile: disposable venv keeps offline bootstrap, private scratch and classified failures' -ScriptBlock {
+    $guest = (Get-EzVmCodingProfile -Root $script:EzVmRepositoryRoot).Script
+    Assert-EzVmTrue -Condition ($guest.Contains('root_path /run directory') -and $guest.Contains('venv_parent=/var/lib/ezvm'))
+    Assert-EzVmTrue -Condition ($guest.Contains('stat -f -c') -and $guest.Contains('= tmpfs ]') -and $guest.Contains('venv_parent=/run'))
+    Assert-EzVmTrue -Condition ($guest.Contains('mktemp -d "$venv_parent/.venv-check.XXXXXX"') -and $guest.Contains('TMPDIR="$venv_directory"'))
+    Assert-EzVmTrue -Condition ($guest.Contains('runuser -u coder -- env -i') -and $guest.Contains('chown "$coder_uid:$coder_gid" "$venv_directory"'))
+    Assert-EzVmTrue -Condition ($guest.Contains('venv_step create python3 -I -m venv --symlinks') -and $guest.Contains('venv_step interpreter') -and $guest.Contains('venv_step pip'))
+    Assert-EzVmTrue -Condition ($guest -notmatch '--without-pip|--system-site-packages|--upgrade-deps') -Message 'The probe must not bypass standard isolated venv/ensurepip bootstrap or fetch dependencies.'
+    Assert-EzVmTrue -Condition ($guest.Contains('124) fail') -and $guest.Contains('137) fail') -and $guest.Contains('*) fail')) -Message 'Timeouts, kills and command failures all remain failures.'
+    Assert-EzVmTrue -Condition ($guest.Contains('EZVM_GUEST_VENV_STEP_FAILURE=%s; exit=%s') -and $guest.Contains('if "$@" >/dev/null 2>&1; then')) -Message 'Emit fixed phases/exit codes, not arbitrary child output.'
+    Assert-EzVmTrue -Condition ($guest.Contains('rm -rf -- "$venv_directory"') -and $guest.Contains('trap'))
 }

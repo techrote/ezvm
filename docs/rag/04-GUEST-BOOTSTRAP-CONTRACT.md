@@ -343,3 +343,45 @@ supersedes the older optional retention of base-build seed files. An in-memory
 seed server is always stopped at the caller's completion/timeout boundary and
 releases its payload references; this is not a promise of cryptographic memory
 erasure, pagefile erasure or removal of guest-side cloud-init records.
+
+## Disposable Python capability probe
+
+The coding profile still creates an ordinary isolated Python virtual environment,
+including the standard **offline ensurepip bootstrap**, then executes its own
+interpreter-isolation assertion and `python -m pip --version`. Neither
+`--without-pip`, system-site-package inheritance, cached READY nor a downloaded
+installer can substitute for those live checks. They run as the unprivileged
+coding account on every provision and live validation.
+
+The per-invocation, mode-0700 scratch directory prefers the existing `/run`
+filesystem only when it is `tmpfs`; the parent must pass the normal root-ownership,
+no-symlink and no-group/world-write checks. Otherwise the already-validated
+`/var/lib/ezvm` disk location remains the fallback. No mount is created or changed.
+`TMPDIR` also directs nested ensurepip temporary files into that private directory.
+The interpreter is explicitly symlinked and invoked with `-I`; the probe executes
+modules through that interpreter rather than executable scripts on a potentially
+`noexec` scratch mount. The independent disk-backed workspace read/write test is
+unchanged. Tmpfs avoids needless transient disk writes, not CPU work, and may use
+swap under memory pressure; it is not a guarantee of TCG performance.
+
+All three commands share the unchanged **90-second** timeout. Only this disposable
+probe process group is hard-stopped on expiry; the guest finalizer/cleanup and
+QEMU are outside it. This avoids a terminating shell abandoning a still-running
+bootstrap descendant. There is no extra success grace period. A nonzero exit,
+including KILL status 137, remains failure, removes stale READY and cleans owned
+scratch. Status 137 alone cannot distinguish the deadline from an external kill.
+Fixed storage/stage markers and numeric child/outer exit codes are emitted; raw
+child output is suppressed, not copied into public diagnostics.
+
+The recipe edit changes the normal provisioning-source digest. Existing installed
+source/identity/READY digest comparisons remain mandatory; no stale evidence is
+accepted and no durable intent, image or profile version is silently relabelled.
+The host's 2400-second base-build and 900-second launch deadlines are unchanged.
+
+`tests/guest/test_venv_probe.py` executes the extracted production probe and cleanup
+with explicit filesystem/account adapters in disposable Linux fixtures. Native
+cases exercise real venv/ensurepip/pip as a non-root account on tmpfs and disk;
+process fault cases cover phase failures, short fixture deadlines, descendants,
+unsafe parent paths and stale-READY invalidation. Core CI runs these alongside,
+not instead of, the Windows PowerShell suites and full Windows TCG qualification.
+See the [failure and evidence record](../research/TRIO-2026-10/DASH-02-VENV-PROBE.md).
