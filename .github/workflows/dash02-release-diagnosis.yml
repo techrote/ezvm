@@ -19,13 +19,16 @@ jobs:
           ref: b88ddf949d34bcb5e02b1b5452c63bc39184751f
           fetch-depth: 0
           persist-credentials: false
+      - name: Bundle tracked source for offline analysis
+        shell: bash
+        run: git bundle create "$RUNNER_TEMP/dash02-source.bundle" HEAD refs/remotes/origin/main
       - name: Read existing failed log; do not rerun qualification
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api "repos/$GITHUB_REPOSITORY/actions/jobs/117229632749/logs" > "$RUNNER_TEMP/failed-release.log"
+          gh api --allow-escape-sequences "repos/$GITHUB_REPOSITORY/actions/jobs/117229632749/logs" > "$RUNNER_TEMP/failed-release.log"
           python - <<'PY'
           import hashlib, os, pathlib, re, subprocess
           p = pathlib.Path(os.environ['RUNNER_TEMP'])
@@ -41,8 +44,8 @@ jobs:
           for line in result:
               print('LOG ' + line)
           PY
-          git bundle create "$RUNNER_TEMP/dash02-source.bundle" HEAD refs/remotes/origin/main
       - name: Retain bounded diagnosis and tracked Git source only
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: dash02-release-diagnosis
