@@ -40,6 +40,34 @@ evidence, but does not substitute for either Windows lane. Windows file-lock and
 native argument parsing tests must execute on Windows before this issue is
 accepted. No QEMU, guest boot or WHPX execution is part of EZVM-001 acceptance.
 
+### Standard-user private-DACL regression (CI-POC-001 / #47)
+
+`.github/workflows/private-acl.yml` adds an independent, bounded GitHub-hosted
+Windows lane for each supported PowerShell engine. Its temporary ordinary local
+account is a disposable runner fixture only. It does not change any existing
+account, grant privileges, elevate the tested process, register a runner, or
+enable a hypervisor. The child proves absence of administrator membership and
+audit/ownership/backup/restore privileges before and after testing.
+
+Clean Git clones from an exact public source bundle separate historical commit
+`d5265c804d0d8494d8171482a85aca563b181e05` from the proposed candidate. The old
+module must reproduce `SeSecurityPrivilege` in both original failing ACL tests
+and the new inherited-file/protected-directory cases. The candidate then runs
+the actual repository and complete control-plane entry points, with no failures
+or skips, under that same standard-user process. Source commit/tree and key-source
+SHA-256 must remain unchanged. A missing expected old failure is a test failure;
+an administrative runner account is not standard-user acceptance.
+
+Retained receipts identify each old failure, the fixed suite, exact sources,
+PowerShell version, observed token properties, exit, timestamps and fixture
+cleanup. Only receipts and test-process logs are uploaded; source bundles,
+temporary keys, account credentials and user profiles are excluded. The fixture
+account and owned source/test tree are removed; the disposable host removes its
+temporary user profile at job teardown. Existing Windows CI and real release
+qualification remain independently required. This software regression provides
+no full WHPX or performance acceptance for Runloc #21. See the
+[finding, controls and operator procedure](../research/CI-POC-001-PRIVATE-DACL.md).
+
 ## Required CI layers
 
 ### Repository contract

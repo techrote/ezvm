@@ -35,6 +35,7 @@ terminates non-zero. Failures are never automatically converted to skips.
 | `Paths.Tests.ps1` | Source-derived roots, unrelated working directories, complete derived layout, no discovery side effects, relative roots and cold relocation without Git metadata. |
 | `Json.Tests.ps1` | UTF-8 data and timestamp round-trips, schema refusal, serialization limits, byte-preserving failed writes, failed replacement cleanup and Windows file locks. |
 | `Process.Tests.ps1` | Native argument tokens, UTF-8 stdout/stderr, exact non-zero exit propagation, concurrent pipe draining, zero-byte stdin, console encoding/reader preservation, redirected callers, working directories, launch failures and bounded timeouts. |
+| `PrivateAcl.Tests.ps1` | Real explicit/inherited broad-ACE removal, protected-directory reapplication, private child inheritance, unchanged bytes/group, wrong object/missing-target refusal, denied DACL persistence and preserved pre-existing keys after native ACL failure. |
 | `Repository.Tests.ps1` | Positive and negative isolated Git fixtures for the repository guard, CRLF normalization with real whitespace-error detection, plus proof that an empty/failed harness exits non-zero. |
 | `fixtures/NativeArguments.cs` | Source-only Windows argv reporter and raw stdin byte counter, compiled into a temporary directory by the Windows .NET Framework compiler. |
 | `fixtures/ProcessFixture.ps1` | Deterministic lightweight child behavior for process-boundary tests. |
@@ -76,6 +77,14 @@ GitHub Actions executes three independent checks on `windows-2022`:
 | Repository contract | Windows PowerShell 5.1 |
 | Control plane | Windows PowerShell 5.1 |
 | Control plane | Pinned PowerShell 7.6.6 |
+
+Two additional `Private ACL standard user` checks execute the same supported
+engines as temporary ordinary users on disposable GitHub-hosted Windows runners.
+They require the historical two ACL failures plus inherited-file/directory
+regressions to reproduce on the old public source before the corrected candidate's
+full suite passes. The account has no administrator membership or audit/ownership/
+backup/restore privilege. This avoids treating a successful administrator run as
+standard-user proof. [Details and retained evidence contract](../docs/research/CI-POC-001-PRIVATE-DACL.md).
 
 `scripts/Invoke-CiCheck.ps1` verifies the executing engine's version before running
 its check. Both suite lanes include positive and negative repository fixtures.
