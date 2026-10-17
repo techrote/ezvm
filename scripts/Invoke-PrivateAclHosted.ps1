@@ -70,9 +70,16 @@ try {
             ' -ExpectedMajor ' + $ExpectedMajor + ' -OutputDirectory ' + (ConvertTo-AclFixtureLiteral $evidence)),
         'exit $LASTEXITCODE'
     ) -join [Environment]::NewLine
-    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+    # CreateProcessWithLogonW limits its command line to 1024 characters. The
+    # multi-checkout command exceeded that bound when passed as EncodedCommand.
+    # This script contains only public source identities and owned fixture paths;
+    # the account credential stays exclusively in the in-memory PSCredential.
+    $launcher = Join-Path $fixture 'launch-standard-user.ps1'
+    [IO.File]::WriteAllText($launcher, $command, (New-Object Text.UTF8Encoding($false)))
+    $launchArguments = '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $launcher + '"'
+    if (($executable.Length + $launchArguments.Length + 4) -gt 1024) { throw 'Standard-user fixture launch exceeds the native command-line bound.' }
     $credential = [Management.Automation.PSCredential]::new(($env:COMPUTERNAME + '\' + $account.Name), $password)
-    $child = Start-Process -FilePath $executable -ArgumentList @('-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded) -Credential $credential -LoadUserProfile -WorkingDirectory $fixture -RedirectStandardOutput (Join-Path $output 'process.stdout.log') -RedirectStandardError (Join-Path $output 'process.stderr.log') -PassThru
+    $child = Start-Process -FilePath $executable -ArgumentList $launchArguments -Credential $credential -LoadUserProfile -WorkingDirectory $fixture -RedirectStandardOutput (Join-Path $output 'process.stdout.log') -RedirectStandardError (Join-Path $output 'process.stderr.log') -PassThru
     if (-not $child.WaitForExit(600000)) {
         # The retained Process handle identifies this one owned child; no PID
         # search, wildcard termination, elevation or retry with privileges.

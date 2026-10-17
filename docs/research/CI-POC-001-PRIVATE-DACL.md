@@ -113,6 +113,16 @@ success alone does not qualify that full scenario.
 
 ## Authorship and evidence status
 
+The [first hosted regression attempt](https://github.com/techrote/ezvm/actions/runs/39050766495)
+at `01e673ac951a0a46a54ec1fd601ae2944026a08c` failed before running the test
+child: `Start-Process -Credential` returned an incorrect-parameter error in both
+engines. The generated encoded multi-checkout command exceeded
+[CreateProcessWithLogonW's 1024-character command-line limit](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createprocesswithlogonw).
+The fixture now writes that public-source setup command to its private owned
+temporary script and invokes it using a short, explicitly bounded `-File` argument.
+No password is written to that script or command line. Original failure artifacts
+remain retained; a later successful test run must establish the correction.
+
 Implementation and initial self-review: the assigned ChatGPT coding subagent,
 using public EzVM source and primary Microsoft/PowerShell references. No private
 owner patch was read or copied. The primary assistant independently reviewed the
