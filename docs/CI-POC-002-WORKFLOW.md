@@ -36,3 +36,12 @@ failed before checkout because the default `powershell` shell could not load
 Actions' generated script under the host policy. The listener exited normally,
 registration40 was removed, and no qualification harness ran. That attempt
 remains failed evidence, not a physical result.
+
+The checkout action receives process-local `core.autocrlf=false` and
+`core.eol=lf` through Git's configuration environment. This matches Runloc's
+reviewed clone procedure and preserves exact extensionless LICENSE bytes.
+On native Windows, `text=auto` can otherwise produce CRLF even when autocrlf is
+false but eol remains native. Actions run39126788794 stopped at the immutable
+source guard before preflight because of this LICENSE conversion. The guard
+is unchanged; no host Git setting, tracked source, candidate or assertion is
+relaxed. A fresh full attempt must use the repinned merged definition.
