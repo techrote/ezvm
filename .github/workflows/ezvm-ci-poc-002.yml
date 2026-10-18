@@ -57,12 +57,12 @@ jobs:
           GIT_CONFIG_VALUE_1: lf
         with:
           repository: techrote/runloc
-          ref: 14c39e467f170e48f33af4e50b2c0e8e095b4f6e
+          ref: d3be2aa7677c338fab86508da6f390fcae1bc541
           path: Controller
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Exact preflight and full original eight-CPU WHPX qualification
+      - name: Exact preflight and full original six-CPU WHPX qualification
         id: qualify
         shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}"
         env:
@@ -71,7 +71,7 @@ jobs:
         run: |
           $env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
           $exe = [IO.Path]::Combine($env:SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe')
-          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-RunnerJob.ps1 -ExpectedControllerCommit '14c39e467f170e48f33af4e50b2c0e8e095b4f6e' -ComparisonId $env:COMPARISON_ID -Mode $env:QUALIFICATION_MODE
+          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-RunnerJob.ps1 -ExpectedControllerCommit 'd3be2aa7677c338fab86508da6f390fcae1bc541' -ComparisonId $env:COMPARISON_ID -Mode $env:QUALIFICATION_MODE
           exit $LASTEXITCODE
 
       - name: Retain only allowlisted receipt digest telemetry and Actions association

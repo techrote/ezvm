@@ -7,8 +7,8 @@ job source/candidate approval and final evidence/cleanup acceptance.
 
 The definition accepts only owner dispatches in techrote/ezvm, a first attempt,
 and the exact fresh UUID-labelled runner selected by the host. It checks out
-Runloc `14c39e467f170e48f33af4e50b2c0e8e095b4f6e`, which pins the public
-eight-CPU EzVM candidate. It invokes the reviewed outer supervisor, first exact
+Runloc `d3be2aa7677c338fab86508da6f390fcae1bc541`, which pins the public
+resource-parameterized EzVM candidate with six guest vCPUs. It invokes the reviewed outer supervisor, first exact
 preflight then the complete original release/portability scenario. Probe mode
 does only bounded preflight and cannot claim physical qualification.
 
@@ -45,3 +45,17 @@ false but eol remains native. Actions run39126788794 stopped at the immutable
 source guard before preflight because of this LICENSE conversion. The guard
 is unchanged; no host Git setting, tracked source, candidate or assertion is
 relaxed. A fresh full attempt must use the repinned merged definition.
+
+The owner reduced the next guest allocation from eight to six vCPUs after the
+interrupted native run39127529716. This definition pins the reviewed six-vCPU
+controller/oracle. All eight authenticated READY observations and24 completion
+markers remain required. The EzVM candidate helper already supports this
+allocation; its immutable product source is unchanged. The GitHub runner is
+native on the physical Windows PC; the EzVM Linux guest uses WHPX. No GitHub
+hosted compute or runner-inside-guest isolation is claimed.
+
+The host operator now uses a visible Explorer-owned console rather than a Codex
+terminal child. Its lifetime was tested independently by terminating the
+launching process Job and observing the console continue, then observing its
+actual clean exit0. Closing that independent console, sleeping/signing out or
+rebooting the PC can still interrupt qualification. No host service is added.
