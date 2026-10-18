@@ -97,7 +97,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $pin = (Get-Content -LiteralPath .\tests\tooling.json -Raw | ConvertFrom-Json).powerShell7
           $executable = $env:EZVM_RELEASE_POWERSHELL
-          $engine = @(& $executable -NoLogo -NoProfile -NonInteractive -Command '$PSVersionTable.PSEdition + "/" + $PSVersionTable.PSVersion.ToString()') -join ''
+          $engine = @(& $executable -NoLogo -NoProfile -NonInteractive -Command '$PSVersionTable.PSEdition + [char]47 + $PSVersionTable.PSVersion.ToString()') -join ''
           if ($LASTEXITCODE -ne 0 -or $engine -cne ('Core/' + $pin.version)) { throw 'The release harness must use the verified pinned PowerShell runtime.' }
           Write-Host ('EZVM012_QUALIFICATION_POWERSHELL=' + $engine)
           & $executable -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\scripts\Invoke-EzVm010RealPortability.ps1 -ReleaseQualification -TcgTimerCheckWorkaround
