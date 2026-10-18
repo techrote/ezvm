@@ -50,7 +50,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: techrote/runloc
-          ref: 22cdae183bd1c2d56a880879ad88bb63ffb1888d
+          ref: 14c39e467f170e48f33af4e50b2c0e8e095b4f6e
           path: Controller
           fetch-depth: 0
           persist-credentials: false
@@ -64,7 +64,7 @@ jobs:
         run: |
           $env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
           $exe = [IO.Path]::Combine($env:SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe')
-          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-RunnerJob.ps1 -ExpectedControllerCommit '22cdae183bd1c2d56a880879ad88bb63ffb1888d' -ComparisonId $env:COMPARISON_ID -Mode $env:QUALIFICATION_MODE
+          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-RunnerJob.ps1 -ExpectedControllerCommit '14c39e467f170e48f33af4e50b2c0e8e095b4f6e' -ComparisonId $env:COMPARISON_ID -Mode $env:QUALIFICATION_MODE
           exit $LASTEXITCODE
 
       - name: Retain only allowlisted receipt digest telemetry and Actions association

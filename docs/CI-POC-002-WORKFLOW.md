@@ -7,7 +7,7 @@ job source/candidate approval and final evidence/cleanup acceptance.
 
 The definition accepts only owner dispatches in techrote/ezvm, a first attempt,
 and the exact fresh UUID-labelled runner selected by the host. It checks out
-Runloc `22cdae183bd1c2d56a880879ad88bb63ffb1888d`, which pins the public
+Runloc `14c39e467f170e48f33af4e50b2c0e8e095b4f6e`, which pins the public
 eight-CPU EzVM candidate. It invokes the reviewed outer supervisor, first exact
 preflight then the complete original release/portability scenario. Probe mode
 does only bounded preflight and cannot claim physical qualification.
