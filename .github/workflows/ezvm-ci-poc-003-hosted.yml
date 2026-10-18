@@ -1,0 +1,86 @@
+name: CI-PoC003 independent hosted TCG
+run-name: CI-PoC003 hosted ${{ inputs.comparison_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      comparison_id:
+        description: Fresh source-gate comparison UUID allocated before dispatch
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  hosted-tcg:
+    name: Independent full six-CPU TCG (WHPX SKIP)
+    if: github.repository == 'techrote/ezvm' && github.actor == 'techrote' && github.event_name == 'workflow_dispatch'
+    runs-on: windows-2022
+    # External Actions containment only. Original base-build/READY/stop bounds remain.
+    timeout-minutes: 360
+    steps:
+      - name: Validate fresh owner dispatch
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}"
+        env:
+          COMPARISON_ID: ${{ inputs.comparison_id }}
+        run: |
+          $env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
+          if ($env:COMPARISON_ID -cnotmatch '^[a-f0-9]{32}$' -or $env:GITHUB_RUN_ATTEMPT -cne '1') {
+              throw 'Fresh exact comparison and first attempt required.'
+          }
+
+      - name: Checkout reviewed immutable hosted adapter
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        env:
+          GIT_CONFIG_COUNT: '2'
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: 'false'
+          GIT_CONFIG_KEY_1: core.eol
+          GIT_CONFIG_VALUE_1: lf
+        with:
+          repository: techrote/runloc
+          ref: c1a2bb727da5c1099c0ac693c92c2f07fcf84d1d
+          path: Controller
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout exact approved candidate independently of workflow commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        env:
+          GIT_CONFIG_COUNT: '2'
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: 'false'
+          GIT_CONFIG_KEY_1: core.eol
+          GIT_CONFIG_VALUE_1: lf
+        with:
+          ref: 2268468cb3040b9e1dd6deed60d0f13594f768d6
+          path: Candidate
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Exact preflight and original complete release portability scenario
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}"
+        env:
+          COMPARISON_ID: ${{ inputs.comparison_id }}
+        run: |
+          $env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
+          $evidence = Join-Path $env:RUNNER_TEMP ('gate-public-' + $env:COMPARISON_ID)
+          [void][IO.Directory]::CreateDirectory($evidence)
+          ('GATE_PUBLIC=' + $evidence) | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+          $exe = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-HostedQualification.ps1 -CandidateRoot (Join-Path $env:GITHUB_WORKSPACE 'Candidate') -CandidateCommit 2268468cb3040b9e1dd6deed60d0f13594f768d6 -ControllerCommit c1a2bb727da5c1099c0ac693c92c2f07fcf84d1d -ComparisonId $env:COMPARISON_ID -EvidenceParent $evidence
+          exit $LASTEXITCODE
+
+      - name: Retain named public evidence only
+        if: always() && env.GATE_PUBLIC != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-poc-003-hosted-${{ inputs.comparison_id }}
+          # The parent also contains private leases/logs. Never upload its directory.
+          path: |
+            ${{ env.GATE_PUBLIC }}/hosted-receipt.json
+            ${{ env.GATE_PUBLIC }}/hosted-receipt-digest.json
+            ${{ env.GATE_PUBLIC }}/telemetry-events.json
+          if-no-files-found: error
+          retention-days: 14
