@@ -44,7 +44,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate tracked release source.' }
 $tracked = @($trackedText.Split([char[]]@([char]0), [StringSplitOptions]::RemoveEmptyEntries))
 
 $rootFiles = @('ezvm.ps1', 'README.md', 'THIRD-PARTY-NOTICES.md')
-$prefixes = @('config/', 'docs/', 'guest/', 'manifests/', 'src/')
+$prefixes = @('config/', 'docs/', 'guest/', 'manifests/', 'src/', 'tools/qemu-whpx/')
 $selected = New-Object 'System.Collections.Generic.List[string]'
 foreach ($relative in $tracked) {
     $include = $rootFiles -ccontains $relative
@@ -66,7 +66,12 @@ foreach ($required in @(
     'docs/WHPX-QUALIFICATION.md',
     'src/EzVm/EzVm.psd1',
     'manifests/qemu-windows.json',
-    'manifests/ubuntu-noble-amd64.json'
+    'manifests/ubuntu-noble-amd64.json',
+    'tools/qemu-whpx/README.md',
+    'tools/qemu-whpx/build-manifest.json',
+    'tools/qemu-whpx/runtime-sources.json',
+    'tools/qemu-whpx/upstream.patch',
+    'tools/qemu-whpx/build.sh'
 )) {
     if ($selected -cnotcontains $required) { throw "Release package is missing required tracked source '$required'." }
 }

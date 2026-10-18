@@ -35,6 +35,23 @@ source or assets are copied into this implementation.
 The QEMU installer is downloaded and verified at runtime, then extracted into
 repository-local generated state. It is not contained in the ezvm release ZIP.
 
+The CI-PoC manifest additionally pins a separately published ten-file QEMU 11.1.2
+reset overlay, built from upstream commit
+`4fc49f46dc95d4a27de2509e7fceb2931e91faeb` plus the complete GPL-2.0-or-later
+patch in [tools/qemu-whpx/upstream.patch](tools/qemu-whpx/upstream.patch).
+Its exact source is commit `9866111e7605d9776939c26ced6e090cb7d7ec20`, tree
+`94d28970e0ee00333cd763111e8ebaf571ffcc27`. The original provider retains its
+firmware/resources; the overlay redistributes no firmware.
+
+The [build manifest](tools/qemu-whpx/build-manifest.json) pins both overlay and
+corresponding-source assets. The source asset contains QEMU/keycodemapdb Git
+objects with their shallow boundaries, build instructions, all 15 runtime-library
+license notices and the eight matching official MSYS2 source archives. Those
+archives and component licenses are indexed in
+[runtime-sources.json](tools/qemu-whpx/runtime-sources.json). The DLLs are GLib,
+libiconv, gettext runtime, PCRE2, libslirp, winpthreads, zstd and zlib; each retains
+its original license. No third-party binary enters the EzVM source package.
+
 ## 7-Zip extractor
 
 - Project: 7-Zip

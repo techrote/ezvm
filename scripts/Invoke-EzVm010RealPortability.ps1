@@ -1,9 +1,17 @@
 #requires -Version 5.1
 [CmdletBinding()]
-param([string]$Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')), [switch]$SecurityQualification, [switch]$ReleaseQualification)
+param(
+    [string]$Root = '',
+    [switch]$SecurityQualification,
+    [switch]$ReleaseQualification,
+    [ValidateSet('tcg', 'whpx')][string]$Accelerator = 'tcg',
+    [string]$TelemetryPath = '',
+    [ValidateRange(0, 32)][int]$QualificationCpus = 0
+)
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+if (-not $Root) { $Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')) }
 if ($ReleaseQualification) { $SecurityQualification = $true }
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     throw 'EZVM-010 real qualification requires Windows and the reviewed managed Windows QEMU runtime.'
@@ -21,7 +29,11 @@ foreach ($relative in @('ezvm.ps1', 'src', 'config', 'manifests', 'guest', 'scri
     Copy-Item -LiteralPath (Join-Path $sourceRoot $relative) -Destination $rootA -Recurse -Force
 }
 $Root = $rootA
-Import-Module (Join-Path $Root 'src/EzVm/EzVm.psd1') -Force -ErrorAction Stop
+$qualificationModule = Import-Module (Join-Path $Root 'src/EzVm/EzVm.psd1') -Force -ErrorAction Stop -PassThru
+if ($QualificationCpus -gt 0) {
+    . (Join-Path $PSScriptRoot 'QualificationResources.ps1')
+    Set-EzVmQualificationResources -Root $Root -Cpus $QualificationCpus
+}
 $active = New-Object 'System.Collections.Generic.List[string]'
 $sourceName = 'ezvm010-source'
 $cloneName = 'ezvm010-stateful'
@@ -42,6 +54,50 @@ function Invoke-EzVm010Image {
         throw "Real qemu-img check failed: exit=$($result.ExitCode); $($result.StdErr)"
     }
     return $result
+}
+
+function Write-EzVm010BaseDiagnostics {
+    param([string]$DiagnosticRoot)
+    & (Get-Module EzVm) {
+        param($Root)
+        $bases = Assert-EzVmSafePath -Path (Get-EzVmPaths -Root $Root).Bases -Description 'Base diagnostic directory'
+        if (-not (Test-Path -LiteralPath $bases -PathType Container)) { return }
+        $stages = @(Get-ChildItem -LiteralPath $bases -Directory -Force |
+            Where-Object { $_.Name -cmatch '^\.build-[a-f0-9]{32}$' } |
+            Sort-Object Name | Select-Object -First 4)
+        foreach ($stage in $stages) {
+            $null = Assert-EzVmSafePath -Path $stage.FullName -Description 'Base diagnostic stage'
+            # Only controlled base failure/serial logs, never seeds, disks or keys.
+            foreach ($name in @('failure.json', 'serial.log')) {
+                $path = Assert-EzVmSafePath -Path (Join-Path $stage.FullName $name) -Description 'Base diagnostic file'
+                if (Test-Path -LiteralPath $path -PathType Leaf) {
+                    Assert-EzVmSingleLinkFile -Path $path
+                    Write-Host ('BASE_LOG_TAIL=' + $path + '; bytes<=262144; lines<=200')
+                    $stream = [IO.File]::Open($path, [IO.FileMode]::Open, [IO.FileAccess]::Read,
+                        ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+                    try {
+                        $limit = 262144
+                        $null = $stream.Seek([Math]::Max([long]0, $stream.Length - $limit), [IO.SeekOrigin]::Begin)
+                        $bytes = New-Object byte[] $limit
+                        $count = 0
+                        while ($count -lt $limit) {
+                            $read = $stream.Read($bytes, $count, $limit - $count)
+                            if ($read -eq 0) { break }
+                            $count += $read
+                        }
+                        $text = [Text.Encoding]::UTF8.GetString($bytes, 0, $count)
+                    }
+                    finally { $stream.Dispose() }
+                    @($text -split '\r\n|\r|\n' | Select-Object -Last 200) | ForEach-Object {
+                        $line = [string]$_
+                        if ($line.Length -gt 4096) { $line = $line.Substring(0, 4096) + ' [diagnostic line truncated]' }
+                        # Guest prose must never enter the host's marker oracle.
+                        Write-Host ('BASE_LOG_LINE=' + $line)
+                    }
+                }
+            }
+        }
+    } $DiagnosticRoot
 }
 
 function Assert-EzVm010SameImage {
@@ -82,9 +138,17 @@ function Start-EzVm010Guest {
     if (-not $active.Contains($Name)) { $active.Add($Name) }
     Write-Host ('EZVM010_STEP=guest_start; instance=' + $Name + '; at=' + [DateTime]::UtcNow.ToString('o') + '; root=' + $Root)
     try {
-        $ready = Start-EzVmReadyInstance -Root $Root -InstanceName $Name -Accelerator tcg -ReadyTimeoutSeconds 900
-        if ($ready.state -cne 'READY' -or $ready.accelerator -cne 'tcg' -or $ready.sshHost -cne '127.0.0.1') {
-            throw "Guest '$Name' did not reach coding READY under explicit TCG and localhost-only SSH."
+        $ready = Start-EzVmReadyInstance -Root $Root -InstanceName $Name -Accelerator $Accelerator -ReadyTimeoutSeconds 900
+        if ($ready.state -cne 'READY' -or $ready.accelerator -cne $Accelerator -or $ready.sshHost -cne '127.0.0.1') {
+            throw "Guest '$Name' did not reach coding READY under explicit $Accelerator and localhost-only SSH."
+        }
+        if ($QualificationCpus -gt 0) {
+            $intent = Get-EzVmInstanceIntent -Root $Root -InstanceName $Name
+            $online = (Invoke-EzVm010Guest -Name $Name -Script 'getconf _NPROCESSORS_ONLN').Trim()
+            if ($intent.cpus -ne $QualificationCpus -or $online -cne [string]$QualificationCpus) {
+                throw "Guest '$Name' did not prove the requested qualification CPU count."
+            }
+            Write-Host ('EZVM010_GUEST_CPUS=' + $online + '; instance=' + $Name)
         }
     }
     catch {
@@ -170,17 +234,41 @@ function Assert-EzVm010PreservedSyntheticState {
     }
 }
 
+$telemetry = $null
+$qualificationFailed = $true
+if ($TelemetryPath) {
+    . (Join-Path $PSScriptRoot 'QualificationTelemetry.ps1')
+    $telemetry = New-EzVmQualificationTelemetry -Path $TelemetryPath
+    try {
+        Enable-EzVmQualificationTelemetry -State $telemetry -Module $qualificationModule
+        # Refresh only exported function references from this same loaded module;
+        # do not reload its files or change the original module's default root.
+        Import-Module -ModuleInfo $qualificationModule -Force
+    }
+    catch { Close-EzVmQualificationTelemetry -State $telemetry -Failed $true; throw }
+}
+
 try {
     Write-Host ('EZVM010_STARTED_AT=' + [DateTime]::UtcNow.ToString('o'))
     Write-Host ('EZVM010_QUALIFICATION_ROOT=' + $work)
-    Write-Host 'EZVM010_ACCELERATOR=tcg'
-    Write-Host 'EZVM010_WHPX_EXECUTION=SKIP: GitHub-hosted qualification uses explicit TCG; no WHPX execution PASS is claimed.'
+    Write-Host ('EZVM010_ACCELERATOR=' + $Accelerator)
+    if ($Accelerator -ceq 'tcg') {
+        Write-Host 'EZVM010_WHPX_EXECUTION=SKIP: qualification uses explicit TCG; no WHPX execution PASS is claimed.'
+    }
+    else {
+        Write-Host 'EZVM010_WHPX_EXECUTION=PENDING: physical execution has not completed.'
+    }
     if ($ReleaseQualification) {
         $null = Assert-EzVm012Doctor
         Write-Host 'EZVM012_REAL_FRESH_ROOT_DOCTOR=PASS'
     }
     $bootstrap = Install-EzVmQemuRuntime -Root $Root
     Write-Host ('EZVM010_REAL_QEMU=' + $bootstrap.version)
+    if ($null -ne $telemetry) {
+        foreach ($tool in @(@{ kind = 'qemu-system'; path = $bootstrap.qemuSystem }, @{ kind = 'qemu-img'; path = $bootstrap.qemuImg })) {
+            Write-EzVmQualificationIdentity -State $telemetry -Kind $tool.kind -Version $bootstrap.version -SizeBytes (Get-Item -LiteralPath $tool.path).Length -Sha256 (Get-EzVmFileDigest -Path $tool.path -Algorithm SHA256)
+        }
+    }
     if ($ReleaseQualification) {
         $null = Assert-EzVm012Doctor -RequireManagedQemu
         Write-Host 'EZVM012_REAL_BOOTSTRAP_DOCTOR=PASS'
@@ -258,11 +346,17 @@ try {
     Write-Host 'EZVM010_STEP=prepare_real_guest'
     $source = Invoke-EzVmSourceImageAcquire -Root $Root
     Write-Host ('EZVM010_REAL_SOURCE_SHA256=' + $source.sha256)
+    if ($null -ne $telemetry) {
+        Write-EzVmQualificationIdentity -State $telemetry -Kind source-image -Sha256 $source.sha256 -SizeBytes (Get-Item -LiteralPath $source.path).Length
+    }
     Write-Host ('EZVM010_STEP=base_build_started; at=' + [DateTime]::UtcNow.ToString('o'))
-    $base = Invoke-EzVmBaseBuild -Root $Root -Accelerator tcg -BuildTimeoutSeconds 2400
+    $base = Invoke-EzVmBaseBuild -Root $Root -Accelerator $Accelerator -BuildTimeoutSeconds 2400
     Write-Host ('EZVM010_STEP=base_build_completed; at=' + [DateTime]::UtcNow.ToString('o') + '; base=' + $base.baseId)
     $prepared = Test-EzVmPreparedBase -Root $Root -BaseId $base.baseId
-    if ($prepared.Manifest.build.accelerator -cne 'tcg') { throw 'Base build did not record explicit TCG.' }
+    if ($prepared.Manifest.build.accelerator -cne $Accelerator) { throw 'Base build did not record the explicitly requested accelerator.' }
+    if ($null -ne $telemetry) {
+        Write-EzVmQualificationIdentity -State $telemetry -Kind prepared-base -Sha256 $prepared.Manifest.baseSha256 -SizeBytes (Get-Item -LiteralPath $prepared.Image).Length
+    }
     $sourceCreate = @{ Root = $Root; InstanceName = $sourceName; BaseId = $base.baseId }
     if (-not $ReleaseQualification) { $sourceCreate.Profile = 'light' }
     $created = New-EzVmManagedInstance @sourceCreate
@@ -431,7 +525,12 @@ sync
         Copy-Item -LiteralPath $entry.FullName -Destination $rootB -Recurse -Force
     }
     $Root = $rootB
-    Import-Module (Join-Path $Root 'src/EzVm/EzVm.psd1') -Force -ErrorAction Stop
+    if ($null -ne $telemetry) { Disable-EzVmQualificationTelemetry -State $telemetry }
+    $qualificationModule = Import-Module (Join-Path $Root 'src/EzVm/EzVm.psd1') -Force -ErrorAction Stop -PassThru
+    if ($null -ne $telemetry) {
+        Enable-EzVmQualificationTelemetry -State $telemetry -Module $qualificationModule
+        Import-Module -ModuleInfo $qualificationModule -Force
+    }
     # The complete source root was proven stopped before copying. Keep it
     # recoverable but unavailable at its original path throughout B's checks,
     # so neither loaded defaults nor stale absolute paths can fall back to A.
@@ -475,7 +574,9 @@ sync
         Write-Host 'EZVM012_REAL_RELOCATED_DOCTOR_AND_RESTART=PASS'
         Write-Host 'EZVM012_REAL_COMPLETE_END_TO_END=PASS'
     }
+    if ($Accelerator -ceq 'whpx') { Write-Host 'EZVM010_WHPX_EXECUTION=PASS' }
     Write-Host ('EZVM010_COMPLETED_AT=' + [DateTime]::UtcNow.ToString('o'))
+    $qualificationFailed = $false
 }
 catch {
     Write-Host 'EZVM010_REAL_DIAGNOSTICS_BEGIN'
@@ -483,6 +584,8 @@ catch {
     # Read only host-side state and controlled QEMU logs. Serial output is
     # diagnostic evidence, never a substitute for authenticated guest READY.
     # Do not inspect seed data, key files or guest credential contents here.
+    try { Write-EzVm010BaseDiagnostics -DiagnosticRoot $Root }
+    catch { Write-Host ('DIAGNOSTIC_ERROR=' + $_.Exception.Message) }
     foreach ($name in @($sourceName, $cloneName, $importName, $secondaryName, $freshName)) {
         try {
             $runtimePaths = Get-EzVmInstanceRuntimePaths -Root $Root -InstanceName $name
@@ -529,5 +632,9 @@ finally {
         catch {
             Write-Host ('EZVM010_SOURCE_ROOT_RESTORE_ERROR=source preserved at ' + $heldRootA + ': ' + $_.Exception.Message)
         }
+    }
+    if ($null -ne $telemetry) {
+        try { Disable-EzVmQualificationTelemetry -State $telemetry }
+        finally { Close-EzVmQualificationTelemetry -State $telemetry -Failed $qualificationFailed }
     }
 }

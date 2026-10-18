@@ -1,5 +1,5 @@
 function Write-EzVmQemuPayloadInventory {
-    param([string]$RuntimeDirectory, [string]$ManifestDigest)
+    param([string]$RuntimeDirectory, [string]$ManifestDigest, [string]$ExpectedCanonicalDigest = '')
     $files = New-Object 'System.Collections.Generic.List[object]'
     foreach ($entry in @(Get-EzVmSafeTree -Path $RuntimeDirectory | Sort-Object FullName)) {
         if ($entry -isnot [IO.FileInfo]) { continue }
@@ -8,6 +8,16 @@ function Write-EzVmQemuPayloadInventory {
         $files.Add([pscustomobject][ordered]@{ path = $relative; sizeBytes = [long]$entry.Length; sha256 = (Get-EzVmFileDigest -Path $entry.FullName -Algorithm SHA256) })
     }
     if ($files.Count -eq 0) { throw 'QEMU extraction produced an empty payload inventory.' }
+    if ($ExpectedCanonicalDigest) {
+        $canonicalFiles = @{}
+        foreach ($file in $files) {
+            if ($canonicalFiles.ContainsKey($file.path)) { throw 'QEMU final payload contains a duplicate or case-ambiguous path before executable probing.' }
+            $canonicalFiles[$file.path] = $file
+        }
+        if ((Get-EzVmQemuCanonicalRecordDigest -Files $canonicalFiles) -cne $ExpectedCanonicalDigest) {
+            throw 'QEMU final payload differs from reviewed pins before executable probing.'
+        }
+    }
     $inventory = [pscustomobject][ordered]@{ schemaVersion = 1; manifestSha256 = $ManifestDigest; files = @($files.ToArray()) }
     $path = Join-Path $RuntimeDirectory 'ezvm-payload.json'
     Write-EzVmJson -Path $path -Value $inventory
@@ -45,6 +55,22 @@ function Assert-EzVmQemuPayloadIntegrity {
     foreach ($required in @('qemu-system-x86_64.exe', 'qemu-img.exe')) {
         if (-not $expected.ContainsKey($required)) { throw 'QEMU inventory omits required executables.' }
     }
+    $manifest = Get-EzVmQemuManifest -ManifestPath $ManifestPath
+    $overlay = Get-EzVmQemuOverlay -Manifest $manifest
+    if ($null -ne $overlay) {
+        $overlayReceiptProperty = $receipt.PSObject.Properties['whpxResetOverlay']
+        if ($null -eq $overlayReceiptProperty) { throw 'Managed QEMU lacks its reviewed WHPX overlay provenance.' }
+        $overlayReceipt = $overlayReceiptProperty.Value
+        Assert-EzVmRuntimeFields -Value $overlayReceipt -Expected @('artifactSha256', 'basePayloadSha256', 'qemuSourceCommit', 'qemuSourceTree', 'buildManifestSha256') -Description 'WHPX overlay provenance'
+        foreach ($name in @('basePayloadSha256', 'qemuSourceCommit', 'qemuSourceTree', 'buildManifestSha256')) {
+            if ($overlayReceipt.$name -isnot [string] -or $overlayReceipt.$name -cne $overlay.$name) { throw 'Managed QEMU WHPX overlay provenance mismatch.' }
+        }
+        if ($overlayReceipt.artifactSha256 -cne $overlay.artifact.digest) { throw 'Managed QEMU WHPX overlay artifact identity mismatch.' }
+        foreach ($file in $overlay.files) {
+            if (-not $expected.ContainsKey($file.name) -or $expected[$file.name].sha256 -cne $file.sha256 -or
+                $expected[$file.name].sizeBytes -ne $file.sizeBytes) { throw 'Managed QEMU WHPX overlay inventory differs from reviewed executable pins.' }
+        }
+    }
     $observed = @{}
     foreach ($entry in @(Get-EzVmSafeTree -Path $RuntimeDirectory)) {
         if ($entry -isnot [IO.FileInfo]) { continue }
@@ -56,7 +82,10 @@ function Assert-EzVmQemuPayloadIntegrity {
             (Get-EzVmFileDigest -Path $entry.FullName -Algorithm SHA256) -cne $record.sha256) {
             throw 'Managed QEMU payload digest or size mismatch; refusing execution before version probing.'
         }
-        $observed[$relative] = $true
+        $observed[$relative] = $record
     }
     if ($observed.Count -ne $expected.Count) { throw 'Managed QEMU payload is incomplete; restore it from verified provider artifacts.' }
+    if ($null -ne $overlay -and (Get-EzVmQemuCanonicalRecordDigest -Files $observed) -cne $overlay.installedPayloadSha256) {
+        throw 'Managed QEMU complete payload differs from the reviewed original-provider and overlay pins.'
+    }
 }

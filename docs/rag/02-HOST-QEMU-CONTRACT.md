@@ -69,6 +69,45 @@ The runtime destination is inside runtime/qemu. ezvm invokes QEMU tools by an ab
 
 ## Version/provenance recording
 
+### CI-PoC checked WHPX reset overlay
+
+The reviewed manifest retains the exact original provider installer and extractor
+pins, and adds a separately pinned ten-file QEMU 11.1.2 reset overlay. Its asset
+must use the explicit `techrote/ezvm` tool-prerelease path and match the recorded
+SHA-256 and size. The complete original provider payload is bound canonically
+before replacement; all ZIP names/sizes are checked before any extraction, and
+all ten extracted files are checked before any replacement. Unsafe paths,
+duplicates, extra entries, hardlinks and digest/size mismatches fail closed.
+
+The manifest also pins the entire resulting payload, including unchanged
+firmware/resources and remaining DLLs. This binding is checked before executable
+probing and during every later integrity check, independently of mutable local
+inventory/provenance receipts. Bootstrap cleanup errors remain command failures.
+The original provider version records its source artifact; effective runtime
+version is the overlay's 11.1.2, which release/physical evidence must compare
+exactly. Source commit/tree, build-manifest digest and observed overlay digest
+are recorded separately from the original provider identity.
+
+The reset policy defaults to AUTO. It enables checked partition reset only on
+native AMD64 Windows clients whose reliable numeric version is 10.0/build 22000
+or later and whose WHvResetPartition export is available. Unsupported/unknown
+hosts retain the unchanged legacy reset path. Explicit ON rejects unsupported
+capability before guest creation; OFF uses the legacy path. Selection is frozen
+at accelerator initialization. Any attempted API reset that does not return
+exact S_OK is fatal before board reset or resume. The callback runs after CPU
+synchronization and before device/APIC reset; initial, snapshot and subsystem
+reset behavior and other accelerators do not gain this callback.
+
+The host baseline above remains Windows 10 2004+/Windows 11. Windows 10 behavior
+with the overlaid binary is physically unmeasured, rather than inferred from
+the preserved code. OFF reproduced the legacy reset failure on the Windows 11
+test host; it is not a successful regression arm. See
+[source/build/acquisition details](../../tools/qemu-whpx/README.md) and
+[the build manifest](../../tools/qemu-whpx/build-manifest.json). The source asset
+and matching runtime-library sources/notices accompany the tool prerelease.
+
+### Required recorded identities
+
 After bootstrap, record at least:
 
 - manifest schema version;

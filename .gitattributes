@@ -1,2 +1,5 @@
 # Keep repository text canonical across Windows and Unix checkouts.
 * text=auto eol=lf
+# Unified-diff context includes single-space blank lines; preserve the exact
+# source-patch bytes pinned by the build manifest without flagging that syntax.
+tools/qemu-whpx/upstream.patch -text whitespace=-blank-at-eol

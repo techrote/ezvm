@@ -136,6 +136,12 @@ Add-EzVmTest -Name 'Security: state text is bounded and refuses reparse reads' -
 function New-EzVmSecurityQemuRuntime {
     param([string]$Root)
     $paths = Get-EzVmPaths -Root $Root
+    # This deliberately synthetic four-file runtime exercises legacy inventory
+    # tampering. Full overlay fixtures and forged complete payloads are covered
+    # by QemuOverlay.Tests.ps1 with all ten reviewed-file pins intact.
+    $manifest = Read-EzVmJson -Path $paths.QemuManifest
+    $manifest.PSObject.Properties.Remove('whpxResetOverlay')
+    Write-EzVmJson -Path $paths.QemuManifest -Value $manifest
     [void][IO.Directory]::CreateDirectory($paths.Qemu)
     foreach ($file in @('qemu-img.exe', 'qemu-system-x86_64.exe', 'dependency.dll', 'firmware.fd')) { [IO.File]::WriteAllText((Join-Path $paths.Qemu $file), ('fixture ' + $file)) }
     $manifestDigest = Get-EzVmFileDigest -Path $paths.QemuManifest -Algorithm SHA256
@@ -179,6 +185,30 @@ Add-EzVmTest -Name 'Security: legacy QEMU receipts are not upgraded from unverif
         Assert-EzVmEqual ([IO.File]::ReadAllText($receiptPath)) $before
     }
     finally { Remove-EzVmTestDirectory $root }
+}
+
+Add-EzVmTest -Name 'Security: full overlay EXE DLL firmware and receipt tampering never reaches a probe' -SkipReason $qemuWindowsSkip -ScriptBlock {
+    foreach ($mode in @('qemu-img.exe', 'libslirp-0.dll', 'share/firmware.bin', 'extra.dll', 'missing', 'receipt')) {
+        $root = New-EzVmCheckoutFixture -Prefix 'overlay security tampering'
+        try {
+            $value = New-EzVmQemuOverlayFixture $root
+            $paths = Get-EzVmPaths -Root $root
+            Copy-Item -LiteralPath $value.Fixture.ManifestPath -Destination $paths.QemuManifest -Force
+            $null = Install-EzVmQemuRuntime -Root $root -Downloader $value.Hooks.Downloader -ExtractorBootstrapper $value.Hooks.ExtractorBootstrapper -QemuExpander $value.Hooks.QemuExpander -PayloadProbe $value.Hooks.PayloadProbe
+            $calls = [pscustomobject]@{Count=0}
+            $probe = {param($r,$v) $calls.Count++; [pscustomobject]@{QemuSystemVersion="QEMU emulator version $v";QemuImgVersion="qemu-img version $v"}}.GetNewClosure()
+            Assert-EzVmTrue (Get-EzVmManagedQemuStatus -Root $root -PayloadProbe $probe).Valid
+            Assert-EzVmEqual $calls.Count 1
+            if ($mode -ceq 'missing') { [IO.File]::Delete((Join-Path $paths.Qemu 'libslirp-0.dll')) }
+            elseif ($mode -ceq 'receipt') { [IO.File]::AppendAllText((Join-Path $paths.Qemu 'ezvm-payload.json'), ' ') }
+            else { [IO.File]::WriteAllText((Join-Path $paths.Qemu $mode), 'tampered overlay bytes') }
+            $status = Get-EzVmManagedQemuStatus -Root $root -PayloadProbe $probe
+            Assert-EzVmEqual $status.Valid $false
+            Assert-EzVmEqual $calls.Count 1 -Message 'Tampered overlay content must not execute even a version probe.'
+            Assert-EzVmThrows {Get-EzVmQemuToolPath -Root $root -Name 'qemu-img.exe'} -MessagePattern 'payload|inventory' | Out-Null
+        }
+        finally { Remove-EzVmTestDirectory $root }
+    }
 }
 
 Add-EzVmTest -Name 'Security: seed shutdown expires transport and releases payloads without retaining rejected request targets' -ScriptBlock {

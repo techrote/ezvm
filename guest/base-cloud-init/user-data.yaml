@@ -61,7 +61,9 @@ write_files:
 
       rm -f /usr/local/sbin/ezvm-finalize-base
 
-      printf 'EZVM_BASE_BUILD_ID=%s\n' '__BUILD_ID__' > /dev/ttyS0
+      # A serial getty may leave its login prompt without a trailing newline.
+      # Frame the first marker; the host still requires an exact line and ID.
+      printf '\nEZVM_BASE_BUILD_ID=%s\n' '__BUILD_ID__' > /dev/ttyS0
       printf 'EZVM_BASE_OS_ID_B64=%s\n' "$(printf '%s' "$os_id" | base64 -w0)" > /dev/ttyS0
       printf 'EZVM_BASE_OS_VERSION_B64=%s\n' "$(printf '%s' "$os_version" | base64 -w0)" > /dev/ttyS0
       printf 'EZVM_BASE_CLOUD_INIT_B64=%s\n' "$(printf '%s' "$cloud_version" | base64 -w0)" > /dev/ttyS0

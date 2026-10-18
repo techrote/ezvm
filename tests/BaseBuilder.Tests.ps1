@@ -264,6 +264,33 @@ Add-EzVmTest -Name 'Base builder: guest serial facts require READY, tool validat
     } -MessagePattern 'different build identity' | Out-Null
 }
 
+Add-EzVmTest -Name 'Base builder: generated serial identity is framed after a prompt and still rejects missing or wrong facts' -ScriptBlock {
+    $module = Get-Module EzVm
+    $buildId = '0123456789abcdef0123456789abcdef'
+    $seed = New-EzVmBaseSeedData -Root $script:EzVmRepositoryRoot -BuildId $buildId
+    $statement = [regex]::Match($seed.UserData, "(?m)^\s*printf '(?<format>[^']+)' '" + $buildId + "' > /dev/ttyS0\r?$")
+    Assert-EzVmTrue $statement.Success 'Generated seed omitted the literal build-identity serial statement.'
+    $identityWire = $statement.Groups['format'].Value.Replace('%s', $buildId).Replace('\n', "`n")
+    $factsWire = "EZVM_BASE_OS_ID_B64=dWJ1bnR1`nEZVM_BASE_OS_VERSION_B64=MjQuMDQ=`nEZVM_BASE_CLOUD_INIT_B64=Y2xvdWQtaW5pdA==`nEZVM_BASE_TOOLS_OK=1`nEZVM_BASE_CLEAN_OK=1`nEZVM_BASE_READY=1`n"
+    foreach ($separator in @("`n", "`r`n")) {
+        $wire = ('Ubuntu 24.04 LTS login: ' + $identityWire + $factsWire).Replace("`n", $separator)
+        $facts = & $module { param($text,$id) Get-EzVmBaseGuestFacts -SerialText $text -BuildId $id } $wire $buildId
+        Assert-EzVmEqual $facts.OsId 'ubuntu'
+        foreach ($changed in @(
+            $wire.Replace(('EZVM_BASE_BUILD_ID=' + $buildId), 'EZVM_OTHER_ID=ignored'),
+            $wire.Replace($buildId, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+        )) {
+            Assert-EzVmThrows { & $module { param($text,$id) Get-EzVmBaseGuestFacts -SerialText $text -BuildId $id } $changed $buildId } -MessagePattern 'different build identity' | Out-Null
+        }
+        foreach ($required in @('READY','TOOLS_OK','CLEAN_OK')) {
+            $changed = $wire.Replace(('EZVM_BASE_' + $required + '=1'), ('EZVM_BASE_' + $required + '=0'))
+            Assert-EzVmThrows { & $module { param($text,$id) Get-EzVmBaseGuestFacts -SerialText $text -BuildId $id } $changed $buildId } | Out-Null
+        }
+    }
+    $legacy = 'Ubuntu 24.04 LTS login: ' + $identityWire.TrimStart([char]10) + $factsWire
+    Assert-EzVmThrows { & $module { param($text,$id) Get-EzVmBaseGuestFacts -SerialText $text -BuildId $id } $legacy $buildId } -MessagePattern 'different build identity' | Out-Null
+}
+
 Add-EzVmTest -Name 'Base builder: candidate validation fails before authoritative publication' -ScriptBlock {
     $fixture = New-EzVmBaseBuildFixture
     try {
