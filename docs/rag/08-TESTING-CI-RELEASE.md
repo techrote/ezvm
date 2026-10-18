@@ -64,7 +64,7 @@ cleanup. Only receipts and test-process logs are uploaded; source bundles,
 temporary keys, account credentials and user profiles are excluded. The fixture
 account and owned source/test tree are removed; the disposable host removes its
 temporary user profile at job teardown. Existing Windows CI remains required;
-the full hosted release job follows the temporary CI-PoC deferral below when
+the full hosted release job follows the source-bound CI-PoC policy below when
 applicable. This software regression provides
 no full WHPX or performance acceptance for Runloc #21. See the
 [finding, controls and operator procedure](../research/CI-POC-001-PRIVATE-DACL.md).
@@ -478,7 +478,7 @@ CI builds it twice to require byte-identical SHA-256 output. The package is
 extracted and its public version command is executed as a regression.
 
 The final expensive integration lane is
-EZVM-012 real release qualification. Except for the temporary CI-PoC deferral
+EZVM-012 real release qualification. Under the source-bound CI-PoC policy
 below, it runs once per applicable same-repository release-candidate PR on
 GitHub-hosted `windows-2022` and invokes the accepted
 security/portability scenario with ReleaseQualification. It starts from a fresh
@@ -510,41 +510,56 @@ ready; managed QEMU and all applicable checks must still report their exact
 state. A supported physical Windows client procedure is documented separately
 for optional WHPX runtime evidence.
 
-### Temporary CI-PoC hosted TCG deferral
+### CI-PoC source-bound qualification policy
 
-On **2026-10-17**, the owner explicitly deferred the approximately three-hour
-automatic full hosted TCG run until the end of the Runloc CI proof of concept.
-This is a temporary exception to the automatic EZVM-012 release requirement,
-implemented only in `.github/workflows/ezvm-012-real-release.yml`:
+The temporary 2026-10-17 branch-name deferral and its notice are removed.
+Historical deferred TCG is SKIP/unmeasured, never PASS.
 
-| Trigger and source | Full hosted TCG release job | Deferral notice |
+| Source and execution | Qualification acceptance | Hosted treatment |
 | --- | --- | --- |
-| Manual `workflow_dispatch`, including a CI-PoC ref | Runs in full | Not run |
-| Same-repository PR whose head starts `ci-poc-` | SKIP: owner-deferred | Runs |
-| Same-repository PR from `ezvm-ci-whpx-pilot` | SKIP: owner-deferred | Runs |
-| Other same-repository PR matching the workflow paths | Runs in full | Not run |
-| Fork PR, including either CI-PoC branch form | SKIP: existing repository gate | Not run |
+| New/unapproved same-repository PR matching release paths, including CI-PoC branches | Original complete hosted-only release job on that exact PR head | Required full TCG; no private result borrowed |
+| Approved frozen `2268468cb3040b9e1dd6deed60d0f13594f768d6`, explicit coordinator opt-in | Stable `EzVM qualification / source-bound` result plus provenance verifier | Independent full TCG starts first; can remain diagnostic/pending after valid WHPX acceptance |
+| Approved source with positive private infrastructure loss/unavailability | Full hosted receipt supplies source-bound result | Full TCG required before acceptance |
+| Explicit hosted-only rollback | No private registration; full hosted receipt supplies result | Full TCG required before acceptance |
+| Any actual assertion/source/security/cleanup/unknown failure in either lane | Failure, including revocation of an earlier acceptance | Keep failure visible; persistent quarantine needs reviewed recovery |
+| Fork PR | Existing trusted-repository refusal | No private host/credentials exposed |
 
-Branch comparisons use GitHub Actions' normal case-insensitive string semantics.
-The notice has no checkout or VM work and explicitly records **unmeasured TCG**
-coverage. [GitHub reports a skipped job as a successful status](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions);
-that status and a successful notice job are not qualification PASS evidence.
-The original full job, harness, assertions, 180-minute containment bound and
-explicit accelerator reporting remain available through manual dispatch.
+The approved candidate tree is `d5677a166e54583f26e3f08e90e5836c19f99359`.
+Its private job, runner/controller and separate hosted workflow definitions are
+immutable pins in Runloc's reviewed `poc/windows-whpx/gate-policy.json`. The
+hosted comparison uses `.github/workflows/ezvm-ci-poc-003-hosted.yml` and the
+original complete release/portability scenario with six vCPUs, original memory,
+assertions and per-operation limits. The 360-minute external Actions containment
+is disclosed; WHPX uses the owner's no-overall-time-limit exception. Timings are
+measured per actual lane. TCG does not establish WHPX compatibility/performance.
 
-The existing workflow-level concurrency group and `cancel-in-progress: true`
-remain intact. A replacement run for the same PR supersedes the previous run;
-confirm its actual cancellation separately rather than inferring it from a
-skipped job. This exception changes no other workflow, software/ACL check,
-physical WHPX acceptance criterion, branch rule or treatment of actual test
-failures.
+A successful check name, notice or raw PASS artifact is not acceptance. The merge
+controller invokes the pinned coordinator's `--verify-for-merge --state` mode to
+refetch the exact workflow/run/job/runner association, GitHub artifact digest,
+inner and supervisor receipt hashes, complete markers/telemetry, host disposal,
+mutable ledger author/body SHA256 and current owned commit-status ID. This
+read-only verifier can run while the independent hosted observer continues.
+A different commit, workflow/harness/profile or replayed receipt cannot qualify.
+There are currently no main branch protection/rulesets; these requirements are
+explicit merge policy rather than an invented enforced GitHub setting. All
+software and standard-user ACL checks remain required; no administrative bypass.
 
-**Expiry:** remove this workflow condition/notice and the matching AGENTS
-exception, or replace them with the reviewed qualified-WHPX/hosted-fallback
-policy, when [Runloc CI-POC-003 / #23](https://github.com/techrote/runloc/issues/23)
-completes. Until then, record each affected full TCG run as deferred/unmeasured.
-The exception is not permission to publish a release with invented qualification
-or to make the hosted fallback permanently unavailable.
+Private registrations are one-job ephemeral; the qualified backing host/image/
+artifact remains reusable after owned job material and secrets are disposed.
+The coordinator has durable write intents, bounded private queue handling and
+no ambiguous POST replay. Cancellation targets only the exact owned private run;
+private success never cancels hosted. If the observer PC goes offline, hosted
+continues on GitHub, but publication/revocation waits for restart reconciliation.
+A later red result cannot undo an already completed merge. Persistent quarantine
+must survive a new green result; reset requires explicit reviewed recovery.
+
+The restored ordinary release workflow keeps its original 180-minute containment
+and same-PR concurrency behavior. The separate source-bound hosted lane has no
+private dependency or shared cancellation group. Changing a source approval is a
+reviewed policy change with fresh actual qualification, not a branch-name switch.
+The current frozen lab candidate remains draft PR46 and is not claimed to be
+EzVM main. CI-PoC003 closes only after the live fast-path, fallback, disappearance,
+assertion-negative and hosted-only rollback acceptance evidence is complete.
 
 ### Release publication
 
