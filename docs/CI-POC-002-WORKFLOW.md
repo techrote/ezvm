@@ -26,3 +26,14 @@ cleanup proof. The used registration is single-use; a fresh registration may
 reuse the same qualified backing environment. This publication does not merge
 the candidate PR46, claim a completed Actions qualification, change CI gates or
 restart the owner-deferred hosted TCG qualification.
+# Native PowerShell script policy
+
+Both Windows script steps use a dedicated PowerShell process with
+`-ExecutionPolicy Bypass -File`. This applies only to that process; the host's
+execution policy is unchanged. The first real Actions attempt
+[`39126080753`](https://github.com/techrote/ezvm/actions/runs/39126080753)
+failed before checkout because the default `powershell` shell could not load
+Actions' generated script under the host policy. The listener exited normally,
+registration40 was removed, and no qualification harness ran. That attempt
+remains failed evidence, not a physical result.
+

@@ -31,7 +31,7 @@ jobs:
     # GitHub's own default job/service limits remain independently applicable.
     steps:
       - name: Validate owner dispatch and exact single-use runner identity
-        shell: powershell
+        shell: powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {0}
         env:
           EXPECTED_RUNNER: ${{ inputs.runner_name }}
           COMPARISON_ID: ${{ inputs.comparison_id }}
@@ -57,7 +57,7 @@ jobs:
 
       - name: Exact preflight and full original eight-CPU WHPX qualification
         id: qualify
-        shell: powershell
+        shell: powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {0}
         env:
           COMPARISON_ID: ${{ inputs.comparison_id }}
           QUALIFICATION_MODE: ${{ inputs.mode }}
