@@ -56,6 +56,11 @@ Add-EzVmTest -Name 'Release: deterministic package is source-only, self-describi
                 'ezvm-0.1.0/docs/WHPX-QUALIFICATION.md',
                 'ezvm-0.1.0/manifests/qemu-windows.json',
                 'ezvm-0.1.0/manifests/ubuntu-noble-amd64.json',
+                'ezvm-0.1.0/tools/qemu-whpx/README.md',
+                'ezvm-0.1.0/tools/qemu-whpx/build-manifest.json',
+                'ezvm-0.1.0/tools/qemu-whpx/runtime-sources.json',
+                'ezvm-0.1.0/tools/qemu-whpx/upstream.patch',
+                'ezvm-0.1.0/tools/qemu-whpx/build.sh',
                 'ezvm-0.1.0/RELEASE-METADATA.json'
             )) {
                 Assert-EzVmTrue -Condition ($names -ccontains $required) -Message ('Release package omitted ' + $required)

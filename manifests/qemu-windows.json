@@ -27,5 +27,74 @@
       "digest": "d54bf805f9f3704d1e8db2fa3498ae7ef2df0312b40b558e7c71c734430a665d",
       "sizeBytes": 1664082
     }
+  },
+  "whpxResetOverlay": {
+    "version": "11.1.2",
+    "expectedVersionPrefix": "11.1.2",
+    "artifact": {
+      "url": "https://github.com/techrote/ezvm/releases/download/qemu-whpx-11.1.2-ci-poc-001-r1/qemu-whpx-11.1.2-reset-20261018.zip",
+      "filename": "qemu-whpx-11.1.2-reset-20261018.zip",
+      "digestAlgorithm": "SHA256",
+      "digest": "88b737be44207d379004b7a910cfa319f70733a8409c96b108647cd769e37f97",
+      "sizeBytes": 7515581
+    },
+    "baseProviderDigest": "5bcf9eed634e8575a37b74f445af41a2fe4106da512d0c30c368301d4c105037fdfab40a5287367a28a957624cddebbc8c07e16c88ab6634f554cdf3d16bf543",
+    "basePayloadSha256": "267e20ca9f32fabc62becfd40426ecb3c9407fa9c112c709b11e811336abf8d2",
+    "installedPayloadSha256": "d0c2b26b8423016e66c06b45691f97e01785adca1d01f91ec1e42648488ea086",
+    "qemuSourceCommit": "9866111e7605d9776939c26ced6e090cb7d7ec20",
+    "qemuSourceTree": "94d28970e0ee00333cd763111e8ebaf571ffcc27",
+    "buildManifestSha256": "dd8aa663b56374134cf094370a13aa518d4a0de7d910cc56a3dd77472a771f5b",
+    "files": [
+      {
+        "name": "libglib-2.0-0.dll",
+        "sizeBytes": 1568604,
+        "sha256": "3a1abec0184b238db54399cb9243393d9436d96b8fdb9bd9f2875da207c5b458"
+      },
+      {
+        "name": "libiconv-2.dll",
+        "sizeBytes": 1141951,
+        "sha256": "94ec68fb8d342b6c91b6b48a8d95092819cdcd006a7166e0b68062f946afd08a"
+      },
+      {
+        "name": "libintl-8.dll",
+        "sizeBytes": 298164,
+        "sha256": "0e5a178731e6be6d115442a6ade3df7f03265cd1fc4338f8b6f86a8001cbf582"
+      },
+      {
+        "name": "libpcre2-8-0.dll",
+        "sizeBytes": 706022,
+        "sha256": "1f609cde2ce432efb7d2b0c7b84a14a6dbfc9622d1ac1a3cbadf51c5b0b4dada"
+      },
+      {
+        "name": "libslirp-0.dll",
+        "sizeBytes": 214158,
+        "sha256": "4b547f2324ddba5bf5222ea31530b621e8ca7baf4884c5c52059aa88b64af782"
+      },
+      {
+        "name": "libwinpthread-1.dll",
+        "sizeBytes": 68731,
+        "sha256": "a5df05bf091bc2ba0a89f83a60d2049e9d434bb9631fec82faf20ff64a53456a"
+      },
+      {
+        "name": "libzstd.dll",
+        "sizeBytes": 1217412,
+        "sha256": "48368ab0ca622d0ec12f41ce85d91f22866bf5da92c77a69a06483564c93816c"
+      },
+      {
+        "name": "qemu-img.exe",
+        "sizeBytes": 2249911,
+        "sha256": "7f99b290e71ca667ab42537b807ed33249d0e942b61cf43db842332ac27f9c68"
+      },
+      {
+        "name": "qemu-system-x86_64.exe",
+        "sizeBytes": 27596564,
+        "sha256": "e393972f000c4fe92e137d7b48d7d8bdeae3fe9595dceab611b1f5e21f373eb2"
+      },
+      {
+        "name": "zlib1.dll",
+        "sizeBytes": 127291,
+        "sha256": "11cd91171765cd65f1c3362e3df67e5f5a618a6b88c8cdec899b802eaf1c7b0d"
+      }
+    ]
   }
 }

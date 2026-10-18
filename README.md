@@ -8,6 +8,12 @@ Start with [Getting started](docs/GETTING-STARTED.md). Release evidence and know
 
 **This source reports ezvm v0.1.0.** The dependency-ordered EZVM-001 through EZVM-011 implementation stack is accepted; EZVM-012 defines final packaging and end-to-end release qualification. A published v0.1.0 release additionally requires the exact-source automated and real gates documented below. The checkout has reviewed QEMU/7-Zip manifests, repository-local verified runtime bootstrap, `doctor`, reproducible prepared-base construction, authenticated coding READY, safe reset/clone/export/import, cold portability, bounded recovery diagnostics, and automated tests under Windows PowerShell 5.1 and PowerShell 7.
 
+The CI-PoC source pins a checked QEMU 11.1.2 WHPX reset overlay on the original
+provider's firmware/resources. Bootstrap verifies its separate artifact and the
+entire installed payload. The reset fix activates automatically on supported
+native Windows 11 x64 hosts; Windows 10 retains the legacy path and remains
+physically unmeasured with this binary. See [build and provenance details](tools/qemu-whpx/README.md).
+
 The commands available on this branch are:
 
 ~~~powershell

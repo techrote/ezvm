@@ -61,9 +61,9 @@ function Get-EzVmQemuManifest {
     $paths = Get-EzVmPaths -Root $Root
     if (-not $PSBoundParameters.ContainsKey('ManifestPath')) { $ManifestPath = $paths.QemuManifest }
     $manifest = Read-EzVmJson -Path $ManifestPath -SchemaVersion 1
-    Assert-EzVmQemuManifestFields -Value $manifest -Expected @(
-        'schemaVersion', 'provider', 'qemu', 'extractor'
-    ) -Description 'QEMU manifest'
+    $rootFields = @('schemaVersion', 'provider', 'qemu', 'extractor')
+    if ($null -ne $manifest.PSObject.Properties['whpxResetOverlay']) { $rootFields += 'whpxResetOverlay' }
+    Assert-EzVmQemuManifestFields -Value $manifest -Expected $rootFields -Description 'QEMU manifest'
     Assert-EzVmQemuManifestString -Value $manifest.provider -Description "QEMU manifest field 'provider'"
 
     Assert-EzVmQemuManifestFields -Value $manifest.qemu -Expected @(
@@ -91,6 +91,9 @@ function Get-EzVmQemuManifest {
     Assert-EzVmQemuManifestString -Value $manifest.extractor.version -Description "7-Zip extractor field 'version'"
     Assert-EzVmQemuArtifactDescriptor -Artifact $manifest.extractor.bootstrap -Description '7-Zip bootstrap extractor' -RequiredAlgorithm 'SHA256' -RequiredHost 'github.com'
     Assert-EzVmQemuArtifactDescriptor -Artifact $manifest.extractor.package -Description '7-Zip full package' -RequiredAlgorithm 'SHA256' -RequiredHost 'github.com'
+    if ($null -ne $manifest.PSObject.Properties['whpxResetOverlay']) {
+        Assert-EzVmQemuOverlayManifest -Overlay $manifest.whpxResetOverlay -Manifest $manifest
+    }
     return $manifest
 }
 
@@ -207,6 +210,7 @@ function Get-EzVmManagedQemuStatus {
     $paths = Get-EzVmPaths -Root $Root
     if (-not $PSBoundParameters.ContainsKey('ManifestPath')) { $ManifestPath = $paths.QemuManifest }
     if ($null -eq $Manifest) { $Manifest = Get-EzVmQemuManifest -Root $Root -ManifestPath $ManifestPath }
+    $expectedVersion = Get-EzVmEffectiveQemuVersionPrefix -Manifest $Manifest
     $provenancePath = Join-Path $paths.Qemu 'ezvm-provenance.json'
     $systemPath = Join-Path $paths.Qemu 'qemu-system-x86_64.exe'
     $imgPath = Join-Path $paths.Qemu 'qemu-img.exe'
@@ -218,7 +222,7 @@ function Get-EzVmManagedQemuStatus {
     try {
         Assert-EzVmQemuPayloadIntegrity -RuntimeDirectory $paths.Qemu -ManifestPath $ManifestPath
         if ($null -ne $PayloadProbe) {
-            $probe = & $PayloadProbe $paths.Qemu $Manifest.qemu.expectedVersionPrefix
+            $probe = & $PayloadProbe $paths.Qemu $expectedVersion
             if ($null -eq $probe -or -not $probe.QemuSystemVersion -or -not $probe.QemuImgVersion) {
                 return [pscustomobject][ordered]@{ Valid = $false; Reason = 'Managed QEMU fixture probe did not return version evidence.'; QemuSystem = $systemPath; QemuImg = $imgPath }
             }
@@ -228,8 +232,8 @@ function Get-EzVmManagedQemuStatus {
         else {
             $system = Invoke-EzVmProcess -FilePath $systemPath -ArgumentList @('--version') -WorkingDirectory $paths.Qemu -TimeoutSeconds 30 -ThrowOnError
             $image = Invoke-EzVmProcess -FilePath $imgPath -ArgumentList @('--version') -WorkingDirectory $paths.Qemu -TimeoutSeconds 30 -ThrowOnError
-            if ($system.StdOut -notmatch ('(?m)^QEMU emulator version\s+' + [regex]::Escape($Manifest.qemu.expectedVersionPrefix)) -or
-                $image.StdOut -notmatch ('(?m)^qemu-img version\s+' + [regex]::Escape($Manifest.qemu.expectedVersionPrefix))) {
+            if ($system.StdOut -notmatch ('(?m)^QEMU emulator version\s+' + [regex]::Escape($expectedVersion) + '(?:\s|\()') -or
+                $image.StdOut -notmatch ('(?m)^qemu-img version\s+' + [regex]::Escape($expectedVersion) + '(?:\s|\()')) {
                 return [pscustomobject][ordered]@{ Valid = $false; Reason = 'Managed QEMU executable versions do not match the reviewed manifest.'; QemuSystem = $systemPath; QemuImg = $imgPath }
             }
             $systemVersion = ($system.StdOut -split '\r?\n')[0]
@@ -320,6 +324,9 @@ function Install-EzVmQemuRuntime {
         $manifestArguments = @{ Root = $Root }
         if ($PSBoundParameters.ContainsKey('ManifestPath')) { $manifestArguments.ManifestPath = $ManifestPath }
         $manifest = Get-EzVmQemuManifest @manifestArguments
+        $overlay = Get-EzVmQemuOverlay -Manifest $manifest
+        $expectedVersion = Get-EzVmEffectiveQemuVersionPrefix -Manifest $manifest
+        $effectiveVersion = Get-EzVmEffectiveQemuVersion -Manifest $manifest
         if (-not $PSBoundParameters.ContainsKey('ManifestPath')) { $ManifestPath = $paths.QemuManifest }
         $manifestDigest = Get-EzVmFileDigest -Path $ManifestPath -Algorithm SHA256
 
@@ -331,7 +338,7 @@ function Install-EzVmQemuRuntime {
                 runtimePath = $paths.Qemu
                 qemuSystem = $installed.QemuSystem
                 qemuImg = $installed.QemuImg
-                version = $manifest.qemu.version
+                version = $effectiveVersion
                 providerBuild = $manifest.qemu.providerBuild
                 downloaded = $false
                 idempotent = $true
@@ -365,12 +372,20 @@ function Install-EzVmQemuRuntime {
         $qemuArtifact = Acquire-EzVmQemuArtifact $manifest.qemu
         $bootstrapArtifact = Acquire-EzVmQemuArtifact $manifest.extractor.bootstrap
         $packageArtifact = Acquire-EzVmQemuArtifact $manifest.extractor.package
+        $overlayArtifact = $null; $overlayDownloaded = $false
+        if ($null -ne $overlay) {
+            $overlayArtifact = Acquire-EzVmQemuArtifact $overlay.artifact
+            $overlayDownloaded = [bool]$overlayArtifact.Downloaded
+        }
 
         $extractorStage = Join-Path $paths.Runtime ('.qemu-extractor-' + [Guid]::NewGuid().ToString('N'))
         $qemuStage = Join-Path $paths.Runtime ('.qemu-stage-' + [Guid]::NewGuid().ToString('N'))
+        $overlayStage = Join-Path $paths.Runtime ('.qemu-overlay-' + [Guid]::NewGuid().ToString('N'))
         $artifactHandles = New-Object 'System.Collections.Generic.List[object]'
         try {
-            foreach ($pair in @(@($qemuArtifact, $manifest.qemu), @($bootstrapArtifact, $manifest.extractor.bootstrap), @($packageArtifact, $manifest.extractor.package))) {
+            $artifactPairs = @(@($qemuArtifact, $manifest.qemu), @($bootstrapArtifact, $manifest.extractor.bootstrap), @($packageArtifact, $manifest.extractor.package))
+            if ($null -ne $overlayArtifact) { $artifactPairs += ,@($overlayArtifact, $overlay.artifact) }
+            foreach ($pair in $artifactPairs) {
                 $artifactPath = Assert-EzVmSafePath -Path $pair[0].Path -Description 'Verified acquisition input'
                 $artifactHandles.Add([IO.File]::Open($artifactPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read))
                 if ((Get-EzVmFileDigest -Path $artifactPath -Algorithm $pair[1].digestAlgorithm) -cne $pair[1].digest -or (Get-Item -LiteralPath $artifactPath -Force).Length -ne [long]$pair[1].sizeBytes) {
@@ -396,20 +411,26 @@ function Install-EzVmQemuRuntime {
                 throw 'QEMU extraction did not produce the required managed executables.'
             }
 
-            $inventoryDigest = Write-EzVmQemuPayloadInventory -RuntimeDirectory $qemuStage -ManifestDigest $manifestDigest
+            if ($null -ne $overlay) {
+                Expand-EzVmQemuOverlay -ArchivePath $overlayArtifact.Path -Destination $overlayStage -Overlay $overlay
+                Install-EzVmQemuOverlayFiles -ProviderStage $qemuStage -OverlayStage $overlayStage -Overlay $overlay
+            }
+            $inventoryArguments = @{RuntimeDirectory=$qemuStage;ManifestDigest=$manifestDigest}
+            if ($null -ne $overlay) { $inventoryArguments.ExpectedCanonicalDigest = $overlay.installedPayloadSha256 }
+            $inventoryDigest = Write-EzVmQemuPayloadInventory @inventoryArguments
             if ($null -ne $PayloadProbe) {
-                $probe = & $PayloadProbe $qemuStage $manifest.qemu.expectedVersionPrefix
+                $probe = & $PayloadProbe $qemuStage $expectedVersion
             }
             else {
-                $probe = Test-EzVmQemuPayload -Root $qemuStage -ExpectedVersionPrefix $manifest.qemu.expectedVersionPrefix
+                $probe = Test-EzVmQemuPayload -Root $qemuStage -ExpectedVersionPrefix $expectedVersion
             }
             if ($null -eq $probe -or -not $probe.QemuSystemVersion -or -not $probe.QemuImgVersion) {
                 throw 'QEMU payload probe did not return validated version evidence.'
             }
 
-            if ([string]$probe.QemuSystemVersion -notmatch [regex]::Escape($manifest.qemu.expectedVersionPrefix) -or
-                [string]$probe.QemuImgVersion -notmatch [regex]::Escape($manifest.qemu.expectedVersionPrefix)) {
-                throw "QEMU payload probe did not confirm reviewed version prefix '$($manifest.qemu.expectedVersionPrefix)'."
+            if ([string]$probe.QemuSystemVersion -notmatch [regex]::Escape($expectedVersion) -or
+                [string]$probe.QemuImgVersion -notmatch [regex]::Escape($expectedVersion)) {
+                throw "QEMU payload probe did not confirm reviewed version prefix '$expectedVersion'."
             }
 
             $provenance = [pscustomobject][ordered]@{
@@ -417,7 +438,7 @@ function Install-EzVmQemuRuntime {
                 payloadManifestSha256 = $inventoryDigest
                 manifestSha256 = $manifestDigest
                 provider = $manifest.provider
-                qemuVersion = $manifest.qemu.version
+                qemuVersion = $effectiveVersion
                 providerBuild = $manifest.qemu.providerBuild
                 qemuUrl = $manifest.qemu.url
                 qemuFilename = $manifest.qemu.filename
@@ -434,6 +455,15 @@ function Install-EzVmQemuRuntime {
                 qemuImgVersion = [string]$probe.QemuImgVersion
                 bootstrappedAt = [DateTime]::UtcNow.ToString('o')
             }
+            if ($null -ne $overlay) {
+                $provenance | Add-Member -NotePropertyName whpxResetOverlay -NotePropertyValue ([pscustomobject]@{
+                    artifactSha256 = $overlayArtifact.Digest
+                    basePayloadSha256 = $overlay.basePayloadSha256
+                    qemuSourceCommit = $overlay.qemuSourceCommit
+                    qemuSourceTree = $overlay.qemuSourceTree
+                    buildManifestSha256 = $overlay.buildManifestSha256
+                })
+            }
             Write-EzVmJson -Path (Join-Path $qemuStage 'ezvm-provenance.json') -Value $provenance -SchemaVersion 1
 
             Assert-EzVmQemuPayloadIntegrity -RuntimeDirectory $qemuStage -ManifestPath $ManifestPath
@@ -443,19 +473,21 @@ function Install-EzVmQemuRuntime {
                 runtimePath = $paths.Qemu
                 qemuSystem = Join-Path $paths.Qemu 'qemu-system-x86_64.exe'
                 qemuImg = Join-Path $paths.Qemu 'qemu-img.exe'
-                version = $manifest.qemu.version
+                version = $effectiveVersion
                 providerBuild = $manifest.qemu.providerBuild
-                downloaded = [bool]($qemuArtifact.Downloaded -or $bootstrapArtifact.Downloaded -or $packageArtifact.Downloaded)
+                downloaded = [bool]($qemuArtifact.Downloaded -or $bootstrapArtifact.Downloaded -or $packageArtifact.Downloaded -or $overlayDownloaded)
                 idempotent = $false
             }
         }
         finally {
             foreach ($handle in $artifactHandles) { $handle.Dispose() }
-            foreach ($stage in @($extractorStage, $qemuStage)) {
+            $cleanupFailure = $null
+            foreach ($stage in @($extractorStage, $qemuStage, $overlayStage)) {
                 if (Test-Path -LiteralPath $stage) {
-                    try { Remove-EzVmSafeTree -Path $stage } catch { }
+                    try { Remove-EzVmSafeTree -Path $stage } catch { if ($null -eq $cleanupFailure) { $cleanupFailure = $_ } }
                 }
             }
+            if ($null -ne $cleanupFailure) { throw $cleanupFailure }
         }
     }
     finally { $lock.Dispose() }

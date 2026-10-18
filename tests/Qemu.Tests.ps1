@@ -115,6 +115,11 @@ Add-EzVmTest -Name 'QEMU: checked-in manifest pins reviewed provider artifacts e
     Assert-EzVmEqual -Actual $manifest.extractor.version -Expected '26.04'
     Assert-EzVmEqual -Actual $manifest.extractor.bootstrap.digest -Expected '256feca8e274e5da655e2a284fabafd9f554365eb164862089dacd4e8276d282'
     Assert-EzVmEqual -Actual $manifest.extractor.package.digest -Expected 'd54bf805f9f3704d1e8db2fa3498ae7ef2df0312b40b558e7c71c734430a665d'
+    Assert-EzVmEqual -Actual $manifest.whpxResetOverlay.version -Expected '11.1.2'
+    Assert-EzVmEqual -Actual $manifest.whpxResetOverlay.artifact.digest -Expected '88b737be44207d379004b7a910cfa319f70733a8409c96b108647cd769e37f97'
+    Assert-EzVmEqual -Actual $manifest.whpxResetOverlay.qemuSourceCommit -Expected '9866111e7605d9776939c26ced6e090cb7d7ec20'
+    Assert-EzVmEqual -Actual $manifest.whpxResetOverlay.qemuSourceTree -Expected '94d28970e0ee00333cd763111e8ebaf571ffcc27'
+    Assert-EzVmEqual -Actual $manifest.whpxResetOverlay.files.Count -Expected 10
 }
 
 $qemuWindowsSkip = $null

@@ -1,0 +1,551 @@
+diff --git a/accel/accel-system.c b/accel/accel-system.c
+index 9176665..39e7aaf 100644
+--- a/accel/accel-system.c
++++ b/accel/accel-system.c
+@@ -76,6 +76,16 @@ void accel_pre_resume(MachineState *ms, bool step_pending)
+     }
+ }
+ 
++void accel_pre_reset(MachineState *ms)
++{
++    AccelState *accel = ms->accelerator;
++    AccelClass *acc = ACCEL_GET_CLASS(accel);
++
++    if (acc->pre_reset_vm) {
++        acc->pre_reset_vm(accel);
++    }
++}
++
+ /* initialize the arch-independent accel operation interfaces */
+ void accel_init_ops_interfaces(AccelClass *ac)
+ {
+diff --git a/accel/whpx/meson.build b/accel/whpx/meson.build
+index fad28dd..0448c5f 100644
+--- a/accel/whpx/meson.build
++++ b/accel/whpx/meson.build
+@@ -1,7 +1,8 @@
+ whpx_ss = ss.source_set()
+ whpx_ss.add(files(
+   'whpx-accel-ops.c',
+-  'whpx-common.c'
++  'whpx-common.c',
++  'whpx-reset.c'
+ ))
+ 
+ specific_ss.add_all(when: 'CONFIG_WHPX', if_true: whpx_ss)
+diff --git a/accel/whpx/whpx-common.c b/accel/whpx/whpx-common.c
+index 247e12d..519d751 100644
+--- a/accel/whpx/whpx-common.c
++++ b/accel/whpx/whpx-common.c
+@@ -547,6 +547,7 @@ static void whpx_accel_instance_init(Object *obj)
+     struct whpx_state *whpx = &whpx_global;
+ 
+     memset(whpx, 0, sizeof(struct whpx_state));
++    whpx_reset_policy_init(&whpx->reset_policy);
+     /* Turn on kernel-irqchip, by default */
+     whpx->kernel_irqchip_allowed = true;
+ 
+diff --git a/accel/whpx/whpx-reset.c b/accel/whpx/whpx-reset.c
+new file mode 100644
+index 0000000..bf69afb
+--- /dev/null
++++ b/accel/whpx/whpx-reset.c
+@@ -0,0 +1,74 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++#include "qemu/osdep.h"
++#include "qemu/error-report.h"
++#include "system/whpx-reset.h"
++
++bool whpx_reset_host_supported(bool queried, unsigned major, unsigned minor,
++                               unsigned build, unsigned product, bool x64)
++{
++    return queried && x64 && major == 10 && minor == 0 && build >= 22000 &&
++           product == VER_NT_WORKSTATION;
++}
++
++bool whpx_reset_query_supported_host(void)
++{
++    typedef LONG (WINAPI *RtlGetVersionFn)(OSVERSIONINFOEXW *);
++    HMODULE module = GetModuleHandleW(L"ntdll.dll");
++    RtlGetVersionFn get_version = module ?
++        (RtlGetVersionFn)GetProcAddress(module, "RtlGetVersion") : NULL;
++    OSVERSIONINFOEXW version = { .dwOSVersionInfoSize = sizeof(version) };
++    SYSTEM_INFO system_info = {0};
++    bool x64 = false;
++    bool queried;
++
++    GetNativeSystemInfo(&system_info);
++#if defined(_WIN64) && defined(__x86_64__)
++    x64 = system_info.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64;
++#endif
++    queried = get_version && get_version(&version) == 0;
++    return whpx_reset_host_supported(queried,
++                                     version.dwMajorVersion,
++                                     version.dwMinorVersion,
++                                     version.dwBuildNumber,
++                                     version.wProductType, x64);
++}
++
++WhpxResetPolicy whpx_select_reset_policy(OnOffAuto requested,
++                                         bool supported_host,
++                                         bool export_present)
++{
++    if (requested != ON_OFF_AUTO_OFF && requested != ON_OFF_AUTO_AUTO &&
++        requested != ON_OFF_AUTO_ON) {
++        return WHPX_RESET_UNSUPPORTED;
++    }
++    if (requested == ON_OFF_AUTO_OFF) {
++        return WHPX_RESET_LEGACY;
++    }
++    if (supported_host && export_present) {
++        return WHPX_RESET_PARTITION;
++    }
++    return requested == ON_OFF_AUTO_ON ? WHPX_RESET_UNSUPPORTED :
++                                        WHPX_RESET_LEGACY;
++}
++
++void whpx_reset_partition_or_exit(WHV_PARTITION_HANDLE partition,
++                                  WhpxResetPartitionFn reset,
++                                  bool all_vps_stopped)
++{
++    HRESULT hr;
++
++    if (!all_vps_stopped) {
++        error_report("WHPX: partition reset refused: virtual processors running");
++        exit(EXIT_FAILURE);
++    }
++    if (!reset) {
++        error_report("WHPX: partition reset requires WHvResetPartition");
++        exit(EXIT_FAILURE);
++    }
++    hr = reset(partition);
++    if (hr != S_OK) {
++        error_report("WHPX: partition reset failed, hr=%08lx", hr);
++        exit(EXIT_FAILURE);
++    }
++    info_report("WHPX: partition reset completed, hr=00000000");
++}
+diff --git a/include/accel/accel-ops.h b/include/accel/accel-ops.h
+index 9f3f329..1ff76c1 100644
+--- a/include/accel/accel-ops.h
++++ b/include/accel/accel-ops.h
+@@ -34,6 +34,8 @@ struct AccelClass {
+ 
+     /* system related hooks */
+     void (*setup_post)(AccelState *as);
++    /* All VPs stopped and synchronized; before board/device reset. */
++    void (*pre_reset_vm)(AccelState *as);
+     void (*pre_resume_vm)(AccelState *as, bool step_pending);
+     bool (*has_memory)(AccelState *accel, AddressSpace *as,
+                        hwaddr start_addr, hwaddr size);
+diff --git a/include/qemu/accel.h b/include/qemu/accel.h
+index 6f65f1c..4bd5871 100644
+--- a/include/qemu/accel.h
++++ b/include/qemu/accel.h
+@@ -53,6 +53,7 @@ int accel_init_machine(AccelState *accel, MachineState *ms);
+ void accel_setup_post(MachineState *ms);
+ 
+ void accel_pre_resume(MachineState *ms, bool step_pending);
++void accel_pre_reset(MachineState *ms);
+ 
+ /**
+  * accel_cpu_instance_init:
+diff --git a/include/system/whpx-internal.h b/include/system/whpx-internal.h
+index c295c5a..aee6cff 100644
+--- a/include/system/whpx-internal.h
++++ b/include/system/whpx-internal.h
+@@ -6,6 +6,7 @@
+ #include <winhvplatform.h>
+ #include "hw/i386/apic.h"
+ #include "exec/vaddr.h"
++#include "system/whpx-reset.h"
+ 
+ typedef enum WhpxBreakpointState {
+     WHPX_BP_CLEARED = 0,
+@@ -51,6 +52,7 @@ struct whpx_state {
+ 
+     bool ignore_unknown_msr;
+     bool intercept_msr_gp;
++    WhpxResetState reset_policy;
+ };
+ 
+ extern struct whpx_state whpx_global;
+diff --git a/include/system/whpx-reset.h b/include/system/whpx-reset.h
+new file mode 100644
+index 0000000..65c8ec2
+--- /dev/null
++++ b/include/system/whpx-reset.h
+@@ -0,0 +1,61 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++#ifndef SYSTEM_WHPX_RESET_H
++#define SYSTEM_WHPX_RESET_H
++
++#include <winhvplatform.h>
++#include "system/whpx-common.h"
++#include "qapi/qapi-types-common.h"
++
++typedef enum WhpxResetPolicy {
++    WHPX_RESET_UNSUPPORTED = -1,
++    WHPX_RESET_LEGACY = 0,
++    WHPX_RESET_PARTITION = 1,
++} WhpxResetPolicy;
++
++typedef struct WhpxResetState {
++    OnOffAuto requested;
++    WhpxResetPolicy effective;
++    bool frozen;
++} WhpxResetState;
++
++static inline void whpx_reset_policy_init(WhpxResetState *state)
++{
++    state->requested = ON_OFF_AUTO_AUTO;
++    state->effective = WHPX_RESET_LEGACY;
++    state->frozen = false;
++}
++
++static inline bool whpx_reset_policy_set(WhpxResetState *state, OnOffAuto value)
++{
++    if (state->frozen || (value != ON_OFF_AUTO_AUTO &&
++                          value != ON_OFF_AUTO_ON && value != ON_OFF_AUTO_OFF)) {
++        return false;
++    }
++    state->requested = value;
++    return true;
++}
++
++bool whpx_reset_host_supported(bool queried, unsigned major, unsigned minor,
++                               unsigned build, unsigned product, bool x64);
++bool whpx_reset_query_supported_host(void);
++WhpxResetPolicy whpx_select_reset_policy(OnOffAuto requested,
++                                         bool supported_host,
++                                         bool export_present);
++
++typedef HRESULT (WINAPI *WhpxResetPartitionFn)(WHV_PARTITION_HANDLE);
++
++/* Never return to board reset or CPU resume on an uncertain partition reset. */
++void whpx_reset_partition_or_exit(WHV_PARTITION_HANDLE partition,
++                                  WhpxResetPartitionFn reset,
++                                  bool all_vps_stopped);
++
++static inline void whpx_reset_cpu_cache(struct AccelCPUState *vcpu)
++{
++    vcpu->window_registered = false;
++    vcpu->window_priority = 0;
++    vcpu->interruption_pending = false;
++    vcpu->ready_for_pic_interrupt = false;
++    vcpu->interruptable = true;
++}
++
++#endif
+diff --git a/scripts/symlink-install-tree.py b/scripts/symlink-install-tree.py
+index b725638..8eb9210 100644
+--- a/scripts/symlink-install-tree.py
++++ b/scripts/symlink-install-tree.py
+@@ -8,6 +8,12 @@
+ import subprocess
+ import sys
+ 
++# This private diagnostic build uses explicit data paths and a staged install.
++# The optional development bundle needs Windows symlink privilege; do not change
++# host policy merely to create that convenience tree.
++if os.name == 'nt':
++    sys.exit(0)
++
+ def destdir_join(d1: str, d2: str) -> str:
+     if not d1:
+         return d2
+diff --git a/system/runstate.c b/system/runstate.c
+index 08acf80..fc228be 100644
+--- a/system/runstate.c
++++ b/system/runstate.c
+@@ -523,6 +523,13 @@ void qemu_system_reset(ShutdownCause reason)
+ 
+     cpu_synchronize_all_states();
+ 
++    if (current_machine &&
++        (reason == SHUTDOWN_CAUSE_GUEST_RESET ||
++         reason == SHUTDOWN_CAUSE_HOST_QMP_SYSTEM_RESET)) {
++        /* Preserve newly programmed APIC/device state by resetting first. */
++        accel_pre_reset(current_machine);
++    }
++
+     switch (reason) {
+     case SHUTDOWN_CAUSE_SNAPSHOT_LOAD:
+         type = RESET_TYPE_SNAPSHOT_LOAD;
+diff --git a/target/i386/whpx/whpx-all.c b/target/i386/whpx/whpx-all.c
+index 113f79a..af242f1 100644
+--- a/target/i386/whpx/whpx-all.c
++++ b/target/i386/whpx/whpx-all.c
+@@ -40,6 +40,7 @@
+ #include "system/whpx-accel-ops.h"
+ #include "system/whpx-all.h"
+ #include "system/whpx-common.h"
++#include "system/whpx-reset.h"
+ #include "whpx-i386.h"
+ 
+ #include "emulate/x86_decode.h"
+@@ -3008,8 +3009,48 @@ static void whpx_set_ssd(Object *obj, Visitor *v,
+ }
+ 
+ 
++static void whpx_set_partition_reset(Object *obj, Visitor *v, const char *name,
++                                     void *opaque, Error **errp)
++{
++    OnOffAuto value;
++
++    if (!visit_type_OnOffAuto(v, name, &value, errp)) {
++        return;
++    }
++    if (!whpx_reset_policy_set(&whpx_global.reset_policy, value)) {
++        error_setg(errp, "WHPX: partition reset policy is fixed after initialization");
++    }
++}
++
++static void whpx_pre_reset_vm(AccelState *as)
++{
++    CPUState *cpu;
++    bool stopped;
++
++    if (whpx_global.reset_policy.effective == WHPX_RESET_LEGACY) {
++        return;
++    }
++    stopped = qatomic_read(&whpx_global.running_cpus) == 0;
++
++    CPU_FOREACH(cpu) {
++        stopped = stopped && cpu_is_stopped(cpu);
++    }
++    whpx_reset_partition_or_exit(whpx_global.partition,
++                                whp_dispatch.WHvResetPartition, stopped);
++    CPU_FOREACH(cpu) {
++        whpx_reset_cpu_cache(cpu->accel);
++    }
++}
++
+ void whpx_arch_accel_class_init(ObjectClass *oc)
+ {
++    AccelClass *ac = ACCEL_CLASS(oc);
++
++    ac->pre_reset_vm = whpx_pre_reset_vm;
++    object_class_property_add(oc, "partition-reset", "OnOffAuto",
++        NULL, whpx_set_partition_reset, NULL, NULL);
++    object_class_property_set_description(oc, "partition-reset",
++        "Reset the WHPX partition before board reset (auto: supported Windows 11 x64 hosts)");
+     object_class_property_add(oc, "ignore-unknown-msr", "OnOffAuto",
+         NULL, whpx_set_unknown_msr,
+         NULL, NULL);
+@@ -3058,6 +3099,26 @@ int whpx_accel_init(AccelState *as, MachineState *ms)
+         goto error;
+     }
+ 
++    {
++        bool supported_host = whpx_reset_query_supported_host();
++        bool export_present = whp_dispatch.WHvResetPartition != NULL;
++
++        whpx->reset_policy.effective = whpx_select_reset_policy(whpx->reset_policy.requested,
++                                                      supported_host,
++                                                      export_present);
++        whpx->reset_policy.frozen = true;
++        if (whpx->reset_policy.effective == WHPX_RESET_UNSUPPORTED) {
++            error_report("WHPX: partition reset requires Windows 11 x64 client and WHvResetPartition");
++            ret = -ENOSYS;
++            goto error;
++        }
++        info_report("WHPX: partition reset policy requested=%s effective=%s host-supported=%s export=%s",
++                    OnOffAuto_str(whpx->reset_policy.requested),
++                    whpx->reset_policy.effective == WHPX_RESET_PARTITION ? "partition" : "legacy",
++                    supported_host ? "yes" : "no",
++                    export_present ? "present" : "absent");
++    }
++
+     /* for isapc, disable Hyper-V enlightenments and LAPIC */
+     if (!strcmp(MACHINE_GET_CLASS(ms)->name, "isapc")) {
+         whpx->kernel_irqchip_allowed = false;
+diff --git a/tests/unit/meson.build b/tests/unit/meson.build
+index 885df4c..8656fe6 100644
+--- a/tests/unit/meson.build
++++ b/tests/unit/meson.build
+@@ -175,6 +175,9 @@ if have_ga and host_os == 'linux'
+ endif
+ 
+ test_env = environment()
++if 'CONFIG_WHPX' in accelerators
++  tests += {'test-whpx-reset': ['../../accel/whpx/whpx-reset.c']}
++endif
+ test_env.set('G_TEST_SRCDIR', meson.current_source_dir())
+ test_env.set('G_TEST_BUILDDIR', meson.current_build_dir())
+ 
+diff --git a/tests/unit/test-whpx-reset.c b/tests/unit/test-whpx-reset.c
+new file mode 100644
+index 0000000..247f59c
+--- /dev/null
++++ b/tests/unit/test-whpx-reset.c
+@@ -0,0 +1,169 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++#include "qemu/osdep.h"
++#include "system/whpx-reset.h"
++
++static HRESULT mock_result;
++static unsigned mock_calls;
++
++static HRESULT WINAPI mock_reset(WHV_PARTITION_HANDLE partition)
++{
++    g_assert(partition == (WHV_PARTITION_HANDLE)(uintptr_t)0x1234);
++    mock_calls++;
++    g_assert_cmpuint(mock_calls, ==, 1);
++    if (g_test_subprocess()) {
++        g_print("RESET_API_CALLED\n");
++    }
++    return mock_result;
++}
++
++static void test_success(void)
++{
++    mock_result = S_OK;
++    mock_calls = 0;
++    whpx_reset_partition_or_exit((WHV_PARTITION_HANDLE)(uintptr_t)0x1234,
++                                mock_reset, true);
++    g_assert_cmpuint(mock_calls, ==, 1);
++}
++
++static void test_fatal(gconstpointer data)
++{
++    intptr_t scenario = (intptr_t)data;
++
++    if (g_test_subprocess()) {
++        mock_result = scenario == 2 ? S_FALSE :
++                      scenario == 3 ? HRESULT_FROM_WIN32(ERROR_INVALID_STATE) :
++                      E_FAIL;
++        whpx_reset_partition_or_exit((WHV_PARTITION_HANDLE)(uintptr_t)0x1234,
++                                    scenario == 0 ? NULL : mock_reset,
++                                    scenario != 1);
++        g_print("RESET_RETURNED_TO_RESUME\n");
++        return;
++    }
++    g_test_trap_subprocess(NULL, 5000000, 0);
++    g_test_trap_assert_failed();
++    g_test_trap_assert_stdout_unmatched("*RESET_RETURNED_TO_RESUME*");
++    g_test_trap_assert_stderr("*WHPX: partition reset*");
++    if (scenario < 2) {
++        g_test_trap_assert_stdout_unmatched("*RESET_API_CALLED*");
++        g_test_trap_assert_stderr(scenario == 0 ? "*requires WHvResetPartition*" :
++                                                "*virtual processors running*");
++    } else {
++        g_test_trap_assert_stdout("*RESET_API_CALLED*");
++        g_test_trap_assert_stderr(scenario == 2 ? "*hr=00000001*" :
++                                 scenario == 3 ? "*hr=8007139f*" :
++                                                 "*hr=80004005*");
++    }
++}
++
++static void test_cache(void)
++{
++    struct AccelCPUState vcpu;
++    WHV_RUN_VP_EXIT_CONTEXT original_exit;
++
++    memset(&vcpu, 0xa5, sizeof(vcpu));
++    vcpu.window_registered = true;
++    vcpu.window_priority = 99;
++    vcpu.interruption_pending = true;
++    vcpu.ready_for_pic_interrupt = true;
++    vcpu.interruptable = false;
++    vcpu.tpr = 0x77;
++    memcpy(&original_exit, &vcpu.exit_ctx, sizeof(original_exit));
++    whpx_reset_cpu_cache(&vcpu);
++    g_assert_false(vcpu.window_registered);
++    g_assert_cmpint(vcpu.window_priority, ==, 0);
++    g_assert_false(vcpu.interruption_pending);
++    g_assert_false(vcpu.ready_for_pic_interrupt);
++    g_assert_true(vcpu.interruptable);
++    g_assert_cmpuint(vcpu.tpr, ==, 0x77);
++    g_assert(memcmp(&vcpu.exit_ctx, &original_exit, sizeof(original_exit)) == 0);
++}
++
++static void test_policy_default(void)
++{
++    WhpxResetState state;
++
++    memset(&state, 0xa5, sizeof(state));
++    whpx_reset_policy_init(&state);
++    g_assert_cmpint(state.requested, ==, ON_OFF_AUTO_AUTO);
++    g_assert_cmpint(state.effective, ==, WHPX_RESET_LEGACY);
++    g_assert_false(state.frozen);
++    /* An absent export with the actual default must preserve legacy behavior. */
++    g_assert_cmpint(whpx_select_reset_policy(state.requested, true, false), ==,
++                    WHPX_RESET_LEGACY);
++}
++
++static void test_host_scope(void)
++{
++    g_assert_true(whpx_reset_host_supported(true, 10, 0, 22000,
++                                             VER_NT_WORKSTATION, true));
++    g_assert_true(whpx_reset_host_supported(true, 10, 0, 26300,
++                                             VER_NT_WORKSTATION, true));
++    g_assert_false(whpx_reset_host_supported(false, 10, 0, 26300,
++                                              VER_NT_WORKSTATION, true));
++    g_assert_false(whpx_reset_host_supported(true, 10, 0, 19041,
++                                              VER_NT_WORKSTATION, true));
++    g_assert_false(whpx_reset_host_supported(true, 10, 0, 21999,
++                                              VER_NT_WORKSTATION, true));
++    g_assert_false(whpx_reset_host_supported(true, 10, 0, 26300,
++                                              VER_NT_SERVER, true));
++    g_assert_false(whpx_reset_host_supported(true, 10, 0, 26300,
++                                              VER_NT_WORKSTATION, false));
++    g_assert_false(whpx_reset_host_supported(true, 6, 3, 26300,
++                                              VER_NT_WORKSTATION, true));
++    g_assert_false(whpx_reset_host_supported(true, 10, 1, 26300,
++                                              VER_NT_WORKSTATION, true));
++}
++
++static void test_policy_modes(void)
++{
++    g_assert_cmpint(whpx_select_reset_policy((OnOffAuto)99, true, true), ==,
++                    WHPX_RESET_UNSUPPORTED);
++    for (int host = 0; host <= 1; host++) {
++        for (int exported = 0; exported <= 1; exported++) {
++            g_assert_cmpint(whpx_select_reset_policy(ON_OFF_AUTO_OFF, host,
++                                                    exported), ==,
++                            WHPX_RESET_LEGACY);
++            g_assert_cmpint(whpx_select_reset_policy(ON_OFF_AUTO_AUTO, host,
++                                                    exported), ==,
++                            host && exported ? WHPX_RESET_PARTITION :
++                                               WHPX_RESET_LEGACY);
++            g_assert_cmpint(whpx_select_reset_policy(ON_OFF_AUTO_ON, host,
++                                                    exported), ==,
++                            host && exported ? WHPX_RESET_PARTITION :
++                                               WHPX_RESET_UNSUPPORTED);
++        }
++    }
++}
++
++static void test_policy_frozen(void)
++{
++    WhpxResetState state;
++
++    whpx_reset_policy_init(&state);
++    g_assert_true(whpx_reset_policy_set(&state, ON_OFF_AUTO_ON));
++    state.effective = WHPX_RESET_PARTITION;
++    state.frozen = true;
++    g_assert_false(whpx_reset_policy_set(&state, ON_OFF_AUTO_OFF));
++    g_assert_cmpint(state.requested, ==, ON_OFF_AUTO_ON);
++    g_assert_cmpint(state.effective, ==, WHPX_RESET_PARTITION);
++    whpx_reset_policy_init(&state);
++    g_assert_false(whpx_reset_policy_set(&state, (OnOffAuto)99));
++    g_assert_cmpint(state.requested, ==, ON_OFF_AUTO_AUTO);
++}
++
++int main(int argc, char **argv)
++{
++    g_test_init(&argc, &argv, NULL);
++    g_test_add_func("/whpx-reset/s-ok-once", test_success);
++    g_test_add_data_func("/whpx-reset/missing-export", (void *)0, test_fatal);
++    g_test_add_data_func("/whpx-reset/vp-running", (void *)1, test_fatal);
++    g_test_add_data_func("/whpx-reset/s-false", (void *)2, test_fatal);
++    g_test_add_data_func("/whpx-reset/invalid-state", (void *)3, test_fatal);
++    g_test_add_data_func("/whpx-reset/e-fail", (void *)4, test_fatal);
++    g_test_add_func("/whpx-reset/cache-only", test_cache);
++    g_test_add_func("/whpx-reset/policy-default", test_policy_default);
++    g_test_add_func("/whpx-reset/host-scope", test_host_scope);
++    g_test_add_func("/whpx-reset/policy-modes", test_policy_modes);
++    g_test_add_func("/whpx-reset/policy-frozen", test_policy_frozen);
++    return g_test_run();
++}
