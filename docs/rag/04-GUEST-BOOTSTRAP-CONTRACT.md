@@ -77,6 +77,12 @@ Build sequence:
 
 cloud-init documents cloud-init clean --machine-id as best practice when preparing a golden image. The implementation must also clean the datasource/seed state required for first-boot instance provisioning.
 
+The base finalizer begins its serial fact block with a newline so an unfinished
+serial login prompt cannot consume the first build-identity marker. Host parsing
+remains anchored to complete marker lines and requires the exact current build ID,
+tool validation, identity cleanup and explicit READY; a prompt or guest prose does
+not grant acceptance.
+
 ## Base provenance manifest
 
 Each prepared base manifest records:

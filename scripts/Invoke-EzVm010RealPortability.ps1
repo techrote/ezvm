@@ -51,6 +51,50 @@ function Invoke-EzVm010Image {
     return $result
 }
 
+function Write-EzVm010BaseDiagnostics {
+    param([string]$DiagnosticRoot)
+    & (Get-Module EzVm) {
+        param($Root)
+        $bases = Assert-EzVmSafePath -Path (Get-EzVmPaths -Root $Root).Bases -Description 'Base diagnostic directory'
+        if (-not (Test-Path -LiteralPath $bases -PathType Container)) { return }
+        $stages = @(Get-ChildItem -LiteralPath $bases -Directory -Force |
+            Where-Object { $_.Name -cmatch '^\.build-[a-f0-9]{32}$' } |
+            Sort-Object Name | Select-Object -First 4)
+        foreach ($stage in $stages) {
+            $null = Assert-EzVmSafePath -Path $stage.FullName -Description 'Base diagnostic stage'
+            # Only controlled base failure/serial logs, never seeds, disks or keys.
+            foreach ($name in @('failure.json', 'serial.log')) {
+                $path = Assert-EzVmSafePath -Path (Join-Path $stage.FullName $name) -Description 'Base diagnostic file'
+                if (Test-Path -LiteralPath $path -PathType Leaf) {
+                    Assert-EzVmSingleLinkFile -Path $path
+                    Write-Host ('BASE_LOG_TAIL=' + $path + '; bytes<=262144; lines<=200')
+                    $stream = [IO.File]::Open($path, [IO.FileMode]::Open, [IO.FileAccess]::Read,
+                        ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+                    try {
+                        $limit = 262144
+                        $null = $stream.Seek([Math]::Max([long]0, $stream.Length - $limit), [IO.SeekOrigin]::Begin)
+                        $bytes = New-Object byte[] $limit
+                        $count = 0
+                        while ($count -lt $limit) {
+                            $read = $stream.Read($bytes, $count, $limit - $count)
+                            if ($read -eq 0) { break }
+                            $count += $read
+                        }
+                        $text = [Text.Encoding]::UTF8.GetString($bytes, 0, $count)
+                    }
+                    finally { $stream.Dispose() }
+                    @($text -split '\r\n|\r|\n' | Select-Object -Last 200) | ForEach-Object {
+                        $line = [string]$_
+                        if ($line.Length -gt 4096) { $line = $line.Substring(0, 4096) + ' [diagnostic line truncated]' }
+                        # Guest prose must never enter the host's marker oracle.
+                        Write-Host ('BASE_LOG_LINE=' + $line)
+                    }
+                }
+            }
+        }
+    } $DiagnosticRoot
+}
+
 function Assert-EzVm010SameImage {
     param([string]$First, [string]$Second, [switch]$Different)
     $compared = Invoke-EzVm010Image -Arguments @('compare', '-f', 'qcow2', '-F', 'qcow2', $First, $Second) -AllowDifferent
@@ -527,6 +571,8 @@ catch {
     # Read only host-side state and controlled QEMU logs. Serial output is
     # diagnostic evidence, never a substitute for authenticated guest READY.
     # Do not inspect seed data, key files or guest credential contents here.
+    try { Write-EzVm010BaseDiagnostics -DiagnosticRoot $Root }
+    catch { Write-Host ('DIAGNOSTIC_ERROR=' + $_.Exception.Message) }
     foreach ($name in @($sourceName, $cloneName, $importName, $secondaryName, $freshName)) {
         try {
             $runtimePaths = Get-EzVmInstanceRuntimePaths -Root $Root -InstanceName $name

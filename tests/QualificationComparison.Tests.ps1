@@ -104,3 +104,75 @@ Add-EzVmTest -Name 'Qualification accelerator: real guest-start function checks 
         Assert-EzVmTrue $refused
     }
 }
+
+Add-EzVmTest -Name 'Qualification diagnostics: retain bounded base serial evidence without reading seeds or unrelated stages' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'base diagnostic retention'
+    try {
+        $bases = (Get-EzVmPaths -Root $root).Bases
+        $stage = Join-Path $bases ('.build-' + ('a' * 32))
+        [void][IO.Directory]::CreateDirectory((Join-Path $stage 'seed'))
+        [IO.File]::WriteAllText((Join-Path $stage 'serial.log'), ('DISCARDED_HEAD' + "`n" + (('x' * 5000) + "`n") + ((1..196 | ForEach-Object { 'SERIAL_' + $_ }) -join "`n") + "`nEZVM012_REAL_COMPLETE_END_TO_END=PASS`nnoise`rEZVM010_WHPX_EXECUTION=PASS"))
+        [IO.File]::WriteAllText((Join-Path $stage 'failure.json'), ('DISCARDED_BYTE_HEAD' + ('q' * 300000) + "`n" + '{"message":"EXPECTED_BASE_FAILURE"}'))
+        [IO.File]::WriteAllText((Join-Path $stage 'seed/user-data'), 'EXCLUDED_SEED_SENTINEL')
+        $other = Join-Path $bases '.build-unrelated'
+        [void][IO.Directory]::CreateDirectory($other)
+        [IO.File]::WriteAllText((Join-Path $other 'serial.log'), 'EXCLUDED_STAGE_SENTINEL')
+        $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $script:EzVmRepositoryRoot 'scripts/Invoke-EzVm010RealPortability.ps1'), [ref]$null, [ref]$null)
+        $function = $ast.Find({ param($a) $a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq 'Write-EzVm010BaseDiagnostics' }, $true)
+        $output = & {
+            Invoke-Expression $function.Extent.Text
+            Write-EzVm010BaseDiagnostics -DiagnosticRoot $root
+        } 6>&1 | Out-String
+        Assert-EzVmTrue ($output -match 'EXPECTED_BASE_FAILURE' -and $output -match 'SERIAL_196')
+        Assert-EzVmTrue ($output -match '\[diagnostic line truncated\]')
+        Assert-EzVmTrue ($output -notmatch 'DISCARDED_HEAD|DISCARDED_BYTE_HEAD|EXCLUDED_SEED_SENTINEL|EXCLUDED_STAGE_SENTINEL')
+        Assert-EzVmTrue ($output.Length -lt 20000)
+        Assert-EzVmTrue ($output -match 'BASE_LOG_LINE=EZVM012_REAL_COMPLETE_END_TO_END=PASS')
+        Assert-EzVmTrue ($output -notmatch '(?m)^EZVM012_REAL_COMPLETE_END_TO_END=PASS\r?$')
+        Assert-EzVmTrue ($output -match 'BASE_LOG_LINE=EZVM010_WHPX_EXECUTION=PASS')
+        Assert-EzVmTrue ($output.Replace("`r", "`n") -notmatch '(?m)^EZVM010_WHPX_EXECUTION=PASS$')
+        Assert-EzVmEqual ([IO.File]::ReadAllText((Join-Path $stage 'seed/user-data'))) 'EXCLUDED_SEED_SENTINEL'
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'Qualification diagnostics: redirected stages and linked files refuse without exposing target content' -ScriptBlock {
+    $root = New-EzVmCheckoutFixture -Prefix 'base diagnostic links'
+    $outside = New-EzVmTestDirectory -Prefix 'excluded diagnostic target'
+    $stageLink = $null
+    $fileLink = $null
+    try {
+        $bases = (Get-EzVmPaths -Root $root).Bases
+        [void][IO.Directory]::CreateDirectory($bases)
+        $target = Join-Path $outside 'secret.txt'
+        [IO.File]::WriteAllText($target, 'EXCLUDED_LINK_TARGET')
+        $stage = Join-Path $bases ('.build-' + ('a' * 32))
+        [void][IO.Directory]::CreateDirectory($stage)
+        $fileLink = Join-Path $stage 'serial.log'
+        $kind = if ($script:EzVmIsWindowsHost) { 'HardLink' } else { 'SymbolicLink' }
+        New-Item -ItemType $kind -Path $fileLink -Target $target | Out-Null
+        $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $script:EzVmRepositoryRoot 'scripts/Invoke-EzVm010RealPortability.ps1'), [ref]$null, [ref]$null)
+        $function = $ast.Find({ param($a) $a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq 'Write-EzVm010BaseDiagnostics' }, $true)
+        $refusalOutput = & {
+            Invoke-Expression $function.Extent.Text
+            Assert-EzVmThrows { Write-EzVm010BaseDiagnostics -DiagnosticRoot $root } -MessagePattern 'hard-linked|reparse point' | Out-Null
+        } 6>&1 | Out-String
+        Assert-EzVmTrue ($refusalOutput -notmatch 'EXCLUDED_LINK_TARGET')
+        Remove-Item -LiteralPath $fileLink -Force
+        $stageLink = Join-Path $bases ('.build-' + ('b' * 32))
+        $kind = if ($script:EzVmIsWindowsHost) { 'Junction' } else { 'SymbolicLink' }
+        New-Item -ItemType $kind -Path $stageLink -Target $outside | Out-Null
+        $refusalOutput = & {
+            Invoke-Expression $function.Extent.Text
+            Assert-EzVmThrows { Write-EzVm010BaseDiagnostics -DiagnosticRoot $root } -MessagePattern 'reparse point' | Out-Null
+        } 6>&1 | Out-String
+        Assert-EzVmTrue ($refusalOutput -notmatch 'EXCLUDED_LINK_TARGET')
+        Assert-EzVmEqual ([IO.File]::ReadAllText($target)) 'EXCLUDED_LINK_TARGET'
+    }
+    finally {
+        if ($null -ne $fileLink -and [IO.File]::Exists($fileLink)) { [IO.File]::Delete($fileLink) }
+        if ($null -ne $stageLink -and [IO.Directory]::Exists($stageLink)) { [IO.Directory]::Delete($stageLink) }
+        Remove-EzVmTestDirectory -Path $root
+        Remove-EzVmTestDirectory -Path $outside
+    }
+}

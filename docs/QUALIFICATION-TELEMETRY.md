@@ -116,3 +116,13 @@ and repeated hashing without event floods, error propagation and prior output,
 actual lightweight native-process results/nonzero exits, writer-failure latching,
 fresh-file/byte bounds, and observer rebinding to a different module root.
 These tests do not execute QEMU or claim Windows/WHPX qualification.
+
+On a base-build failure the full harness also writes bounded tails of the exact
+owned `.build-<32-hex-ID>/failure.json` and `serial.log` files to its private
+diagnostic output before the supervisor removes the mutable fixture. At most four
+stages, a 256-KiB byte tail per file, 200 lines and 4,096 characters per line are
+retained. All ancestors must be regular paths and log files must have a single
+link. Each copied line has a `BASE_LOG_LINE=` prefix so guest prose cannot enter
+the host completion-marker oracle. Seed data, disks and key files are excluded.
+Serial text remains diagnostic only and is not
+included in public qualification receipts or used to override a failed exit.
