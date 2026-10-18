@@ -1,0 +1,49 @@
+name: SHA provider bounded preflight
+
+on:
+  push:
+    branches: [ezvm-028-sha-preflight]
+
+permissions:
+  contents: read
+
+jobs:
+  hash-providers:
+    name: Same-host Windows hash providers and synthetic payload
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact diagnostic source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare existing pinned PowerShell 7 runtime
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $executable = .\scripts\Install-TestPowerShell.ps1 -DestinationRoot $env:RUNNER_TEMP
+          ('EZVM_SHA_PWSH=' + $executable) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Measure Windows PowerShell 5.1 legacy and CNG on this host
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\scripts\Measure-EzVmHashProviders.ps1 -SourceRoot $env:GITHUB_WORKSPACE -ExpectedSourceCommit '${{ github.sha }}' -OutputDirectory (Join-Path $env:RUNNER_TEMP 'sha-preflight/ps51')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Measure pinned PowerShell 7 default providers on the same host
+        if: success() || failure()
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:EZVM_SHA_PWSH) { throw 'Pinned PowerShell preparation failed.' }
+          & $env:EZVM_SHA_PWSH -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\scripts\Measure-EzVmHashProviders.ps1 -SourceRoot $env:GITHUB_WORKSPACE -ExpectedSourceCommit '${{ github.sha }}' -OutputDirectory (Join-Path $env:RUNNER_TEMP 'sha-preflight/ps7')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain synthetic timings and integrity evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sha-preflight-${{ github.sha }}
+          path: ${{ runner.temp }}/sha-preflight/
+          if-no-files-found: error
+          retention-days: 14
