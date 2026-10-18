@@ -5,7 +5,8 @@ param(
     [switch]$SecurityQualification,
     [switch]$ReleaseQualification,
     [ValidateSet('tcg', 'whpx')][string]$Accelerator = 'tcg',
-    [string]$TelemetryPath = ''
+    [string]$TelemetryPath = '',
+    [ValidateRange(0, 32)][int]$QualificationCpus = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,6 +30,10 @@ foreach ($relative in @('ezvm.ps1', 'src', 'config', 'manifests', 'guest', 'scri
 }
 $Root = $rootA
 $qualificationModule = Import-Module (Join-Path $Root 'src/EzVm/EzVm.psd1') -Force -ErrorAction Stop -PassThru
+if ($QualificationCpus -gt 0) {
+    . (Join-Path $PSScriptRoot 'QualificationResources.ps1')
+    Set-EzVmQualificationResources -Root $Root -Cpus $QualificationCpus
+}
 $active = New-Object 'System.Collections.Generic.List[string]'
 $sourceName = 'ezvm010-source'
 $cloneName = 'ezvm010-stateful'
@@ -136,6 +141,14 @@ function Start-EzVm010Guest {
         $ready = Start-EzVmReadyInstance -Root $Root -InstanceName $Name -Accelerator $Accelerator -ReadyTimeoutSeconds 900
         if ($ready.state -cne 'READY' -or $ready.accelerator -cne $Accelerator -or $ready.sshHost -cne '127.0.0.1') {
             throw "Guest '$Name' did not reach coding READY under explicit $Accelerator and localhost-only SSH."
+        }
+        if ($QualificationCpus -gt 0) {
+            $intent = Get-EzVmInstanceIntent -Root $Root -InstanceName $Name
+            $online = (Invoke-EzVm010Guest -Name $Name -Script 'getconf _NPROCESSORS_ONLN').Trim()
+            if ($intent.cpus -ne $QualificationCpus -or $online -cne [string]$QualificationCpus) {
+                throw "Guest '$Name' did not prove the requested qualification CPU count."
+            }
+            Write-Host ('EZVM010_GUEST_CPUS=' + $online + '; instance=' + $Name)
         }
     }
     catch {

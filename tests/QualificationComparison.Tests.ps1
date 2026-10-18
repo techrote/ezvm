@@ -95,13 +95,31 @@ Add-EzVmTest -Name 'Qualification accelerator: real guest-start function checks 
     $function = $ast.Find({ param($a) $a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq 'Start-EzVm010Guest' }, $true)
     & {
         Invoke-Expression $function.Extent.Text
-        $Root = 'fixture-root'; $active = New-Object 'Collections.Generic.List[string]'; $Accelerator = 'whpx'
+        $Root = 'fixture-root'; $active = New-Object 'Collections.Generic.List[string]'; $Accelerator = 'whpx'; $QualificationCpus = 0
         function Start-EzVmReadyInstance { param($Root, $InstanceName, $Accelerator, $ReadyTimeoutSeconds) [pscustomobject]@{ state = 'READY'; accelerator = $Accelerator; sshHost = '127.0.0.1' } }
         Start-EzVm010Guest -Name fixture
         function Start-EzVmReadyInstance { [pscustomobject]@{ state = 'READY'; accelerator = 'tcg'; sshHost = '127.0.0.1' } }
         $refused = $false
         try { Start-EzVm010Guest -Name fixture } catch { $refused = $true }
         Assert-EzVmTrue $refused
+    }
+}
+
+Add-EzVmTest -Name 'Qualification CPUs: every real READY start requires requested intent and authenticated online count' -ScriptBlock {
+    $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $script:EzVmRepositoryRoot 'scripts/Invoke-EzVm010RealPortability.ps1'), [ref]$null, [ref]$null)
+    $function = $ast.Find({ param($a) $a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq 'Start-EzVm010Guest' }, $true)
+    & {
+        Invoke-Expression $function.Extent.Text
+        $Root = 'fixture-root'; $active = New-Object 'Collections.Generic.List[string]'; $Accelerator = 'whpx'; $QualificationCpus = 8
+        function Start-EzVmReadyInstance { [pscustomobject]@{ state = 'READY'; accelerator = 'whpx'; sshHost = '127.0.0.1' } }
+        function Get-EzVmInstanceIntent { [pscustomobject]@{ cpus = 8 } }
+        function Invoke-EzVm010Guest { '8' }
+        Start-EzVm010Guest -Name ezvm010-source
+        function Invoke-EzVm010Guest { '4' }
+        $null = Assert-EzVmThrows { Start-EzVm010Guest -Name ezvm010-source } -MessagePattern 'CPU count'
+        function Invoke-EzVm010Guest { '8' }
+        function Get-EzVmInstanceIntent { [pscustomobject]@{ cpus = 4 } }
+        $null = Assert-EzVmThrows { Start-EzVm010Guest -Name ezvm010-source } -MessagePattern 'CPU count'
     }
 }
 
