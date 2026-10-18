@@ -1,5 +1,30 @@
 # 08 — Testing, CI and release contract
 
+## CI-PoC003 failed-guest diagnosis
+
+The first CI-PoC003 comparison on frozen candidate2268468 failed. Its physical
+WHPX stateful guest's current serial log contains a kernel panic after PID1
+(`systemd`) exited with0x0000008b. This is a proven guest failure, not a proven
+stdio, ACL or host-startup defect. The separate hosted comparison's original
+serial diagnostics were not retained, so its underlying cause remains unknown.
+
+Readiness now refuses a recognized kernel panic from the current owned launch.
+The read binds runtime launch, actual QEMU executable/start/argument identity and
+the exact managed `serial-<launchId>.log` path, and consumes at most64KiB from a
+shared snapshot. Stale logs, a changed launch, a reused PID or a foreign path
+cannot provide current panic evidence. Serial text can only refuse readiness;
+it cannot grant authenticated READY, mark a process stopped, authorize disk
+mutation or permit process termination. Original READY and shutdown bounds stay.
+
+The disposable venv/pip test still creates a real fresh environment, checks
+isolation and executes pip within the original90-second bound. A failure now
+records the closed stage (`setup`, `create`, `prefix`, `pip`) and actual numeric
+exit, including timeout124, while retaining trap cleanup. Its former generic
+message did not distinguish timeout from other command failures. These changes
+improve failure diagnosis; they do not establish that the guest crash or venv
+failure has been repaired. Focused diagnostic runs never qualify the full release
+scenario, which must pass freshly after any final executable-source correction.
+
 ## Test philosophy
 
 The control plane should be highly testable without booting a VM. QEMU integration then verifies the boundaries that mocks cannot.

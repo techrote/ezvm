@@ -1392,6 +1392,40 @@ printf 'EZVM_IDENTITY_B64=%s\nEZVM_CLOUD_B64=%s\nEZVM_CLOUD_EXIT=%s\nEZVM_READY_
     return $script.Replace('__EZVM_INITIALIZATION_GATE__', $initializationGate).Replace('__EZVM_INITIALIZATION_POST_GATE__', $initializationPostGate).Replace('__EZVM_PROFILE_DIGEST__', $ProvisioningDigest).Replace(([string][char]13 + [char]10), [string][char]10)
 }
 
+function Assert-EzVmGuestHasNoKernelPanic {
+    param([string]$Root, [string]$InstanceName, [string]$LaunchId, [scriptblock]$ProcessProvider)
+    $runtime = Get-EzVmRuntimeStateFile -Root $Root -InstanceName $InstanceName
+    if ($null -eq $runtime) { throw 'Current runtime ownership is missing during guest readiness.' }
+    if ($runtime.launchId -cne $LaunchId) { throw 'Current runtime launch changed during guest readiness.' }
+    $identity = Get-EzVmRuntimeIdentityResult -Runtime $runtime -ProcessProvider $ProcessProvider
+    if (-not $identity.Match) { throw 'Current QEMU process ownership is unproven during guest readiness.' }
+    $paths = Get-EzVmInstanceRuntimePaths -Root $Root -InstanceName $InstanceName
+    $expected = [IO.Path]::GetFullPath((Join-Path $paths.Logs ('serial-' + $LaunchId + '.log')))
+    if (-not (Test-EzVmStorageSamePath -Left $runtime.serialLog -Right $expected)) { throw 'Current runtime serial log is outside its launch-owned path.' }
+    $path = Assert-EzVmSafePath -Path $expected -Description 'Current guest serial diagnostic'
+    $tail = ''
+    if ([IO.File]::Exists($path)) {
+        $stream = New-Object IO.FileStream($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+        try {
+            $length = [int][Math]::Min(65536,$stream.Length)
+            $null = $stream.Seek(-$length,[IO.SeekOrigin]::End)
+            $bytes = New-Object byte[] $length
+            $read = 0
+            while ($read -lt $length) {
+                $count = $stream.Read($bytes,$read,$length-$read)
+                if ($count -eq 0) { break }
+                $read += $count
+            }
+            $tail = (New-Object Text.UTF8Encoding($false,$false)).GetString($bytes,0,$read)
+        } finally { $stream.Dispose() }
+    }
+    if ($tail -cmatch '(?m)^\[\s*[0-9]+\.[0-9]+\]\s+Kernel panic - not syncing:') {
+        # Serial can only refuse readiness; it never proves authenticated READY,
+        # process exit, safe storage access or permission to kill a process.
+        throw "Instance '$InstanceName' reported a kernel panic in its current owned launch. Refusing READY; preserve diagnostics and inspect the guest failure."
+    }
+}
+
 function Wait-EzVmSshReady {
     [CmdletBinding()]
     param(
@@ -1435,11 +1469,16 @@ function Wait-EzVmSshReady {
     $lastError = 'forwarded SSH port has not become reachable'
     $authenticated = $false
     $initializationEnabled = [int]$Intent.schemaVersion -eq 2
+    $nextFatalReadUtc = [DateTime]::MinValue
     $remoteScript = if ($initializationEnabled) {
         Get-EzVmReadinessRemoteScript -ProvisioningDigest $codingProfile.Digest -ExpectedCloudInstanceId ([string]$Access.cloudInstanceId) -ExpectedMachineUuid (Get-EzVmGuestMachineUuid -Intent $Intent)
     } else { Get-EzVmReadinessRemoteScript -ProvisioningDigest $codingProfile.Digest }
     try {
         while ([DateTime]::UtcNow -lt $deadline) {
+            if ([DateTime]::UtcNow -ge $nextFatalReadUtc) {
+                Assert-EzVmGuestHasNoKernelPanic -Root $Root -InstanceName $InstanceName -LaunchId ([string]$Access.launchId) -ProcessProvider $ProcessProvider
+                $nextFatalReadUtc = [DateTime]::UtcNow.AddSeconds(1)
+            }
             if ($null -ne $SeedServer) {
                 try { $null = Invoke-EzVmSeedServerPending -Server $SeedServer -MaxRequests 8 }
                 catch { throw "Instance seed transport failed before readiness: $($_.Exception.Message)" }
