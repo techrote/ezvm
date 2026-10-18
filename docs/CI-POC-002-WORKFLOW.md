@@ -36,4 +36,3 @@ failed before checkout because the default `powershell` shell could not load
 Actions' generated script under the host policy. The listener exited normally,
 registration40 was removed, and no qualification harness ran. That attempt
 remains failed evidence, not a physical result.
-
