@@ -83,7 +83,7 @@ function New-EzVmSshTestLaunch {
             lastObservedAt = $now
             stoppedAt = ''
             qemuLog = Join-Path $paths.Directory 'qemu.log'
-            serialLog = Join-Path $paths.Directory 'serial.log'
+            serialLog = Join-Path $paths.Logs ('serial-' + $a.launchId + '.log')
         }
         Write-EzVmRuntimeStateFile -Root $r -InstanceName $i.name -Runtime $runtime
         $state = [pscustomobject]@{ Processes = New-Object 'System.Collections.Generic.List[object]'; Observations = 0 }

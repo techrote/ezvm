@@ -210,12 +210,24 @@ done
 # this invocation and cannot overwrite a workspace or retain login material.
 venv_directory=$(mktemp -d /var/lib/ezvm/.venv-check.XXXXXX) || fail 'could not allocate the temporary Python validation directory'
 chown "$coder_uid:$coder_gid" "$venv_directory"
-runuser -u coder -- env -i PATH="$PATH" HOME=/home/coder USER=coder LOGNAME=coder LC_ALL=C \
+if runuser -u coder -- env -i PATH="$PATH" HOME=/home/coder USER=coder LOGNAME=coder LC_ALL=C \
     timeout 90 sh -eu -c '
+        printf "create\n" > "$1/stage"
         python3 -m venv "$1/env"
+        printf "prefix\n" > "$1/stage"
         "$1/env/bin/python" -c "import sys; assert sys.prefix != sys.base_prefix"
+        printf "pip\n" > "$1/stage"
         "$1/env/bin/python" -m pip --version >/dev/null
-    ' sh "$venv_directory" >/dev/null 2>&1 || fail 'Python venv with pip is unavailable or exceeded its 90 second validation deadline'
+    ' sh "$venv_directory" >/dev/null 2>&1; then
+    :
+else
+    validation_exit=$?
+    validation_stage=$(cat "$venv_directory/stage" 2>/dev/null || true)
+    case "$validation_stage" in create|prefix|pip) ;; *) validation_stage=setup ;; esac
+    # Preserve the real exit (including timeout124), without exporting tool text.
+    printf 'EZVM_VENV_VALIDATION_FAILURE stage=%s exit=%s\n' "$validation_stage" "$validation_exit" >&2
+    fail "Python venv with pip is unavailable or exceeded its 90 second validation deadline (stage=$validation_stage exit=$validation_exit)"
+fi
 rm -rf -- "$venv_directory"
 venv_directory=''
 
