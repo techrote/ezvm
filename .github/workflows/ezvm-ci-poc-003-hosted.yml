@@ -40,7 +40,7 @@ jobs:
           GIT_CONFIG_VALUE_1: lf
         with:
           repository: techrote/runloc
-          ref: c1a2bb727da5c1099c0ac693c92c2f07fcf84d1d
+          ref: 11fa575d356fe9a774df9ec7147b31edb49cc168
           path: Controller
           fetch-depth: 0
           persist-credentials: false
@@ -69,7 +69,7 @@ jobs:
           [void][IO.Directory]::CreateDirectory($evidence)
           ('GATE_PUBLIC=' + $evidence) | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
           $exe = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
-          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-HostedQualification.ps1 -CandidateRoot (Join-Path $env:GITHUB_WORKSPACE 'Candidate') -CandidateCommit 2268468cb3040b9e1dd6deed60d0f13594f768d6 -ControllerCommit c1a2bb727da5c1099c0ac693c92c2f07fcf84d1d -ComparisonId $env:COMPARISON_ID -EvidenceParent $evidence
+          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-HostedQualification.ps1 -CandidateRoot (Join-Path $env:GITHUB_WORKSPACE 'Candidate') -CandidateCommit 2268468cb3040b9e1dd6deed60d0f13594f768d6 -ControllerCommit 11fa575d356fe9a774df9ec7147b31edb49cc168 -ComparisonId $env:COMPARISON_ID -EvidenceParent $evidence
           exit $LASTEXITCODE
 
       - name: Retain named public evidence only
