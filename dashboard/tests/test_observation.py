@@ -1,6 +1,6 @@
 """DASH-02 T01..T05: public synthetic fixtures and owned-process boundaries."""
 import asyncio
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
@@ -8,7 +8,10 @@ import io
 import json
 import os
 from pathlib import Path
+import shlex
+import socket
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import threading
@@ -16,6 +19,7 @@ import time
 import types
 import unittest
 from unittest.mock import patch
+from urllib.request import BaseHandler
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -31,6 +35,59 @@ METRICS = {}
 def files(root):
     return {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in root.rglob('*') if p.is_file()}
+
+
+@contextmanager
+def trickled_http_pipe(prefix, suffix, *, delay=.03, count=40, piece=b'x'):
+    """Real urllib/http.client parsing; only its owned socket uses a local pipe.
+
+    This keeps deadline/cancellation regressions executable when the local
+    environment forbids sockets. Hosted CI separately exercises real loopback.
+    """
+    reader, writer = os.pipe()
+    stream = os.fdopen(reader, 'rb')
+    stopped = threading.Event()
+    class Transport:
+        shutdown_calls = 0
+        reading = threading.Event()
+        response_stream = stream
+        def settimeout(self, value):
+            self.timeout = value
+        def connect(self, address):
+            self.address = address
+        def sendall(self, data):
+            self.request = data
+        def makefile(self, mode):
+            self.reading.set()
+            return stream
+        def close(self):
+            # Like a real socket, keep HTTPResponse's makefile usable after the
+            # connection is closed by urllib immediately after reading headers.
+            pass
+        def shutdown(self, how):
+            self.shutdown_calls += 1
+            stopped.set()
+    transport = Transport()
+    def produce():
+        with os.fdopen(writer, 'wb', buffering=0) as output:
+            try:
+                output.write(prefix)
+                for _ in range(count):
+                    if stopped.wait(delay):
+                        return
+                    output.write(piece)
+                output.write(suffix)
+            except OSError:
+                pass
+    producer = threading.Thread(target=produce, daemon=True)
+    producer.start()
+    try:
+        with patch('ezvm_dashboard.adapters.socket.socket', return_value=transport):
+            yield transport
+    finally:
+        stopped.set()
+        producer.join(timeout=1)
+        stream.close()
 
 
 class Fixture:
@@ -145,6 +202,189 @@ class AdapterTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             a.NoRedirect().redirect_request(None, None, None, None, None, None)
 
+    def test_t03_total_http_deadline_includes_trickled_headers_and_chunk_framing(self):
+        with trickled_http_pipe(b'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}', b'', count=0) as transport:
+            self.assertEqual(a.get_json('http://127.0.0.1:4098', '/metrics', timeout=1), {})
+            self.assertEqual(transport.shutdown_calls, 0)
+        frames = [
+            (b'HTTP/1.1 200 OK\r\nX-Slow: ', b'\r\nContent-Length: 2\r\n\r\n{}'),
+            (b'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2;fixture=',
+             b'\r\n{}\r\n0\r\n\r\n')]
+        for prefix, suffix in frames:
+            with self.subTest(frame=prefix), trickled_http_pipe(prefix, suffix) as transport:
+                started = time.perf_counter()
+                with self.assertRaisesRegex(TimeoutError, 'total deadline'):
+                    a.get_json('http://127.0.0.1:4098', '/metrics', timeout=.2)
+                self.assertLess(time.perf_counter() - started, .8)
+                self.assertEqual(transport.shutdown_calls, 1)
+                self.assertEqual(transport.address, ('127.0.0.1', 4098))
+                self.assertTrue(transport.request.startswith(b'GET /metrics HTTP/1.1\r\n'))
+
+    def test_t03_http_cancellation_interrupts_header_parser_and_rejects_valid_prefix(self):
+        # The body prefix is already valid JSON. Cancellation still cannot return
+        # that prefix as success while the declared response remains unfinished.
+        frames = [(b'HTTP/1.1 200 OK\r\nX-Slow: ', b'\r\nContent-Length: 2\r\n\r\n{}'),
+                  (b'HTTP/1.1 200 OK\r\nContent-Length: 42\r\n\r\n{}', b'')]
+        for prefix, suffix in frames:
+            cancelled = threading.Event()
+            with self.subTest(frame=prefix), trickled_http_pipe(prefix, suffix, piece=b' ') as transport:
+                timer = threading.Timer(.15, cancelled.set)
+                timer.start()
+                started = time.perf_counter()
+                try:
+                    with self.assertRaisesRegex(TimeoutError, 'cancelled'):
+                        a.get_json('http://127.0.0.1:4098', '/metrics', timeout=3, cancel=cancelled)
+                    self.assertLess(time.perf_counter() - started, .8)
+                    self.assertEqual(transport.shutdown_calls, 1)
+                finally:
+                    timer.join()
+
+    def test_t03_http_premature_eof_rejects_valid_json_prefix(self):
+        with trickled_http_pipe(b'HTTP/1.1 200 OK\r\nContent-Length: 42\r\n\r\n{}', b'', count=0):
+            with self.assertRaisesRegex(ValueError, 'declared Content-Length'):
+                a.get_json('http://127.0.0.1:4098', '/metrics', timeout=1)
+        # A normally completed, close-delimited response has no remaining
+        # declared length and remains a supported HTTP response shape.
+        with trickled_http_pipe(b'HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n{}', b'', count=0):
+            self.assertEqual(a.get_json('http://127.0.0.1:4098', '/metrics', timeout=1), {})
+
+    def test_t03_refused_redirect_closes_response_even_with_retained_traceback(self):
+        prefix = b'HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:4099/metrics\r\nContent-Length: 2\r\n\r\n{}'
+        with trickled_http_pipe(prefix, b'', count=0) as transport:
+            caught = None
+            try:
+                a.get_json('http://127.0.0.1:4098', '/metrics', timeout=1)
+            except ValueError as exc:
+                caught = exc  # Keep the traceback alive while checking ownership.
+            self.assertIsNotNone(caught)
+            self.assertIn('refuses redirects', str(caught))
+            self.assertTrue(transport.response_stream.closed)
+            self.assertEqual(transport.address, ('127.0.0.1', 4098))
+            self.assertTrue(transport.request.startswith(b'GET /metrics HTTP/1.1\r\n'))
+
+    def test_t03_real_loopback_opener_factory_preserves_hooks_across_reuse(self):
+        try:
+            listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        except PermissionError:
+            self.skipTest('Local socket creation prohibited; hosted CI exercises concurrent opener factories')
+        with listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen(4)
+            listener.settimeout(3)
+            requests, server_errors, calls = [], [], []
+            overlap = threading.Barrier(2)
+            concurrent = threading.Event()
+            class Hook(BaseHandler):
+                def http_request(self, request):
+                    self.request_parent = self.parent
+                    request.add_header('X-Observation-Fixture', 'preserved')
+                    if concurrent.is_set():
+                        overlap.wait(timeout=2)
+                    return request
+                def http_response(self, request, response):
+                    self.response_parent = self.parent
+                    return response
+            def factory(*handlers):
+                hook = Hook()
+                director = a.build_opener(*handlers, hook)
+                calls.append((director, hook, handlers, tuple(director.handlers)))
+                return director
+            def serve():
+                try:
+                    for _ in range(4):
+                        connection, _ = listener.accept()
+                        with connection:
+                            connection.settimeout(2)
+                            request = bytearray()
+                            while b'\r\n\r\n' not in request and len(request) < 8192:
+                                chunk = connection.recv(8192)
+                                if not chunk:
+                                    break
+                                request.extend(chunk)
+                            requests.append(bytes(request))
+                            connection.sendall(b'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}')
+                except OSError as exc:
+                    server_errors.append(exc)
+            server = threading.Thread(target=serve, daemon=True)
+            server.start()
+            try:
+                base = 'http://localhost:' + str(listener.getsockname()[1])
+                for _ in range(2):
+                    self.assertEqual(a.get_json(base, '/metrics', timeout=3, opener=factory), {})
+                concurrent.set()
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    pending = [pool.submit(a.get_json, base, '/metrics', 3, opener=factory) for _ in range(2)]
+                    self.assertEqual([future.result(timeout=4) for future in pending], [{}, {}])
+            finally:
+                server.join(timeout=4)
+            self.assertFalse(server.is_alive(), 'Owned HTTP fixture must finish')
+            self.assertEqual(server_errors, [])
+            self.assertEqual(len(requests), 4)
+            self.assertEqual(len({id(director) for director, _, _, _ in calls}), 4)
+            for request in requests:
+                self.assertTrue(request.startswith(b'GET /metrics HTTP/1.1\r\n'))
+                self.assertIn(b'x-observation-fixture: preserved\r\n', request.lower())
+            for director, hook, handlers, snapshot in calls:
+                self.assertEqual(tuple(director.handlers), snapshot)
+                self.assertIs(hook.request_parent, director)
+                self.assertIs(hook.response_parent, director)
+                self.assertEqual([handler.proxies for handler in handlers if isinstance(handler, a.ProxyHandler)], [{}])
+                self.assertEqual(sum(isinstance(handler, a.NoRedirect) for handler in handlers), 1)
+                bounded = [handler for handler in director.handlers if isinstance(handler, a._DeadlineHTTPHandler)]
+                self.assertEqual(len(bounded), 1)
+                self.assertTrue(bounded[0].budget.response.closed)
+                self.assertFalse(bounded[0].budget.thread.is_alive())
+
+    def test_t03_real_loopback_http_header_deadline_and_cancellation_close_owned_socket(self):
+        try:
+            listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        except PermissionError:
+            self.skipTest('Local socket creation prohibited; pipe/parser bounds remain tested and hosted CI runs loopback')
+        with listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen(2)
+            listener.settimeout(3)
+            stopped, requests = threading.Event(), []
+            def serve():
+                try:
+                    for _ in range(2):
+                        connection, _ = listener.accept()
+                        with connection:
+                            connection.settimeout(2)
+                            requests.append(connection.recv(8192).split(b'\r\n')[0])
+                            try:
+                                connection.sendall(b'HTTP/1.1 200 OK\r\nX-Slow: ')
+                                for _ in range(100):
+                                    if stopped.wait(.03):
+                                        return
+                                    connection.sendall(b'x')
+                            except OSError:
+                                pass
+                except OSError:
+                    pass
+            server = threading.Thread(target=serve, daemon=True)
+            server.start()
+            try:
+                base = 'http://127.0.0.1:' + str(listener.getsockname()[1])
+                for mode in ('deadline', 'cancellation'):
+                    cancelled = threading.Event()
+                    timer = threading.Timer(.15, cancelled.set) if mode == 'cancellation' else None
+                    if timer:
+                        timer.start()
+                    try:
+                        started = time.perf_counter()
+                        with self.subTest(mode=mode), self.assertRaises(TimeoutError):
+                            a.get_json(base, '/metrics', timeout=3 if timer else .2, cancel=cancelled)
+                        self.assertLess(time.perf_counter() - started, .8)
+                    finally:
+                        if timer:
+                            timer.join()
+                self.assertEqual(requests, [b'GET /metrics HTTP/1.1', b'GET /metrics HTTP/1.1'])
+            finally:
+                stopped.set()
+                server.join(timeout=3)
+                self.assertFalse(server.is_alive(), 'Owned HTTP fixture must finish after cancellation')
+
     def test_t03_process_output_bound_terminates_only_owned_child(self):
         start = time.monotonic()
         with self.assertRaises(ValueError):
@@ -254,6 +494,59 @@ class AdapterTests(unittest.TestCase):
             self.assertEqual(len(calls), 2)
             self.assertFalse(any('status' in argv or 'diff' in argv for argv in calls))
             self.assertIn('unavailable', result['detail']['changes'])
+
+    def test_t04_nested_git_filters_are_not_executed_and_scope_is_visible(self):
+        from ezvm_dashboard.guest_probe import _git_detail
+        with tempfile.TemporaryDirectory(prefix='dash02 nested filter ') as directory:
+            root = Path(directory)
+            empty_global = root / 'empty-git-config'
+            empty_global.write_text('')
+            env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+            env.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=str(empty_global))
+            def git(path, *args):
+                return subprocess.run(['git', '-C', str(path), *args], check=True,
+                                      capture_output=True, text=True, env=env)
+            parent, source = root / 'parent', root / 'submodule-source'
+            for repository in (parent, source):
+                repository.mkdir()
+                git(repository, 'init')
+                git(repository, 'config', 'user.name', 'Synthetic fixture')
+                git(repository, 'config', 'user.email', 'fixture@example.invalid')
+            (source / '.gitattributes').write_text('*.txt filter=probe\n')
+            (source / 'data.txt').write_text('initial\n')
+            git(source, 'add', '.')
+            git(source, 'commit', '-m', 'Synthetic submodule')
+            (parent / 'parent.txt').write_text('original\n')
+            git(parent, '-c', 'protocol.file.allow=always', 'submodule', 'add', str(source), 'nested')
+            git(parent, 'add', '.')
+            git(parent, 'commit', '-m', 'Synthetic parent')
+            marker, script = root / 'filter-called', root / 'sentinel-filter.py'
+            script.write_text('import pathlib,sys\npathlib.Path(' + repr(str(marker)) +
+                              ').write_text("executed")\nsys.stdout.write(sys.stdin.read())\n')
+            git(parent / 'nested', 'config', 'filter.probe.clean',
+                shlex.join([Path(sys.executable).as_posix(), '-B', script.as_posix()]))
+            nested_file = parent / 'nested/data.txt'
+            nested_file.write_text('mutated\n')  # Equal size forces content/filter comparison.
+            stat = nested_file.stat()
+            os.utime(nested_file, (stat.st_atime, stat.st_mtime + 2))
+            (parent / 'parent.txt').write_text('visible parent modification\n')
+            # This disposable negative control proves the external filter can run.
+            git(parent, '--no-optional-locks', '-c', 'core.fsmonitor=false', 'status', '--short')
+            self.assertTrue(marker.is_file(), 'Nested-filter sentinel must be executable')
+            marker.unlink()
+            before = files(root)
+            result = {'detail': {'root': str(parent)}}
+            def isolated_read(argv, **kwargs):
+                kwargs['env'] = dict(kwargs['env'], GIT_CONFIG_GLOBAL=str(empty_global))
+                return a.run_read(argv, **kwargs)
+            with patch('ezvm_dashboard.guest_probe.run_read', side_effect=isolated_read):
+                _git_detail(result, parent)
+            self.assertFalse(marker.exists())
+            self.assertEqual(before, files(root))
+            self.assertIn('parent.txt', result['detail']['changes'])
+            self.assertIn('parent.txt', result['detail']['diff_stat'])
+            self.assertNotIn('nested', result['detail']['changes'])
+            self.assertIn('nested submodule changes are unobserved', result['detail']['worktree_scope'])
 
 
     def test_t04_ssh_trust_path_quoting_and_no_global_trust_fallback(self):
@@ -442,6 +735,25 @@ class RegisteredGuestTests(unittest.TestCase):
 
 
 class AggregationTests(unittest.TestCase):
+    def test_t03_close_cancels_inflight_engine_http_headers(self):
+        collector = Collector(Path('.'), {'engines': [
+            {'id': 'fixture', 'kind': 'strata', 'url': 'http://127.0.0.1:4098'}]})
+        collector.jobs = {'engine:fixture': collector.jobs['engine:fixture']}
+        with trickled_http_pipe(b'HTTP/1.1 200 OK\r\nX-Slow: ', b'\r\nContent-Length: 2\r\n\r\n{}') as transport:
+            try:
+                collector.start()
+                self.assertTrue(transport.reading.wait(1), 'Actual engine read must enter its header parser')
+                with collector.lock:
+                    future = collector.pending['engine:fixture']
+                started = time.perf_counter()
+                collector.close()
+                with self.assertRaisesRegex(TimeoutError, 'cancelled'):
+                    future.result(timeout=.8)
+                self.assertLess(time.perf_counter() - started, .8)
+                self.assertEqual(transport.shutdown_calls, 1)
+            finally:
+                collector.close()
+
     def test_t03_stale_last_good_is_retained_without_overlap(self):
         collector = Collector(Path('.'), {'engines': []})
         collector.jobs = {'x': (99, lambda: {})}
@@ -599,7 +911,7 @@ class ResponsivenessTests(unittest.TestCase):
                                        'accepted_baseline': 'a'*40, 'import_path': '/candidate/module.py',
                                        'executable': '/wrapper', 'assertion': 'own-root-file'}}],
                 'status_coverage': {'registered': 1, 'sampled': 0, 'overdue': ['s'], 'cycle_bound_seconds': 48},
-                'detail': {'id': 's'}}
+                'detail': {'id': 's', 'worktree_scope': 'Current repository only; nested submodule changes are unobserved'}}
         collector.samples['guest'] = Sample(data, time.time())
         try:
             view = DashboardControl(collector)
@@ -607,6 +919,8 @@ class ResponsivenessTests(unittest.TestCase):
             text = '\n'.join(view.activity_lines(collector.snapshot()))
             for value in ('/candidate', '/restart', '/wrapper', 'Accepted baseline (declared)'):
                 self.assertIn(value, text)
+            view.activity_mode = 'Changes'
+            self.assertIn('nested submodule changes are unobserved', '\n'.join(view.activity_lines(collector.snapshot())))
             footer = '\n'.join(''.join(t for _, t in row) for row in view.render(160, 48))
             self.assertIn('Registered 0/1', footer)
         finally:

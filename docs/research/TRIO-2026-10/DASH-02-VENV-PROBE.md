@@ -110,11 +110,18 @@ and case results. Existing Windows PowerShell 5.1 and pinned PowerShell 7 suites
 also assert the revised source contract. These checks complement, not replace,
 one normal publication-triggered **complete Windows TCG release qualification**.
 
-The old run remains failed. The new source must pass all exact-head checks,
-review, current-main reconciliation and accepted-revision verification before
-merge/closure. State-based boot success and measured TCG runtime remain to be
-observed. PR #42 and issue #28 remain held. WHPX execution is explicitly SKIP;
-TRIO remains paused.
+At the original `24ca91a` publication checkpoint, the old run remained failed and
+boot success was still unobserved. The subsequent [run 39022570303](https://github.com/techrote/ezvm/actions/runs/39022570303)
+recorded all eight authenticated READY boots and timer probes, then was cancelled
+at approximately 180 minutes before final completion markers. The
+[appended runtime preparation record](retests/DASH-02-RELEASE-RUNTIME.md) preserves
+that partial result and the next bounded qualification decision.
+
+Required candidate/integration checks, review, current-main reconciliation and
+accepted-revision verification still govern merge and closure. The final record
+belongs on [live issue #28](https://github.com/techrote/ezvm/issues/28); these dated
+preparation records do not assert a complete release PASS. WHPX execution remains
+explicitly SKIP and TRIO remains paused.
 
 ## Primary implementation references
 

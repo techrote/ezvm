@@ -2,6 +2,11 @@
 
 Status: **REVIEW** | Priority: **P0** | GitHub issue: [#28](https://github.com/techrote/ezvm/issues/28)
 
+Publication checkpoint: **2026-10-18**. The status/checklist here record this
+candidate publication. Subsequent acceptance requires the live issue's exact
+candidate/check/receipt identities, merged main and accepted-revision verification;
+issue closure alone is insufficient. Reconcile that record before dependent work.
+
 Dependencies: [DASH-01](DASH-01-evidence-and-replay.md), accepted on `d5265c804d0d8494d8171482a85aca563b181e05`.
 Research: TRIO-FR-02, TRIO-FR-04, TRIO-FR-11, TRIO-FR-18 in the [field register](../../../research/TRIO-2026-10/README.md).
 
@@ -16,7 +21,11 @@ Read the [programme and common closure rules](../README.md) plus these RAG contr
 
 Operators need trustworthy identities and bounded coverage; a timed-out or unsampled source must not create an apparent idle/free worker slot.
 
-The integrated prototype read real sources but capped selected/recent polling and assumed the observed SQLite layout. DASH-02 separates read boundaries from cached aggregation and preserves the existing view controls. Core PowerShell and owner patches remain untouched.
+The integrated prototype read real sources but capped selected/recent polling and
+assumed the observed SQLite layout. DASH-02 separates read boundaries from cached
+aggregation and preserves the existing view controls. The public control-plane
+implementation/APIs and merged owner fixes are preserved. Release-harness,
+guest-validation recipe and test changes have the documented scope below.
 
 ## Implementation
 
@@ -33,7 +42,9 @@ Implemented contracts, limits and migration are in the [DASH-02 handoff](../../.
 - [ ] The same session exposed on multiple ports has one identity; partial failure is unknown and cannot authorize admission.
 - [ ] A 10-second stalled source leaves other sources and UI input responsive; one in-flight sample per source and zero mutation calls are proven.
 
-The source checkpoint remains REVIEW until exact-head CI, review, integration and accepted-revision evidence are recorded on #28. No criterion or numeric target has been waived.
+This publication checkpoint does not assert acceptance. Exact-head CI, review,
+integration and accepted-revision evidence must be recorded on #28 before its
+live checklist is accepted. No criterion or numeric target has been waived.
 
 ## Test cases
 
@@ -54,3 +65,10 @@ Worker commands, broad process discovery beyond declared scope, key creation, in
 The [schema fixtures](../../../../dashboard/fixtures/dash02/schemas.json), capability table, source/identity negatives and measured test receipt bind these requirements to implementation. Run `python -B dashboard/qualify_observation.py --output <disposable-receipt-path>` from a clean Git checkout. The harness records actual HEAD/tree, source hashes, dependency versions, per-test results, all five case groups, 10-second input/failure measurements, 1,100-session polling cost and maximum age. Its explicit `--allow-source-subset` mode is supplementary local evidence only, never exact-checkout qualification.
 
 The dedicated pinned Windows lane retains its JSON receipt. Existing DASH-01, full Windows control-plane CI, programme validation and real-release workflows remain independent requirements. Relevant RAG/user docs and research scope are updated; original research and DASH-01 sources/receipts are preserved. A dependent gate stays closed until all prerequisites are accepted. No TRIO restart is authorized.
+
+Final review added regressions for nested Git filters, whole-response HTTP
+deadlines, cancellation, truncated responses and request ownership. The release
+lane now invokes the existing verified pinned PowerShell 7 runtime; both Windows
+control-plane and standard-user ACL engines, the complete real scenario and all
+original timeouts remain required. The [runtime evidence record](../../../research/TRIO-2026-10/retests/DASH-02-RELEASE-RUNTIME.md)
+preserves the cancelled run and the measured reason for that narrow adjustment.

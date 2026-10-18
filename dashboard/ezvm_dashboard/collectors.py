@@ -25,11 +25,11 @@ ACTOR_FIELDS = {'session', 'root', 'accepted_baseline', 'candidate_root',
                 'restart_root', 'import_path', 'executable'}
 
 
-def get_json(base, path, timeout=2):
+def get_json(base, path, timeout=2, *, cancel=None):
     # Validate before even constructing the transport (also a regression seam).
     endpoint(base)
     require(path in ('/metrics', '/settings', '/api/v0/models'), 'Endpoint not in read-only allowlist')
-    return adapters.get_json(base, path, timeout, opener=build_opener(ProxyHandler({}), NoRedirect()))
+    return adapters.get_json(base, path, timeout, opener=build_opener, cancel=cancel)
 
 
 def load_config(root, path=None):
@@ -253,8 +253,8 @@ def guest_sample(root, config, selected=None, poll_state=None, cancel=None):
     return data
 
 
-def engine_sample(engine):
-    data = get_json(engine['url'], '/metrics' if engine['kind'] == 'strata' else '/api/v0/models')
+def engine_sample(engine, cancel=None):
+    data = get_json(engine['url'], '/metrics' if engine['kind'] == 'strata' else '/api/v0/models', cancel=cancel)
     require(isinstance(data, dict) and ('schemaVersion' not in data or
             type(data['schemaVersion']) is int and data['schemaVersion'] == 1), 'Unsupported engine envelope version')
     meta = capability(engine['kind'], engine['id'], engine['kind'] + '-layout-v1', 'allowlisted-GET')
@@ -297,7 +297,7 @@ class Collector:
                      'inventory': (10, lambda: inventory_sample(root)),
                      'guest': (8, lambda: guest_sample(root, config, self.selected, self._poll_state, self.stop_event))}
         for engine in config['engines']:
-            self.jobs['engine:' + engine['id']] = (3, lambda e=engine: engine_sample(e))
+            self.jobs['engine:' + engine['id']] = (3, lambda e=engine: engine_sample(e, self.stop_event))
         self.thread = None
 
     def start(self):

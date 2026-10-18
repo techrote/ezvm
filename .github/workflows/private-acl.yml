@@ -1,0 +1,38 @@
+name: Private ACL standard-user regression
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  private-acl:
+    name: Private ACL standard user (PowerShell ${{ matrix.major }})
+    runs-on: windows-2022
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        major: [5, 7]
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Reproduce legacy failure and qualify corrected source as a standard user
+        shell: powershell
+        run: |
+          .\scripts\Invoke-PrivateAclHosted.ps1 -ExpectedMajor ${{ matrix.major }} -OutputDirectory (Join-Path $env:RUNNER_TEMP 'private-acl-evidence')
+      - name: Retain standard-user red and green evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: private-acl-powershell-${{ matrix.major }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/private-acl-evidence/
+          if-no-files-found: error
+          retention-days: 30

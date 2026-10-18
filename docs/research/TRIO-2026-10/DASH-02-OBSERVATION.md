@@ -1,6 +1,6 @@
 # DASH-02 scoped observation implementation and research handoff
 
-Issue: [#28](https://github.com/techrote/ezvm/issues/28). Publication checkpoint:
+Issue: [#28](https://github.com/techrote/ezvm/issues/28). Publication checkpoint (2026-10-18):
 **REVIEW**, not accepted merely because local tests pass. Reconcile the live PR/issue
 for exact head, required CI, merge and accepted revision. Baseline is accepted
 DASH-01 main `d5265c804d0d8494d8171482a85aca563b181e05`.
@@ -55,8 +55,25 @@ Two equal bounded DB/WAL file-set captures, pre/post metadata and rollback-journ
 refusal precede disposable querying. In a changing or oversized DB, this sampler
 fails visibly rather than claiming a coherent snapshot. It is not a hostile-code
 sandbox or a backup API. Git clean filters are refused before worktree refresh;
-external diff/textconv and fsmonitor are disabled. Only owned sampler children may
-be terminated. Source/fixture sentinels and source DB/WAL bytes stay unchanged.
+external diff/textconv and fsmonitor are disabled. Both status and diff explicitly
+exclude submodule worktrees, whose independent filters are outside the parent
+configuration check. The Changes view labels nested submodule changes unobserved.
+A real parent/submodule negative control first proves its sentinel filter can run,
+then verifies the observer retains parent edits without executing that filter or
+changing fixture bytes. Only owned sampler children may be terminated.
+Source/fixture sentinels and source DB/WAL bytes stay unchanged.
+
+HTTP's ordinary socket timeout measures inactivity, so trickled status headers or
+chunk framing can defeat a body-loop deadline. Each allowlisted GET now owns a
+numeric-loopback socket and a short-lived watchdog that shuts down only that
+socket on the absolute deadline or cancellation. Closing the viewer propagates
+cancellation to active engine reads. Actual urllib/http.client parser regressions
+cover headers, chunk framing, cancelled valid JSON prefixes and premature EOF
+before the declared content length. Separate real loopback tests cover socket
+ownership, concurrent requests and cancellation. Each call constructs a fresh
+handler chain and closes its response stream even when redirects are refused.
+No provider mutation or request retry is introduced, and completed requests retire
+their watchdog.
 
 Limits are explicit: 256 actor entries, 1..4 distinct ports, batch 1..32, eight guest
 GETs, seven independent host jobs, one in-flight per source; 64 MB DB/16 MB WAL,
@@ -104,9 +121,10 @@ versions, every test result and all five case groups. A source-subset run must u
 relabeling it exact-checkout acceptance. The dedicated Windows workflow uses existing
 hash-pinned dependencies and Python 3.12.10; it retains the public JSON receipt.
 DASH-01 CI still runs the full Windows dashboard suite and its original Linux replay;
-core CI and real-release checks are untouched and remain mandatory.
+the existing core CI and real-release checks remain mandatory. The added Linux
+guest-probe process lane supplements both Windows control-plane lanes.
 
-Local development used Python 3.13.5 / psutil 7.2.2 / prompt_toolkit 3.0.52 /
+Initial local development used Python 3.13.5 / psutil 7.2.2 / prompt_toolkit 3.0.52 /
 wcwidth 0.7.0 on a reconstructed authored-file set. It is supplementary Linux evidence,
 not the pinned Windows checkout. Actual hosted results, revision IDs and receipt
 hashes belong in the live PR/issue and retained appended receipts, not guessed here.

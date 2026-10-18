@@ -114,7 +114,9 @@ tool exit metadata and read-only worktree information. Checks is a text filter, 
 an acceptance oracle. Report is model prose, not an audited artifact browser. No
 reasoning parts or tool input arguments are displayed; no keystrokes reach workers.
 Git worktree reads refuse configured external clean filters; external diff/textconv
-and fsmonitor are disabled. An unavailable Git view does not become an empty proof.
+and fsmonitor are disabled. The view covers the selected repository's own worktree;
+nested submodule changes are explicitly unobserved because submodules may configure
+independent filters. An unavailable Git view does not become an empty proof.
 
 **Models & usage:** reported engine speed/context/queue/history, or a bounded enrolled
 OpenCode usage window. Input/cache/output/reasoning remain separate; missing values
@@ -150,11 +152,16 @@ sidecars are preserved; ordinary OS read metadata is not a telemetry write API.
 Only fixed loopback GETs are allowed (Strata /metrics, LM Studio /api/v0/models,
 OpenCode scoped /session/status). Proxy routing and redirects are disabled. No
 provider account search, inference prompt or model-load request occurs.
+The total request deadline includes slow headers and chunk framing. Closing the
+viewer cancels its active engine sockets. Cancellation or an early end before the
+declared content length invalidates the response even when its received prefix
+happens to be valid JSON. Request handlers and response streams are owned and
+closed separately for each read.
 
 Host/engine periods are 3 seconds, guest 8 and inventory 10. Each source has one
 in-flight job; at most seven host jobs and eight guest GETs execute concurrently.
 Reads have independent output, time and cancellation bounds. Closing signals only
-the sampler's owned children; no VM/worker process is stopped. Persisted READY text
+the sampler's owned children and sockets; no VM/worker process is stopped. Persisted READY text
 is not fresh readiness qualification; existing managed trust must match before SSH.
 
 ## Validation and next work

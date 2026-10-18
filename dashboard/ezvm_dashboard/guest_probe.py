@@ -145,8 +145,13 @@ def _git_detail(result, workspace):
         safe_worktree = filters.returncode == 1 and not filters.stdout
     except (OSError, ValueError, TimeoutError):
         safe_worktree = False
-    for field, args in [('head', ['rev-parse', 'HEAD']), ('changes', ['status', '--short']),
-                        ('diff_stat', ['diff', '--no-ext-diff', '--no-textconv', '--stat'])]:
+    # Parent filter configuration cannot attest a submodule's configuration.
+    # Even status can execute a nested repository's clean filter while hashing a
+    # changed file, so neither read may recurse into submodule worktrees.
+    detail['worktree_scope'] = 'Current repository only; nested submodule changes are unobserved'
+    for field, args in [('head', ['rev-parse', 'HEAD']),
+                        ('changes', ['status', '--short', '--ignore-submodules=all']),
+                        ('diff_stat', ['diff', '--no-ext-diff', '--no-textconv', '--stat', '--ignore-submodules=all'])]:
         if field != 'head' and not safe_worktree:
             detail[field] = '(unavailable: configured filters or unverified Git configuration)'
             continue
@@ -173,7 +178,7 @@ def _poll(config, result, workers, registrations, cache_key):
         port, root = pair
         try:
             data = get_json(f'http://127.0.0.1:{port}', '/session/status?' + urlencode({'directory': root}),
-                            timeout=.75, opener=build_opener(ProxyHandler({}), NoRedirect()))
+                            timeout=.75, opener=build_opener)
             return root, port, status_map(data), None
         except Exception as exc:
             return root, port, None, type(exc).__name__ + ': ' + str(exc)[:180]

@@ -13,8 +13,13 @@ The read-only prototype is integrated. DASH-01 is **accepted** on main
 [core CI](https://github.com/techrote/ezvm/actions/runs/38967949193) passed.
 The versioned DASH-01 review checkpoint is reconciled here with live issue #27.
 
-DASH-02 now has its registered observation implementation in **review**; see the
+DASH-02's registered observation implementation is recorded as **review** at the
+2026-10-18 publication checkpoint; see the
 [adapter and research handoff](../../research/TRIO-2026-10/DASH-02-OBSERVATION.md).
+Subsequent acceptance is recorded on [live issue #28](https://github.com/techrote/ezvm/issues/28)
+with the tested candidate, required checks, merged main and accepted-revision
+verification. A closed flag without that evidence is insufficient. The dated
+catalogue below records publication state, not a later live capability gate.
 DASH-03/04 retain partial foundations, not completed acceptance. All remaining
 issues are planned. TRIO remains paused and no capability release gate is opened
 by these scoped fixture and adapter changes. See [the guide](../../DASHBOARD.md)
@@ -45,9 +50,11 @@ is a clean recipe with measured local/free support.
 The [catalogue JSON](catalog.json) holds stable IDs, paths, dependencies, RAG and
 research references, case IDs and release gates. The issue bodies own substantive
 scope and test assertions. Update both in the same change and reconcile the linked
-GitHub body. Publication alone accepts no future issue; DASH-02 review is not yet
-accepted-revision qualification. Source checkpoints are dated evidence; reconcile
-the live issue and accepted main before starting dependent work.
+GitHub body. Publication alone accepts no future issue. DASH-02's dated review
+checkpoint is not accepted-revision qualification; reconcile its live acceptance
+record and accepted main before starting dependent work. This permits the final
+acceptance evidence to be appended after merge without rerunning unchanged heavy
+green qualification solely to update a historical source checkpoint.
 
 ## Execution order and release gates
 

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "programme": "EzVM VM & AI dashboard",
-  "status": "DASH-01 accepted; DASH-02 in review; remaining issues planned; TRIO paused",
+  "status": "2026-10-18 publication checkpoint: DASH-01 accepted; DASH-02 in review; remaining issues planned; TRIO paused. Reconcile live issue acceptance records before dependent work.",
   "created": "2026-10-16",
   "baseline": {
     "commit": "d692be6a79a0c6bd3c1d246ff74096bc523b23e1",
@@ -41,6 +41,8 @@
       "path": "docs/programme/dashboard/issues/DASH-02-scoped-adapters-and-identities.md",
       "priority": "P0",
       "status": "review",
+      "statusAsOf": "2026-10-18",
+      "acceptanceRecord": "https://github.com/techrote/ezvm/issues/28",
       "githubIssue": "https://github.com/techrote/ezvm/issues/28",
       "dependsOn": [
         "DASH-01"

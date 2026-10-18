@@ -1,0 +1,655 @@
+{
+    "schemaVersion":  1,
+    "kind":  "ezvm-sha-provider-preflight",
+    "outcome":  "pass",
+    "scope":  "Controlled synthetic Windows file and QEMU inventory hashing; no QEMU execution, guest, WHPX or full release qualification.",
+    "startedAt":  "2026-10-18T01:16:41.3905969Z",
+    "source":  {
+                   "commit":  "337da8870ff7af12704a5b1a61c22cf2ea158df4",
+                   "tree":  "276bb88b5d367c4dcf85c3007abca96f0c7b9c97",
+                   "moduleFiles":  [
+                                       {
+                                           "path":  "src/EzVm/BaseBuilder.ps1",
+                                           "sha256":  "1417e65dd96bc0377548911cad2be7b8efae33ef8cca169d81a85bc229f307c6"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/BaseRecipe.ps1",
+                                           "sha256":  "6ed69b76d0d9e24f103533d7495f903784858b8530b9911dd22ea161d33395a1"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/Cli.ps1",
+                                           "sha256":  "8b8172069034fef1a1875a9b24445640d594ac3877c931cffc4b21e69b337527"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/Configuration.ps1",
+                                           "sha256":  "406ce16c06fad64adbd2d9d63aaee89022c58fa60298dec305804256e49c9b53"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/Doctor.ps1",
+                                           "sha256":  "3640c4097dc5a7aafb5fa70b3eb42c56128ac98b9df7f6f917e1d4879b7ac64a"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/Download.ps1",
+                                           "sha256":  "b2fe8282bb575115a86b387d578c36f8056675213a4c1c5d2b968f99e6271194"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/EzVm.psd1",
+                                           "sha256":  "0ee3dcb821d51854199da921dd171e88b9c4f24c0a6025e162a68e854fa9ee92"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/EzVm.psm1",
+                                           "sha256":  "984c8ed9a5d3c46bbda02d85a76cf7b3d176cae55f548c87e293092732ae8119"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/Json.ps1",
+                                           "sha256":  "2b17edd2aa66248e05a9fe461d6e2b0dca3b976372c025959ca99779dbe1f5ef"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/Keys.ps1",
+                                           "sha256":  "89e437ce908695b9d90ddaa5cb590c3aa44c1a7c52d3696ebe9e7ae218f04fe5"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/Paths.ps1",
+                                           "sha256":  "5d5e4db36ff75dbb1e817edf237ef1b8700fa76916ae9d730321f23078f01eee"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/Portability.ps1",
+                                           "sha256":  "b1621b7c47c69535f184276093b7e09d729e2789683424afaf1c1d8ec473368a"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/Process.ps1",
+                                           "sha256":  "ce9c40ddf33b55abf7c7146adbea33c7c69be252a152481d7539f9f0f1eedd3b"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/Profiles.ps1",
+                                           "sha256":  "939195272dc7da435291ace8cdf1151d37c91ad8d651132e050aba2bfaae9550"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/Qemu.ps1",
+                                           "sha256":  "55435ff3dcc6d43b40a00d5ce0345c22142c6827d7db3d3db56512839a3edb5f"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/QemuIntegrity.ps1",
+                                           "sha256":  "116066239f090bb68a1856c2747dce88b577a293b34f3d2078ffc3f3a9b28c47"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/Recovery.ps1",
+                                           "sha256":  "6cc2049e5f4feddcf9b04c10f76ce6162337b5c1c052fdd6aac1cee32b02a839"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/Registry.ps1",
+                                           "sha256":  "6f363bcdaea73603fb7a18108635e41c77d88c58464db79361614266cfb793df"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/Runtime.ps1",
+                                           "sha256":  "b86122f56df1f849d0f5110828519718882e9ea4fd254bff0fb252c7b68a163b"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/Security.ps1",
+                                           "sha256":  "eebfdaac48c8b424dfe4c01b7d50cf50e78941bd67d5a31d5257f7c22a2867ac"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/SeedServer.ps1",
+                                           "sha256":  "7d55e897beec9544f76f425cc696403cbeb6426f51ee4d460e5d1d50b393014a"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/Snapshots.ps1",
+                                           "sha256":  "0533c4cf19c275006d01e98c574e1b344ae60ac64cb6edb3acb00795ac7ca1b5"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/SourceImage.ps1",
+                                           "sha256":  "dc2b37d9828e111eea670c63a54f02e517502d17b79ae91b080773c8b44ca03d"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/Ssh.ps1",
+                                           "sha256":  "c1b06a315c2cd4f7c2b874c0c95fa404d14f0533669883fbafde734fc469d72f"
+                                       },
+                                       {
+                                           "path":  "src/EzVm/Storage.ps1",
+                                           "sha256":  "f5eeb973856c60ac4ca5dda1ac78c95fb48c2653d505f2a845500ea37c481cdd"
+                                       }
+                                   ],
+                   "downloadTestsSha256":  "ddfea2e2e655138708ad64f088bd9a286c06e1d9a62776021a22b3e61f5970ab",
+                   "harnessSha256":  "b3a8c8d7466afea0057aac300d90dbaab236e0d9b587429b03fed4b6391c5608"
+               },
+    "benchmarkSha256":  "6af8d14e244f78cde65a98fa9c6062acaaf1996b3768e563972283fcdace88d8",
+    "environment":  {
+                        "windows":  true,
+                        "osVersion":  "Microsoft Windows NT 10.0.20348.0",
+                        "powerShellVersion":  "5.1.20348.5622",
+                        "edition":  "Desktop",
+                        "clrVersion":  "4.0.30319.42000",
+                        "process64Bit":  true,
+                        "logicalProcessors":  4,
+                        "cpuModel":  [
+                                         "AMD EPYC 7763 64-Core Processor"
+                                     ]
+                    },
+    "parameters":  {
+                       "fileMiB":  128,
+                       "rounds":  4,
+                       "smallFileCount":  1000,
+                       "orderSeed":  284217,
+                       "streamMode":  "Open / Read / Share.Read",
+                       "contentPattern":  "Bytes 0..255 repeated; fixed independent SHA256/SHA512 expectations",
+                       "fileAttributes":  "Archive",
+                       "knownDigests":  {
+                                            "SHA512":  "c0948e653e8baca2b4eb0a6f46ba83ad7e806ca6ecac3bce2abd1d6dd2799bbf99be906d03b103a59acd9e55e1cd9780931ec2627807bbcb59dbfdc59fb2befe",
+                                            "SHA256":  "a626d17da2e502f5b4b8e3ebd23f0bf9daef6255688d8e0bb482b3ae3794a682"
+                                        },
+                       "cachePolicy":  "One recorded warmup per provider; OS caches are not flushed.",
+                       "ordering":  "Random seeded AB/BA pairs; each provider occupies each position equally."
+                   },
+    "moduleVariants":  [
+                           {
+                               "variant":  "legacy",
+                               "payloadSha256Provider":  "System.Security.Cryptography.SHA256Managed, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                               "changedFiles":  [
+
+                                                ],
+                               "downloadSha256":  "b2fe8282bb575115a86b387d578c36f8056675213a4c1c5d2b968f99e6271194",
+                               "integritySha256":  "116066239f090bb68a1856c2747dce88b577a293b34f3d2078ffc3f3a9b28c47"
+                           },
+                           {
+                               "variant":  "candidate",
+                               "payloadSha256Provider":  "System.Security.Cryptography.SHA256Cng, System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                               "changedFiles":  [
+                                                    "Download.ps1"
+                                                ],
+                               "downloadSha256":  "515bafb3b9481e212f13f0d1113eed30a7eafdedb5f7c22bf3d8eb4bde0248fb",
+                               "integritySha256":  "116066239f090bb68a1856c2747dce88b577a293b34f3d2078ffc3f3a9b28c47"
+                           }
+                       ],
+    "fileTrials":  [
+                       {
+                           "phase":  "warmup",
+                           "variant":  "legacy",
+                           "algorithm":  "SHA256",
+                           "round":  0,
+                           "position":  0,
+                           "provider":  "System.Security.Cryptography.SHA256Managed, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "a626d17da2e502f5b4b8e3ebd23f0bf9daef6255688d8e0bb482b3ae3794a682",
+                           "wallMilliseconds":  160.4727,
+                           "cpuMilliseconds":  156.25,
+                           "mibPerSecond":  797.64346209666815
+                       },
+                       {
+                           "phase":  "warmup",
+                           "variant":  "candidate",
+                           "algorithm":  "SHA256",
+                           "round":  0,
+                           "position":  0,
+                           "provider":  "System.Security.Cryptography.SHA256Cng, System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "a626d17da2e502f5b4b8e3ebd23f0bf9daef6255688d8e0bb482b3ae3794a682",
+                           "wallMilliseconds":  157.5206,
+                           "cpuMilliseconds":  156.25,
+                           "mibPerSecond":  812.59213080701829
+                       },
+                       {
+                           "phase":  "measured",
+                           "variant":  "candidate",
+                           "algorithm":  "SHA256",
+                           "round":  1,
+                           "position":  1,
+                           "provider":  "System.Security.Cryptography.SHA256Cng, System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "a626d17da2e502f5b4b8e3ebd23f0bf9daef6255688d8e0bb482b3ae3794a682",
+                           "wallMilliseconds":  150.7516,
+                           "cpuMilliseconds":  156.25,
+                           "mibPerSecond":  849.078882081517
+                       },
+                       {
+                           "phase":  "measured",
+                           "variant":  "legacy",
+                           "algorithm":  "SHA256",
+                           "round":  1,
+                           "position":  2,
+                           "provider":  "System.Security.Cryptography.SHA256Managed, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "a626d17da2e502f5b4b8e3ebd23f0bf9daef6255688d8e0bb482b3ae3794a682",
+                           "wallMilliseconds":  153.8612,
+                           "cpuMilliseconds":  156.25,
+                           "mibPerSecond":  831.91863835716867
+                       },
+                       {
+                           "phase":  "measured",
+                           "variant":  "legacy",
+                           "algorithm":  "SHA256",
+                           "round":  2,
+                           "position":  1,
+                           "provider":  "System.Security.Cryptography.SHA256Managed, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "a626d17da2e502f5b4b8e3ebd23f0bf9daef6255688d8e0bb482b3ae3794a682",
+                           "wallMilliseconds":  150.43200000000002,
+                           "cpuMilliseconds":  140.625,
+                           "mibPerSecond":  850.88279089555419
+                       },
+                       {
+                           "phase":  "measured",
+                           "variant":  "candidate",
+                           "algorithm":  "SHA256",
+                           "round":  2,
+                           "position":  2,
+                           "provider":  "System.Security.Cryptography.SHA256Cng, System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "a626d17da2e502f5b4b8e3ebd23f0bf9daef6255688d8e0bb482b3ae3794a682",
+                           "wallMilliseconds":  149.7912,
+                           "cpuMilliseconds":  156.25,
+                           "mibPerSecond":  854.52282911145653
+                       },
+                       {
+                           "phase":  "measured",
+                           "variant":  "legacy",
+                           "algorithm":  "SHA256",
+                           "round":  3,
+                           "position":  1,
+                           "provider":  "System.Security.Cryptography.SHA256Managed, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "a626d17da2e502f5b4b8e3ebd23f0bf9daef6255688d8e0bb482b3ae3794a682",
+                           "wallMilliseconds":  150.21800000000002,
+                           "cpuMilliseconds":  156.25,
+                           "mibPerSecond":  852.09495533158486
+                       },
+                       {
+                           "phase":  "measured",
+                           "variant":  "candidate",
+                           "algorithm":  "SHA256",
+                           "round":  3,
+                           "position":  2,
+                           "provider":  "System.Security.Cryptography.SHA256Cng, System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "a626d17da2e502f5b4b8e3ebd23f0bf9daef6255688d8e0bb482b3ae3794a682",
+                           "wallMilliseconds":  151.3239,
+                           "cpuMilliseconds":  156.25,
+                           "mibPerSecond":  845.86770496927466
+                       },
+                       {
+                           "phase":  "measured",
+                           "variant":  "candidate",
+                           "algorithm":  "SHA256",
+                           "round":  4,
+                           "position":  1,
+                           "provider":  "System.Security.Cryptography.SHA256Cng, System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "a626d17da2e502f5b4b8e3ebd23f0bf9daef6255688d8e0bb482b3ae3794a682",
+                           "wallMilliseconds":  151.092,
+                           "cpuMilliseconds":  140.625,
+                           "mibPerSecond":  847.16596510735178
+                       },
+                       {
+                           "phase":  "measured",
+                           "variant":  "legacy",
+                           "algorithm":  "SHA256",
+                           "round":  4,
+                           "position":  2,
+                           "provider":  "System.Security.Cryptography.SHA256Managed, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "a626d17da2e502f5b4b8e3ebd23f0bf9daef6255688d8e0bb482b3ae3794a682",
+                           "wallMilliseconds":  150.6455,
+                           "cpuMilliseconds":  156.25,
+                           "mibPerSecond":  849.676890448105
+                       },
+                       {
+                           "phase":  "warmup",
+                           "variant":  "legacy",
+                           "algorithm":  "SHA512",
+                           "round":  0,
+                           "position":  0,
+                           "provider":  "System.Security.Cryptography.SHA512Managed, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "c0948e653e8baca2b4eb0a6f46ba83ad7e806ca6ecac3bce2abd1d6dd2799bbf99be906d03b103a59acd9e55e1cd9780931ec2627807bbcb59dbfdc59fb2befe",
+                           "wallMilliseconds":  374.7421,
+                           "cpuMilliseconds":  359.375,
+                           "mibPerSecond":  341.56824119841355
+                       },
+                       {
+                           "phase":  "warmup",
+                           "variant":  "candidate",
+                           "algorithm":  "SHA512",
+                           "round":  0,
+                           "position":  0,
+                           "provider":  "System.Security.Cryptography.SHA512Cng, System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "c0948e653e8baca2b4eb0a6f46ba83ad7e806ca6ecac3bce2abd1d6dd2799bbf99be906d03b103a59acd9e55e1cd9780931ec2627807bbcb59dbfdc59fb2befe",
+                           "wallMilliseconds":  329.12100000000004,
+                           "cpuMilliseconds":  328.125,
+                           "mibPerSecond":  388.91471525669891
+                       },
+                       {
+                           "phase":  "measured",
+                           "variant":  "legacy",
+                           "algorithm":  "SHA512",
+                           "round":  1,
+                           "position":  1,
+                           "provider":  "System.Security.Cryptography.SHA512Managed, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "c0948e653e8baca2b4eb0a6f46ba83ad7e806ca6ecac3bce2abd1d6dd2799bbf99be906d03b103a59acd9e55e1cd9780931ec2627807bbcb59dbfdc59fb2befe",
+                           "wallMilliseconds":  322.8233,
+                           "cpuMilliseconds":  328.125,
+                           "mibPerSecond":  396.5017394964986
+                       },
+                       {
+                           "phase":  "measured",
+                           "variant":  "candidate",
+                           "algorithm":  "SHA512",
+                           "round":  1,
+                           "position":  2,
+                           "provider":  "System.Security.Cryptography.SHA512Cng, System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "c0948e653e8baca2b4eb0a6f46ba83ad7e806ca6ecac3bce2abd1d6dd2799bbf99be906d03b103a59acd9e55e1cd9780931ec2627807bbcb59dbfdc59fb2befe",
+                           "wallMilliseconds":  322.4589,
+                           "cpuMilliseconds":  328.125,
+                           "mibPerSecond":  396.94981282885976
+                       },
+                       {
+                           "phase":  "measured",
+                           "variant":  "candidate",
+                           "algorithm":  "SHA512",
+                           "round":  2,
+                           "position":  1,
+                           "provider":  "System.Security.Cryptography.SHA512Cng, System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "c0948e653e8baca2b4eb0a6f46ba83ad7e806ca6ecac3bce2abd1d6dd2799bbf99be906d03b103a59acd9e55e1cd9780931ec2627807bbcb59dbfdc59fb2befe",
+                           "wallMilliseconds":  323.54830000000004,
+                           "cpuMilliseconds":  328.125,
+                           "mibPerSecond":  395.61326701453845
+                       },
+                       {
+                           "phase":  "measured",
+                           "variant":  "legacy",
+                           "algorithm":  "SHA512",
+                           "round":  2,
+                           "position":  2,
+                           "provider":  "System.Security.Cryptography.SHA512Managed, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "c0948e653e8baca2b4eb0a6f46ba83ad7e806ca6ecac3bce2abd1d6dd2799bbf99be906d03b103a59acd9e55e1cd9780931ec2627807bbcb59dbfdc59fb2befe",
+                           "wallMilliseconds":  329.57460000000003,
+                           "cpuMilliseconds":  328.125,
+                           "mibPerSecond":  388.37944428969951
+                       },
+                       {
+                           "phase":  "measured",
+                           "variant":  "candidate",
+                           "algorithm":  "SHA512",
+                           "round":  3,
+                           "position":  1,
+                           "provider":  "System.Security.Cryptography.SHA512Cng, System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "c0948e653e8baca2b4eb0a6f46ba83ad7e806ca6ecac3bce2abd1d6dd2799bbf99be906d03b103a59acd9e55e1cd9780931ec2627807bbcb59dbfdc59fb2befe",
+                           "wallMilliseconds":  321.74330000000003,
+                           "cpuMilliseconds":  328.125,
+                           "mibPerSecond":  397.832682141322
+                       },
+                       {
+                           "phase":  "measured",
+                           "variant":  "legacy",
+                           "algorithm":  "SHA512",
+                           "round":  3,
+                           "position":  2,
+                           "provider":  "System.Security.Cryptography.SHA512Managed, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "c0948e653e8baca2b4eb0a6f46ba83ad7e806ca6ecac3bce2abd1d6dd2799bbf99be906d03b103a59acd9e55e1cd9780931ec2627807bbcb59dbfdc59fb2befe",
+                           "wallMilliseconds":  322.0811,
+                           "cpuMilliseconds":  312.5,
+                           "mibPerSecond":  397.41543356626636
+                       },
+                       {
+                           "phase":  "measured",
+                           "variant":  "legacy",
+                           "algorithm":  "SHA512",
+                           "round":  4,
+                           "position":  1,
+                           "provider":  "System.Security.Cryptography.SHA512Managed, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "c0948e653e8baca2b4eb0a6f46ba83ad7e806ca6ecac3bce2abd1d6dd2799bbf99be906d03b103a59acd9e55e1cd9780931ec2627807bbcb59dbfdc59fb2befe",
+                           "wallMilliseconds":  323.0276,
+                           "cpuMilliseconds":  328.125,
+                           "mibPerSecond":  396.25097050530673
+                       },
+                       {
+                           "phase":  "measured",
+                           "variant":  "candidate",
+                           "algorithm":  "SHA512",
+                           "round":  4,
+                           "position":  2,
+                           "provider":  "System.Security.Cryptography.SHA512Cng, System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "c0948e653e8baca2b4eb0a6f46ba83ad7e806ca6ecac3bce2abd1d6dd2799bbf99be906d03b103a59acd9e55e1cd9780931ec2627807bbcb59dbfdc59fb2befe",
+                           "wallMilliseconds":  322.59770000000003,
+                           "cpuMilliseconds":  328.125,
+                           "mibPerSecond":  396.77902229309137
+                       },
+                       {
+                           "phase":  "final-byte-check",
+                           "variant":  "candidate",
+                           "algorithm":  "SHA256",
+                           "round":  0,
+                           "position":  0,
+                           "provider":  "System.Security.Cryptography.SHA256Cng, System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089",
+                           "bytesRead":  134217728,
+                           "digest":  "a626d17da2e502f5b4b8e3ebd23f0bf9daef6255688d8e0bb482b3ae3794a682",
+                           "wallMilliseconds":  151.51000000000002,
+                           "cpuMilliseconds":  156.25,
+                           "mibPerSecond":  844.828724176622
+                       }
+                   ],
+    "fileSummary":  [
+                        {
+                            "algorithm":  "SHA256",
+                            "variant":  "candidate",
+                            "trials":  4,
+                            "medianWallMilliseconds":  150.92180000000002,
+                            "minWallMilliseconds":  149.7912,
+                            "maxWallMilliseconds":  151.3239,
+                            "medianCpuMilliseconds":  156.25
+                        },
+                        {
+                            "algorithm":  "SHA256",
+                            "variant":  "legacy",
+                            "trials":  4,
+                            "medianWallMilliseconds":  150.53875,
+                            "minWallMilliseconds":  150.21800000000002,
+                            "maxWallMilliseconds":  153.8612,
+                            "medianCpuMilliseconds":  156.25
+                        },
+                        {
+                            "algorithm":  "SHA512",
+                            "variant":  "legacy",
+                            "trials":  4,
+                            "medianWallMilliseconds":  322.92545,
+                            "minWallMilliseconds":  322.0811,
+                            "maxWallMilliseconds":  329.57460000000003,
+                            "medianCpuMilliseconds":  328.125
+                        },
+                        {
+                            "algorithm":  "SHA512",
+                            "variant":  "candidate",
+                            "trials":  4,
+                            "medianWallMilliseconds":  322.52830000000006,
+                            "minWallMilliseconds":  321.74330000000003,
+                            "maxWallMilliseconds":  323.54830000000004,
+                            "medianCpuMilliseconds":  328.125
+                        }
+                    ],
+    "payloadTrials":  [
+                          {
+                              "phase":  "warmup",
+                              "variant":  "legacy",
+                              "algorithm":  "SHA256",
+                              "round":  0,
+                              "position":  0,
+                              "outcome":  "pass",
+                              "payloadFileCount":  1004,
+                              "payloadBytes":  138326016,
+                              "wallMilliseconds":  4671.1754,
+                              "cpuMilliseconds":  4796.875
+                          },
+                          {
+                              "phase":  "warmup",
+                              "variant":  "candidate",
+                              "algorithm":  "SHA256",
+                              "round":  0,
+                              "position":  0,
+                              "outcome":  "pass",
+                              "payloadFileCount":  1004,
+                              "payloadBytes":  138326016,
+                              "wallMilliseconds":  4801.1207,
+                              "cpuMilliseconds":  5390.625
+                          },
+                          {
+                              "phase":  "measured",
+                              "variant":  "candidate",
+                              "algorithm":  "SHA256",
+                              "round":  1,
+                              "position":  1,
+                              "outcome":  "pass",
+                              "payloadFileCount":  1004,
+                              "payloadBytes":  138326016,
+                              "wallMilliseconds":  4616.0603,
+                              "cpuMilliseconds":  4593.75
+                          },
+                          {
+                              "phase":  "measured",
+                              "variant":  "legacy",
+                              "algorithm":  "SHA256",
+                              "round":  1,
+                              "position":  2,
+                              "outcome":  "pass",
+                              "payloadFileCount":  1004,
+                              "payloadBytes":  138326016,
+                              "wallMilliseconds":  4579.542,
+                              "cpuMilliseconds":  4578.125
+                          },
+                          {
+                              "phase":  "measured",
+                              "variant":  "legacy",
+                              "algorithm":  "SHA256",
+                              "round":  2,
+                              "position":  1,
+                              "outcome":  "pass",
+                              "payloadFileCount":  1004,
+                              "payloadBytes":  138326016,
+                              "wallMilliseconds":  4560.8257,
+                              "cpuMilliseconds":  4546.875
+                          },
+                          {
+                              "phase":  "measured",
+                              "variant":  "candidate",
+                              "algorithm":  "SHA256",
+                              "round":  2,
+                              "position":  2,
+                              "outcome":  "pass",
+                              "payloadFileCount":  1004,
+                              "payloadBytes":  138326016,
+                              "wallMilliseconds":  4565.9109,
+                              "cpuMilliseconds":  4562.5
+                          },
+                          {
+                              "phase":  "measured",
+                              "variant":  "candidate",
+                              "algorithm":  "SHA256",
+                              "round":  3,
+                              "position":  1,
+                              "outcome":  "pass",
+                              "payloadFileCount":  1004,
+                              "payloadBytes":  138326016,
+                              "wallMilliseconds":  4621.0146,
+                              "cpuMilliseconds":  4625
+                          },
+                          {
+                              "phase":  "measured",
+                              "variant":  "legacy",
+                              "algorithm":  "SHA256",
+                              "round":  3,
+                              "position":  2,
+                              "outcome":  "pass",
+                              "payloadFileCount":  1004,
+                              "payloadBytes":  138326016,
+                              "wallMilliseconds":  4536.4102,
+                              "cpuMilliseconds":  4562.5
+                          },
+                          {
+                              "phase":  "measured",
+                              "variant":  "legacy",
+                              "algorithm":  "SHA256",
+                              "round":  4,
+                              "position":  1,
+                              "outcome":  "pass",
+                              "payloadFileCount":  1004,
+                              "payloadBytes":  138326016,
+                              "wallMilliseconds":  4562.0941,
+                              "cpuMilliseconds":  4593.75
+                          },
+                          {
+                              "phase":  "measured",
+                              "variant":  "candidate",
+                              "algorithm":  "SHA256",
+                              "round":  4,
+                              "position":  2,
+                              "outcome":  "pass",
+                              "payloadFileCount":  1004,
+                              "payloadBytes":  138326016,
+                              "wallMilliseconds":  4604.5086,
+                              "cpuMilliseconds":  4640.625
+                          }
+                      ],
+    "payloadSummary":  [
+                           {
+                               "algorithm":  "SHA256",
+                               "variant":  "candidate",
+                               "trials":  4,
+                               "medianWallMilliseconds":  4610.28445,
+                               "minWallMilliseconds":  4565.9109,
+                               "maxWallMilliseconds":  4621.0146,
+                               "medianCpuMilliseconds":  4609.375
+                           },
+                           {
+                               "algorithm":  "SHA256",
+                               "variant":  "legacy",
+                               "trials":  4,
+                               "medianWallMilliseconds":  4561.4599,
+                               "minWallMilliseconds":  4536.4102,
+                               "maxWallMilliseconds":  4579.542,
+                               "medianCpuMilliseconds":  4570.3125
+                           }
+                       ],
+    "negativeControls":  [
+                             {
+                                 "variant":  "legacy",
+                                 "case":  "same-size same-timestamp byte mutation",
+                                 "rejected":  true,
+                                 "restoredPayloadPass":  true
+                             },
+                             {
+                                 "variant":  "candidate",
+                                 "case":  "same-size same-timestamp byte mutation",
+                                 "rejected":  true,
+                                 "restoredPayloadPass":  true
+                             }
+                         ],
+    "existingDownloadTests":  [
+                                  {
+                                      "variant":  "legacy",
+                                      "source":  "tests/Download.Tests.ps1",
+                                      "passed":  7,
+                                      "failed":  0,
+                                      "skipped":  0,
+                                      "algorithmCaseChecks":  4
+                                  },
+                                  {
+                                      "variant":  "candidate",
+                                      "source":  "tests/Download.Tests.ps1",
+                                      "passed":  7,
+                                      "failed":  0,
+                                      "skipped":  0,
+                                      "algorithmCaseChecks":  4
+                                  }
+                              ],
+    "sourceUnchanged":  true,
+    "fixtureRemoved":  true,
+    "reason":  "",
+    "exitCode":  0,
+    "endedAt":  "2026-10-18T01:18:07.3746663Z"
+}

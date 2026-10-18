@@ -203,7 +203,8 @@ class DashboardControl(UIControl):
         lines += [f'Usage: input {number(usage.get("input"))} / cache read {number(usage.get("cache_read"))} / output {number(usage.get("output"))} / reasoning {number(usage.get("reasoning"))}',
                   f'HEAD: {detail.get("head", "unavailable")}', '']
         if self.activity_mode == 'Changes':
-            return lines + ['GIT STATUS (read only)', safe(detail.get('changes') or '(clean / no changes reported)', 12000),
+            return lines + ['GIT STATUS (read only)', safe(detail.get('worktree_scope') or 'Worktree coverage not reported', 300),
+                            safe(detail.get('changes') or '(clean / no changes reported)', 12000),
                             '', 'DIFF SUMMARY', safe(detail.get('diff_stat') or '(no unstaged diff)', 12000)]
         events = detail.get('events', [])
         for event in events:

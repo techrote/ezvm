@@ -46,6 +46,12 @@ fingerprint, base and SSH reservation. Trust paths use the core OpenSSH quoting
 contract, including percent escaping and environment-expansion refusal; no global
 known-host fallback is used. Redirects, proxies and output-derived URLs are refused.
 Only allowlisted loopback GETs are used; no prompt, model load or provider probe.
+Each GET owns its numeric-loopback socket and a bounded watchdog. The same total
+deadline covers connection, status line, headers, chunk framing and body; closing
+the viewer cancels its active engine sockets. The watchdog interrupts trickling
+reads at expiry. Cancellation or premature EOF before the declared content length
+invalidates received JSON prefixes. Every request constructs its own handler chain
+and closes its owned response stream, including refused redirect responses.
 
 ## Observation envelope
 
@@ -68,6 +74,10 @@ not identity components. Launch/root changes invalidate poll cache. Accepted bas
 candidate root and restart root are separate declarations. An import path must be a
 file within the candidate root; an executable wrapper is a file, not a directory.
 These checks do not attest which code a live worker executed or authorize acceptance.
+Git status and diff inspect only the selected repository's own worktree. Parent
+filter checks cannot qualify submodule filters, so submodule worktrees are excluded
+and the Changes view explicitly labels their changes unobserved. Parent clean
+filters remain refused; external diff/textconv and fsmonitor remain disabled.
 
 ## Usage ledger
 

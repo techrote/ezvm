@@ -8,11 +8,13 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime
 import hashlib
+from http.client import HTTPConnection
 import json
 import math
 import os
 from pathlib import Path
 import re
+import socket
 import sqlite3
 import struct
 import subprocess
@@ -20,7 +22,7 @@ import tempfile
 import threading
 import time
 from urllib.parse import urlparse
-from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
+from urllib.request import HTTPHandler, HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 MAX_BYTES = 4_000_000
 MAX_ACTORS = 256
@@ -135,6 +137,95 @@ class NoRedirect(HTTPRedirectHandler):
         raise ValueError('Read-only collector refuses redirects')
 
 
+class _HTTPDeadline:
+    """Interrupt only sockets owned by this GET, including slow response headers.
+
+    urllib's socket timeout is an inactivity timeout while parsing headers. A
+    peer sending one byte before each timeout can otherwise hold that parser
+    indefinitely, before read_response gets an opportunity to check its deadline.
+    """
+    def __init__(self, deadline, cancel):
+        self.deadline, self.cancel = deadline, cancel
+        self.finished = threading.Event()
+        self.sockets = []
+        self.response = None
+        self.thread = None
+
+    def check(self):
+        if self.cancel is not None and self.cancel.is_set():
+            raise TimeoutError('HTTP sample cancelled')
+        if time.monotonic() >= self.deadline:
+            raise TimeoutError('HTTP sample exceeded total deadline')
+
+    def attach(self, connection):
+        # One numeric-loopback connection per GET; redirects are refused.
+        require(not self.sockets, 'HTTP collector refuses additional connections')
+        self.sockets.append(connection)
+        self.thread = threading.Thread(target=self._watch, daemon=True)
+        self.thread.start()
+
+    def _watch(self):
+        while not self.finished.wait(min(.05, max(0, self.deadline - time.monotonic()))):
+            if time.monotonic() >= self.deadline or self.cancel is not None and self.cancel.is_set():
+                for connection in self.sockets:
+                    try:
+                        # shutdown wakes readers even when HTTPResponse owns a
+                        # makefile reference after HTTPConnection.close().
+                        connection.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
+                    connection.close()
+                return
+
+    def close(self):
+        self.finished.set()
+        if self.thread and self.thread.ident is not None:
+            self.thread.join(timeout=.2)
+        try:
+            # A response hook can refuse before opener.open returns. Its
+            # traceback must not keep the socket's makefile reference open.
+            if self.response is not None:
+                self.response.close()
+        finally:
+            for connection in self.sockets:
+                connection.close()
+
+
+class _DeadlineHTTPConnection(HTTPConnection):
+    def __init__(self, host, *, budget, **kwargs):
+        super().__init__(host, **kwargs)
+        self.budget = budget
+
+    def connect(self):
+        self.budget.check()
+        require(self.host in ('127.0.0.1', '::1') and not self._tunnel_host,
+                'HTTP collector refuses DNS/proxy tunnelling')
+        self.sock = socket.socket(socket.AF_INET6 if self.host == '::1' else socket.AF_INET,
+                                  socket.SOCK_STREAM)
+        self.budget.attach(self.sock)
+        self.sock.settimeout(max(.001, self.budget.deadline - time.monotonic()))
+        self.sock.connect((self.host, self.port))
+
+    def getresponse(self):
+        response = super().getresponse()
+        self.budget.response = response
+        return response
+
+
+class _DeadlineHTTPHandler(HTTPHandler):
+    # Keep the bounded connection ahead of optional HTTP open handlers.
+    handler_order = 100
+
+    def __init__(self, budget):
+        super().__init__()
+        self.budget = budget
+
+    def http_open(self, request):
+        def connection(host, **kwargs):
+            return _DeadlineHTTPConnection(host, budget=self.budget, **kwargs)
+        return self.do_open(connection, request)
+
+
 def read_response(response, limit=MAX_BYTES, deadline=None):
     data = bytearray()
     while True:
@@ -142,20 +233,42 @@ def read_response(response, limit=MAX_BYTES, deadline=None):
             raise TimeoutError('Response exceeded total deadline')
         chunk = response.read1(min(65536, limit + 1 - len(data)))
         if not chunk:
+            # HTTPResponse.read1 treats an early EOF as an empty read instead
+            # of raising IncompleteRead. A valid JSON prefix is not a complete
+            # sample while declared Content-Length bytes are still missing.
+            require(getattr(response, 'length', None) in (None, 0),
+                    'HTTP response ended before its declared Content-Length')
             return bytes(data)
         data.extend(chunk)
         require(len(data) <= limit, 'Response exceeds read limit')
 
 
-def get_json(base, path, timeout=1.5, *, opener=None):
+def get_json(base, path, timeout=1.5, *, opener=None, cancel=None):
+    """GET with a fresh opener; an optional factory receives required handlers.
+
+    Factories create their own hook instances per call. A shared OpenerDirector
+    would retain old deadline state and share mutable handler parent references.
+    """
     base = endpoint(base)
     require(path in ('/metrics', '/settings', '/api/v0/models') or
             path.startswith('/session/status?directory='), 'Endpoint not in read-only allowlist')
     deadline = time.monotonic() + timeout
     request = Request(base + path, headers={'Accept': 'application/json'}, method='GET')
-    opener = opener or build_opener(ProxyHandler({}), NoRedirect())
-    with opener.open(request, timeout=timeout) as response:
-        return loads(read_response(response, deadline=deadline))
+    factory = build_opener if opener is None else opener
+    require(callable(factory), 'HTTP opener must be a per-request factory')
+    budget = _HTTPDeadline(deadline, cancel)
+    try:
+        budget.check()
+        transport = factory(ProxyHandler({}), NoRedirect(), _DeadlineHTTPHandler(budget))
+        with transport.open(request, timeout=timeout) as response:
+            result = loads(read_response(response, deadline=deadline))
+            budget.check()
+            return result
+    except Exception:
+        budget.check()  # Report cancellation/deadline instead of its socket error.
+        raise
+    finally:
+        budget.close()
 
 
 def run_read(argv, *, input=None, timeout=3, limit=MAX_BYTES, cancel=None, env=None):

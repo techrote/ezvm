@@ -292,7 +292,21 @@ hash/size checks still precede extraction or boot. Installed QEMU payloads now
 have a manifest-bound inventory verified before execution; see the host contract.
 
 Controller private keys remain host-side, with verified exact Windows ACLs and
-public/private pairing. Source/build/profile guards reject high-confidence token
+public/private pairing. Private permission replacement uses a fresh descriptor
+whose only modified sections are owner and DACL. Windows PowerShell 5.1 persists
+it through `FileInfo`/`DirectoryInfo.SetAccessControl`; PowerShell 7 uses the
+equivalent `FileSystemAclExtensions` methods. Neither path reads or writes audit
+rules, changes the primary group, elevates, or enables/grants a privilege. The
+readback requests only owner and access sections, and accepts exactly one explicit
+current-user FullControl allow ACE with inheritance disabled on the target.
+Directory ACEs propagate to files/subdirectories; file ACEs have no inheritance
+or propagation flags. Missing targets, wrong object types, redirected/hard-linked
+files, failed native restriction, failed persistence and incorrect readback remain
+terminating refusals. Existing key material is not replaced to hide an ACL error.
+The [standard-user regression](../research/CI-POC-001-PRIVATE-DACL.md) explains
+why the generic `Set-Acl` provider is unsuitable for this narrow operation.
+
+Source/build/profile guards reject high-confidence token
 formats without echoing them. Structured error/failure summaries redact known
 credential formats, authorization headers and sensitive URL fields before
 truncation. This is not a universal secret detector: raw guest output, explicit
