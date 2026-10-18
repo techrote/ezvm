@@ -1,0 +1,77 @@
+name: CI-PoC002 trusted one-job WHPX
+run-name: CI-PoC002 ${{ inputs.comparison_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner_name:
+        description: Exact fresh UUID label allocated by the reviewed host controller
+        required: true
+        type: string
+      comparison_id:
+        description: Exact host registration lease UUID
+        required: true
+        type: string
+      mode:
+        description: Full original qualification or bounded backing-reuse preflight probe
+        required: true
+        type: choice
+        options: [qualification, probe]
+
+permissions:
+  contents: read
+
+jobs:
+  trusted-whpx:
+    name: Trusted Windows WHPX PoC
+    if: github.repository == 'techrote/ezvm' && github.event_name == 'workflow_dispatch' && github.actor == 'techrote'
+    # Only the fresh UUID label is registered. No generic self-hosted label.
+    runs-on: '${{ inputs.runner_name }}'
+    # No former 90-minute setting. Runloc selects NoOverallTimeout explicitly;
+    # GitHub's own default job/service limits remain independently applicable.
+    steps:
+      - name: Validate owner dispatch and exact single-use runner identity
+        shell: powershell
+        env:
+          EXPECTED_RUNNER: ${{ inputs.runner_name }}
+          COMPARISON_ID: ${{ inputs.comparison_id }}
+          QUALIFICATION_MODE: ${{ inputs.mode }}
+        run: |
+          $env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
+          if ($env:COMPARISON_ID -cnotmatch '^[a-f0-9]{32}$' -or
+              $env:EXPECTED_RUNNER -cne ('runloc-' + $env:COMPARISON_ID) -or
+              $env:RUNNER_NAME -cne $env:EXPECTED_RUNNER -or
+              $env:GITHUB_RUN_ATTEMPT -cne '1' -or
+              @('qualification', 'probe') -cnotcontains $env:QUALIFICATION_MODE) {
+              throw 'Approved first-attempt dispatch and exact one-job runner required.'
+          }
+
+      - name: Checkout reviewed immutable Runloc controller
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: techrote/runloc
+          ref: 14c39e467f170e48f33af4e50b2c0e8e095b4f6e
+          path: Controller
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Exact preflight and full original eight-CPU WHPX qualification
+        id: qualify
+        shell: powershell
+        env:
+          COMPARISON_ID: ${{ inputs.comparison_id }}
+          QUALIFICATION_MODE: ${{ inputs.mode }}
+        run: |
+          $env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
+          $exe = [IO.Path]::Combine($env:SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe')
+          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-RunnerJob.ps1 -ExpectedControllerCommit '14c39e467f170e48f33af4e50b2c0e8e095b4f6e' -ComparisonId $env:COMPARISON_ID -Mode $env:QUALIFICATION_MODE
+          exit $LASTEXITCODE
+
+      - name: Retain only allowlisted receipt digest telemetry and Actions association
+        if: always() && steps.qualify.outputs.public_evidence != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-poc-002-${{ inputs.comparison_id }}
+          path: ${{ steps.qualify.outputs.public_evidence }}
+          if-no-files-found: error
+          retention-days: 14
