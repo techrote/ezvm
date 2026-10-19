@@ -7,6 +7,10 @@ on:
       - .github/workflows/ezvm-012-real-release.yml
       - .github/workflows/release.yml
       - scripts/Invoke-EzVm010RealPortability.ps1
+      - scripts/Install-TestPowerShell.ps1
+      - scripts/TcgQualification.ps1
+      - tests/tooling.json
+      - tests/TcgQualification.Tests.ps1
       - scripts/New-EzVmReleasePackage.ps1
       - scripts/Publish-EzVmGitHubRelease.ps1
       - src/EzVm/**
@@ -80,9 +84,21 @@ jobs:
           Write-Host 'EZVM012_WHPX_EXECUTION=SKIP: hosted qualification uses explicit TCG; no WHPX runtime PASS is claimed.'
           $PSVersionTable
 
+      - name: Prepare pinned release qualification runtime
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $executable = .\scripts\Install-TestPowerShell.ps1 -DestinationRoot $env:RUNNER_TEMP
+          ('EZVM_RELEASE_POWERSHELL=' + $executable) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Qualify complete clean-root v0.1 workflow
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          .\scripts\Invoke-EzVm010RealPortability.ps1 -ReleaseQualification
+          $pin = (Get-Content -LiteralPath .\tests\tooling.json -Raw | ConvertFrom-Json).powerShell7
+          $executable = $env:EZVM_RELEASE_POWERSHELL
+          $engine = @(& $executable -NoLogo -NoProfile -NonInteractive -Command '$PSVersionTable.PSEdition + [char]47 + $PSVersionTable.PSVersion.ToString()') -join ''
+          if ($LASTEXITCODE -ne 0 -or $engine -cne ('Core/' + $pin.version)) { throw 'The release harness must use the verified pinned PowerShell runtime.' }
+          Write-Host ('EZVM012_QUALIFICATION_POWERSHELL=' + $engine)
+          & $executable -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\scripts\Invoke-EzVm010RealPortability.ps1 -ReleaseQualification -TcgTimerCheckWorkaround
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

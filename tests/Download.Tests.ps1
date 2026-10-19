@@ -1,3 +1,71 @@
+Add-EzVmTest -Name 'Download: file hashing matches independent SHA256 and SHA512 vectors with either algorithm spelling' -ScriptBlock {
+    $root = New-EzVmTestDirectory -Prefix 'SHA vectors [spaces]'
+    try {
+        # Fixed expectations are independent of the selected .NET provider.
+        $vectors = @(
+            @{
+                Name = 'empty'; Bytes = [byte[]]@()
+                SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+                SHA512 = 'cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e'
+            },
+            @{
+                Name = 'abc'; Bytes = [Text.Encoding]::ASCII.GetBytes('abc')
+                SHA256 = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+                SHA512 = 'ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f'
+            },
+            @{
+                Name = 'multiblock'; Bytes = [byte[]]([byte[]](0..255) * 2)
+                SHA256 = '110009dcee21620b166f3abfecb5eff7a873be729d1c2d53822e7acc5f34eb9b'
+                SHA512 = 'edb9bed721aa6a5f6fbc6619d3a3c2be3d043043f05a9aebc7b1197a2aa9c49a57d5ddd4674c1785785088d9f1ff42c797a02adc9b817a139a50970da6c99524'
+            }
+        )
+        foreach ($vector in $vectors) {
+            $path = Join-Path $root ($vector.Name + '.bin')
+            [IO.File]::WriteAllBytes($path, $vector.Bytes)
+            foreach ($algorithm in @('SHA256', 'sha256', 'SHA512', 'sha512')) {
+                $digest = Get-EzVmFileDigest -Path $path -Algorithm $algorithm
+                Assert-EzVmEqual -Actual $digest -Expected $vector[$algorithm.ToUpperInvariant()] -Message ($vector.Name + ' ' + $algorithm)
+            }
+        }
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'Download: consecutive hashes reread changed bytes with unchanged file size and timestamp' -ScriptBlock {
+    $root = New-EzVmTestDirectory -Prefix 'SHA fresh bytes'
+    try {
+        $path = Join-Path $root 'payload.bin'
+        $original = [Text.Encoding]::ASCII.GetBytes('cached-file-A')
+        $changed = [Text.Encoding]::ASCII.GetBytes('cached-file-B')
+        $expectations = @(
+            @{
+                Algorithm = 'SHA256'
+                Original = '14eafdb35f86078b13a22403a58e732c499d4969761149fcb45074c6f482c7ec'
+                Changed = '5dd91c25a990838d738080f2568a8d9037cce8892e984bb509480e81b8cc10ea'
+            },
+            @{
+                Algorithm = 'SHA512'
+                Original = '4ed7c3f9d791df0fe640ee5f3f8173662bb1310b07ff2f752e76e1dac72c1c20531f75149ee586bfd3dbc2d0625237076a2bb9711edecc5a73668396e9b5f608'
+                Changed = 'aadb60f09d26db6c4cb98049be02920d55d3727d4b2272be28ff24cbe473eb221a29673d24012d283a73d46be681ed23cd95e74b5a07a22d58294d5d4e26f96c'
+            }
+        )
+        foreach ($expected in $expectations) {
+            [IO.File]::WriteAllBytes($path, $original)
+            $timestamp = [IO.File]::GetLastWriteTimeUtc($path)
+            Assert-EzVmEqual -Actual (Get-EzVmFileDigest -Path $path -Algorithm $expected.Algorithm) -Expected $expected.Original
+            [IO.File]::WriteAllBytes($path, $changed)
+            [IO.File]::SetLastWriteTimeUtc($path, $timestamp)
+            Assert-EzVmEqual -Actual (Get-Item -LiteralPath $path).Length -Expected $original.Length
+            Assert-EzVmEqual -Actual ([IO.File]::GetLastWriteTimeUtc($path)) -Expected $timestamp
+            Assert-EzVmEqual -Actual (Get-EzVmFileDigest -Path $path -Algorithm $expected.Algorithm) -Expected $expected.Changed
+            [IO.File]::WriteAllBytes($path, $original)
+            [IO.File]::SetLastWriteTimeUtc($path, $timestamp)
+            Assert-EzVmEqual -Actual (Get-EzVmFileDigest -Path $path -Algorithm $expected.Algorithm) -Expected $expected.Original
+        }
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
 Add-EzVmTest -Name 'Download: accepts a digest-matching artifact and promotes it atomically' -ScriptBlock {
     $root = New-EzVmTestDirectory -Prefix 'verified download'
     try {

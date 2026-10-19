@@ -92,7 +92,8 @@ def main(argv=None):
                 view=DashboardControl(collector)
                 for line in view.render(max(40,min(240,args.width)),max(12,min(100,args.height))):
                     print(''.join(text for style,text in line).rstrip())
-            return 1 if (not args.demo and collector.config.get('instance') and samples.get('guest',Sample()).error) else 0
+            guest = samples.get('guest', Sample())
+            return 1 if (not args.demo and collector.config.get('instance') and (guest.error or not guest.updated)) else 0
         app,_=make_application(collector)
         app.run()
         return 0

@@ -165,6 +165,49 @@ Add-EzVmTest -Name 'Security: installed executable DLL firmware and inventory ta
     }
 }
 
+Add-EzVmTest -Name 'Security: repeated public QEMU checks reject same-size same-time payload mutation after prior success' -ScriptBlock {
+    foreach ($target in @('qemu-img.exe', 'dependency.dll', 'firmware.fd')) {
+        $root = New-EzVmCheckoutFixture -Prefix ('QEMU fresh bytes ' + $target)
+        try {
+            $paths = New-EzVmSecurityQemuRuntime $root
+            $calls = [pscustomobject]@{ Count = 0 }
+            $probe = { param($r, $v) $calls.Count++; [pscustomobject]@{ QemuSystemVersion = "QEMU emulator version $v"; QemuImgVersion = "qemu-img version $v" } }.GetNewClosure()
+            $receiptPath = Join-Path $paths.Qemu 'ezvm-provenance.json'
+            $inventoryPath = Join-Path $paths.Qemu 'ezvm-payload.json'
+            $receiptBefore = [IO.File]::ReadAllText($receiptPath)
+            $inventoryBefore = [IO.File]::ReadAllText($inventoryPath)
+            Assert-EzVmTrue (Get-EzVmManagedQemuStatus -Root $root -PayloadProbe $probe).Valid
+            foreach ($tool in @('qemu-img.exe', 'qemu-system-x86_64.exe')) {
+                Assert-EzVmEqual -Actual (Get-EzVmQemuToolPath -Root $root -Name $tool) -Expected (Join-Path $paths.Qemu $tool)
+            }
+            Assert-EzVmEqual -Actual $calls.Count -Expected 1
+            $path = Join-Path $paths.Qemu $target
+            $original = [IO.File]::ReadAllBytes($path)
+            $timestamp = [IO.File]::GetLastWriteTimeUtc($path)
+            $changed = [byte[]]$original.Clone()
+            $changed[$changed.Length - 1] = $changed[$changed.Length - 1] -bxor 90
+            [IO.File]::WriteAllBytes($path, $changed)
+            [IO.File]::SetLastWriteTimeUtc($path, $timestamp)
+            Assert-EzVmEqual -Actual (Get-Item -LiteralPath $path).Length -Expected $original.Length
+            Assert-EzVmEqual -Actual ([IO.File]::GetLastWriteTimeUtc($path)) -Expected $timestamp
+            $status = Get-EzVmManagedQemuStatus -Root $root -PayloadProbe $probe
+            Assert-EzVmEqual -Actual $status.Valid -Expected $false
+            Assert-EzVmTrue -Condition ($status.Reason -match 'payload digest or size mismatch')
+            Assert-EzVmEqual -Actual $calls.Count -Expected 1 -Message 'Changed bytes must be refused before executing a version probe.'
+            foreach ($tool in @('qemu-img.exe', 'qemu-system-x86_64.exe')) {
+                Assert-EzVmThrows { Get-EzVmQemuToolPath -Root $root -Name $tool } -MessagePattern 'payload digest or size mismatch' | Out-Null
+            }
+            Assert-EzVmEqual -Actual ([IO.File]::ReadAllText($receiptPath)) -Expected $receiptBefore
+            Assert-EzVmEqual -Actual ([IO.File]::ReadAllText($inventoryPath)) -Expected $inventoryBefore
+            [IO.File]::WriteAllBytes($path, $original)
+            [IO.File]::SetLastWriteTimeUtc($path, $timestamp)
+            Assert-EzVmTrue (Get-EzVmManagedQemuStatus -Root $root -PayloadProbe $probe).Valid
+            Assert-EzVmEqual -Actual $calls.Count -Expected 2
+        }
+        finally { Remove-EzVmTestDirectory $root }
+    }
+}
+
 Add-EzVmTest -Name 'Security: legacy QEMU receipts are not upgraded from unverified installed bytes' -ScriptBlock {
     $root = New-EzVmCheckoutFixture -Prefix 'legacy QEMU receipt'
     try {

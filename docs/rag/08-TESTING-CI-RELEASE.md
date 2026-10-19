@@ -510,6 +510,18 @@ ready; managed QEMU and all applicable checks must still report their exact
 state. A supported physical Windows client procedure is documented separately
 for optional WHPX runtime evidence.
 
+The full hosted harness explicitly uses the existing official PowerShell 7
+version/size/SHA-256 pin in `tests/tooling.json`, installed under `RUNNER_TEMP` by
+`scripts/Install-TestPowerShell.ps1`. The workflow verifies the executable's
+actual Core edition and pinned version, records it, and invokes the complete
+scenario through that executable. Both Windows PowerShell 5.1 and pinned
+PowerShell 7 core/standard-user ACL lanes remain required. The
+[DASH-02 runtime preparation record](../research/TRIO-2026-10/retests/DASH-02-RELEASE-RUNTIME.md)
+retains the cancelled prior run and measured synthetic comparison; it rejects
+the proposed hash-provider change and does not establish full release PASS.
+This harness-runtime change preserves all scenario assertions, operation and
+job bounds, accelerator reporting and the scoped deferral below.
+
 ### Temporary CI-PoC hosted TCG deferral
 
 On **2026-10-17**, the owner explicitly deferred the approximately three-hour
@@ -564,3 +576,19 @@ automation connection cannot create that Git ref, the repository must be left
 release-ready and the exact accepted main SHA plus the single required tag-push
 action must be recorded; no release may be claimed published until the GitHub
 release exists.
+
+### Hosted TCG legacy timer compatibility fixture
+
+The release lane explicitly opts into `-TcgTimerCheckWorkaround`. This modifies
+only the fresh disposable base fixture: a GRUB fragment appends `no_timer_check`
+and `update-grub` must succeed before the existing cloud-init finalizer can
+publish the base. Original/effective template hashes and normal recipe provenance
+identify the adjustment. The checkout, public recipe, normal WHPX behavior and
+QEMU/CPU arguments are unchanged. The flag is refused outside release mode.
+
+Every subsequent authenticated guest start must show the effective option,
+positive IO-APIC interrupt counts, a clocksource and advancing uptime. This is a
+legacy boot self-check workaround, not APIC/timer disablement or a waiver of any
+release assertion/deadline. The initial vendor-image boot remains unmodified and
+can still fail. No automatic retry or failure-to-SKIP conversion is added. See the
+[observed failure, primary sources and evidence boundary](../research/TRIO-2026-10/DASH-02-TCG-QUALIFICATION.md).

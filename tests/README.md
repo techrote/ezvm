@@ -245,3 +245,45 @@ execution as SKIP and never silently substitutes a pass for an unavailable
 capability or failed check. Record its successful run and exact tested commit
 as acceptance evidence. No real account, token or private diagnostic artifact
 is part of the fixture or repository.
+
+## Guest Python probe process regressions
+
+On a disposable Linux test host with GNU `timeout`, `runuser`, a pre-existing
+`nobody` account and `/dev/shm` tmpfs:
+
+```sh
+sudo "$(command -v python3)" -I tests/guest/test_venv_probe.py
+```
+
+This extracts the actual coding-profile shell probe and cleanup. Filesystem and
+account adapters redirect managed paths to fresh temporary fixtures and map coder
+to nobody; no guest account or mount is created. Two native cases run real
+venv/ensurepip/pip on tmpfs and disk. Fault executables cover each child phase,
+missing Python, timeout/KILL, a TERM handler, an ensurepip-style descendant,
+unsafe `/run` ownership/permissions/symlinks and failed allocation. Each failure
+must preserve outside sentinels, clean scratch and invalidate stale READY.
+Fault timers are shortened to one second only in the timeout adapter, which
+asserts the unchanged production 90-second arguments. Owned PID/start identities
+and pidfds protect fault-fixture cleanup. These are Linux process tests, not a
+Windows TCG/WHPX or whole-guest PASS. Missing capabilities fail this dedicated lane.
+
+The `Guest venv probe` job in core CI uses the existing pinned Python 3.12.10 test
+interpreter on GitHub-hosted Ubuntu 24.04, logs source hashes/HEAD/tree, and rejects
+checkout mutation. It installs no extra Python packages. Windows recipe/digest
+regressions remain in `Profiles.Tests.ps1`; the normal full release lane proves
+integration with actual guest finalization, reset, cloning and relocation.
+
+## Payload verification across supported engines
+
+`Download.Tests.ps1` checks independent SHA256/SHA512 vectors and successive
+same-size, same-timestamp byte replacements. `Security.Tests.ps1` first proves
+successful public QEMU status/tool-path validation, then mutates an executable,
+DLL or firmware fixture without changing its size or timestamp. The next checks
+must refuse those bytes before a version probe, preserve the trust receipts and
+recover only after original bytes are restored. These cases run in both Windows
+control-plane lanes and both standard-user ACL lanes. The production digest
+factory is unchanged and no validation cache is introduced.
+
+The full release harness uses the same official version/size/hash-pinned
+PowerShell 7 runtime as the existing test lane. Its complete scenario and original
+timeouts remain mandatory; see the [measured runtime decision](../docs/research/TRIO-2026-10/retests/DASH-02-RELEASE-RUNTIME.md).

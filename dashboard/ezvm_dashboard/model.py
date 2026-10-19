@@ -128,7 +128,7 @@ def merge_worker_rows(rows):
     """Same logical origin/session through multiple endpoints is one worker."""
     merged = {}
     for row in rows:
-        key = (row.get('origin'), row['id'])
+        key = (row.get('origin'), row.get('epoch'), row['id'])
         previous = merged.get(key)
         if previous is None or row.get('observedAt', 0) >= previous.get('observedAt', 0):
             merged[key] = row

@@ -1,2 +1,6 @@
 # Keep repository text canonical across Windows and Unix checkouts.
 * text=auto eol=lf
+
+# These downloaded evidence receipts retain their original CRLF bytes and hashes.
+docs/research/TRIO-2026-10/retests/337da887-sha-preflight-ps51.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+docs/research/TRIO-2026-10/retests/337da887-sha-preflight-ps7.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
