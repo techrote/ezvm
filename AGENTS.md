@@ -75,14 +75,17 @@ Never silently convert a hardware or environment limitation into a PASS. If a ch
 ### CI-PoC source-bound qualification policy
 
 The temporary 2026-10-17 hosted TCG scheduling exception is removed. Every
-same-repository PR matching the release workflow paths, including `ci-poc-*`
-and `ezvm-ci-whpx-pilot`, runs the original complete hosted TCG release job.
+unapproved same-repository PR matching the release workflow paths, including
+`ci-poc-*` and `ezvm-ci-whpx-pilot`, runs the original complete hosted TCG job.
 Forks retain the existing trusted-repository gate. Manual hosted qualification
 remains available. Historical deferred runs remain SKIP/unmeasured.
 
 The explicitly approved frozen candidate `2268468cb3040b9e1dd6deed60d0f13594f768d6`
 (tree `d5677a166e54583f26e3f08e90e5836c19f99359`) may instead use the opt-in
-Runloc CI-PoC003 source-bound coordinator. It starts independent full hosted TCG
+Runloc CI-PoC003 source-bound coordinator. The legacy PR job routes only that
+exact SHA to this required gate instead of starting a duplicate legacy job;
+its skipped status is not qualification or merge permission. Without a complete
+verified gate result this candidate remains blocked. It starts independent full hosted TCG
 first, then may use one fresh ephemeral native Windows runner registration on
 the qualified reusable six-core WHPX backing environment. A complete valid WHPX
 receipt can accept before TCG completes. A named green check alone is insufficient:
@@ -93,8 +96,12 @@ a late functional/unknown failure revokes acceptance and persists quarantine.
 
 Every new or unapproved head retains the original hosted-only full qualification
 route. Never transfer this frozen candidate's green result to another commit.
-Software/control-plane checks, both PowerShell engines, private ACL regressions
-and all other applicable checks remain required. Infrastructure fallback requires
+Software/control-plane checks, both PowerShell engines and private ACL regressions
+remain required. For this approved opt-in source the source-bound result and
+provenance verifier replace the legacy release job as the required qualification;
+the separate pinned hosted comparison is diagnostic while WHPX is accepted and
+continues to revoke acceptance on actual failure. For all other heads the original
+legacy TCG result is required. Infrastructure fallback requires
 positive evidence; assertion/source/security/cleanup/unknown failures cannot be
 hidden by selecting another green lane. Hosted TCG is not WHPX coverage.
 

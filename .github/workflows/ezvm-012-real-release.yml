@@ -27,12 +27,15 @@ concurrency:
 jobs:
   real-release:
     # Every unapproved PR head uses hosted-only qualification, including ci-poc-*.
-    # Approved frozen source uses a separate source-bound opt-in coordinator;
-    # its result can never transfer to this workflow's different checkout SHA.
+    # The one exact approved source routes to the source-bound coordinator, which
+    # starts full hosted TCG independently. A skipped legacy job is NOT acceptance:
+    # EzVM qualification / source-bound plus its provenance verifier are required.
+    # Removing/revoking that approval restores hosted-only qualification here.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
-       github.event.pull_request.head.repo.full_name == github.repository)
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.head.sha != '2268468cb3040b9e1dd6deed60d0f13594f768d6')
     name: Real v0.1 end-to-end release (Windows TCG; WHPX SKIP)
     runs-on: windows-2022
     timeout-minutes: 180

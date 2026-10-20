@@ -518,13 +518,20 @@ Historical deferred TCG is SKIP/unmeasured, never PASS.
 | Source and execution | Qualification acceptance | Hosted treatment |
 | --- | --- | --- |
 | New/unapproved same-repository PR matching release paths, including CI-PoC branches | Original complete hosted-only release job on that exact PR head | Required full TCG; no private result borrowed |
-| Approved frozen `2268468cb3040b9e1dd6deed60d0f13594f768d6`, explicit coordinator opt-in | Stable `EzVM qualification / source-bound` result plus provenance verifier | Independent full TCG starts first; can remain diagnostic/pending after valid WHPX acceptance |
+| Approved frozen `2268468cb3040b9e1dd6deed60d0f13594f768d6`, explicit coordinator opt-in | Stable `EzVM qualification / source-bound` result plus provenance verifier replaces legacy PR release job | Legacy PR job routes this exact SHA to the gate; its SKIP grants nothing. Separate full TCG starts first and can remain diagnostic/pending after valid WHPX acceptance |
 | Approved source with positive private infrastructure loss/unavailability | Full hosted receipt supplies source-bound result | Full TCG required before acceptance |
 | Explicit hosted-only rollback | No private registration; full hosted receipt supplies result | Full TCG required before acceptance |
 | Any actual assertion/source/security/cleanup/unknown failure in either lane | Failure, including revocation of an earlier acceptance | Keep failure visible; persistent quarantine needs reviewed recovery |
 | Fork PR | Existing trusted-repository refusal | No private host/credentials exposed |
 
 The approved candidate tree is `d5677a166e54583f26e3f08e90e5836c19f99359`.
+Routing is by this one immutable SHA, never branch name. Without an opted-in
+coordinator and validated source-bound result, this routed candidate is blocked.
+Revoke/remove the exact-SHA routing exemption for hosted-only automatic rollback;
+the coordinator's explicit hosted-only mode exercises the same full pinned hosted
+comparison without private registration. Manual legacy workflow dispatch always
+retains its complete original job. A manually requested legacy qualification is
+its own required result, never silently replaced by a different green lane.
 Its private job, runner/controller and separate hosted workflow definitions are
 immutable pins in Runloc's reviewed `poc/windows-whpx/gate-policy.json`. The
 hosted comparison uses `.github/workflows/ezvm-ci-poc-003-hosted.yml` and the
