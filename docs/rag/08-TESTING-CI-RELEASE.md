@@ -2,6 +2,21 @@
 
 ## Test philosophy
 
+### CI-PoC003 immutable negative-only definition
+
+This branch's manually dispatched hosted workflow is a focused assertion control,
+not the independent full hosted comparison. Its immutable tag selects the reviewed
+Runloc negative-only adapter and frozen candidate, with six guest CPUs and the
+original light profile. It executes the fixed false assertion `test 1 -eq 2`
+through authenticated guest execution after READY. The real guest exit1,
+failed harness/job, source identity and owned cleanup remain evidence; the
+adapter always returns nonzero and never grants qualification. Only its named
+receipt and digest are uploaded. The separate failed-run validator can classify
+this evidence only as an assertion failure that must dominate a green lane.
+It cannot replace a full WHPX/TCG pass, reset quarantine or complete Runloc23.
+Do not merge this negative-only replacement over the ordinary hosted workflow;
+retain its immutable definition for the explicitly opted-in live control.
+
 The control plane should be highly testable without booting a VM. QEMU integration then verifies the boundaries that mocks cannot.
 
 Every implementation issue owns tests for the behavior it adds.
