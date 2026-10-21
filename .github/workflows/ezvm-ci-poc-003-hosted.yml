@@ -1,5 +1,5 @@
-name: CI-PoC003 hosted timer isolation
-run-name: CI-PoC003 timer ${{ inputs.comparison_id }}
+name: CI-PoC003 hosted TCG clock isolation
+run-name: CI-PoC003 clock ${{ inputs.comparison_id }}
 on:
   workflow_dispatch:
     inputs:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 jobs:
   hosted-tcg:
-    name: Six-CPU timer A-B diagnostic (never qualification)
+    name: Six-vCPU TCG clock controls (never qualification)
     if: github.repository == 'techrote/ezvm' && github.actor == 'techrote' && github.event_name == 'workflow_dispatch'
     runs-on: windows-2022
     timeout-minutes: 75
@@ -23,7 +23,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $env:PSModulePath=[IO.Path]::Combine($PSHOME,'Modules')
-          if($env:COMPARISON_ID -cne '5c4e91c694c24c4baa7ba406d34749bb' -or $env:GITHUB_RUN_ATTEMPT -cne '1'){throw 'exact-fresh-timer-attempt-required'}
+          if($env:COMPARISON_ID -cne 'eb549733500b48bcaea455748928cb23' -or $env:GITHUB_RUN_ATTEMPT -cne '1'){throw 'exact-fresh-timer-attempt-required'}
       - name: Checkout immutable diagnostic controller
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         env:
@@ -34,7 +34,7 @@ jobs:
           GIT_CONFIG_VALUE_1: lf
         with:
           repository: techrote/runloc
-          ref: 3db4aa240eadc2af903bcab935712e7be367393f
+          ref: 1e29b4c15971b4b9cc5feb5d8573c67cf9fef1e0
           path: Controller
           fetch-depth: 0
           persist-credentials: false
@@ -67,7 +67,7 @@ jobs:
           ('TIMER_PRIVATE='+$private)|Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
           ('TIMER_PUBLIC='+$public)|Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
           $exe=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
-          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-TimerProbe.ps1 -CandidateRoot (Join-Path $env:GITHUB_WORKSPACE 'Candidate') -ControllerCommit 3db4aa240eadc2af903bcab935712e7be367393f -EvidenceParent $private -BackingRoot $private -HostedDiagnostic
+          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-TimerProbe.ps1 -CandidateRoot (Join-Path $env:GITHUB_WORKSPACE 'Candidate') -ControllerCommit 1e29b4c15971b4b9cc5feb5d8573c67cf9fef1e0 -EvidenceParent $private -BackingRoot $private -HostedDiagnostic -ClockSuite
           exit $LASTEXITCODE
       - name: Bind public projection and encrypt private serial evidence
         if: always() && env.TIMER_PRIVATE != ''
@@ -80,39 +80,41 @@ jobs:
           . .\Controller\poc\windows-whpx\Pilot.Common.ps1
           $private=Assert-PilotPath -Path $env:TIMER_PRIVATE
           $public=Assert-PilotPath -Path $env:TIMER_PUBLIC
-          if($env:COMPARISON_ID -cne '5c4e91c694c24c4baa7ba406d34749bb' -or $private -cne (Join-Path $env:RUNNER_TEMP ('timer-private-'+$env:COMPARISON_ID)) -or $public -cne (Join-Path $env:RUNNER_TEMP ('timer-public-'+$env:COMPARISON_ID))){throw 'timer-root-binding-failed'}
+          if($env:COMPARISON_ID -cne 'eb549733500b48bcaea455748928cb23' -or $private -cne (Join-Path $env:RUNNER_TEMP ('timer-private-'+$env:COMPARISON_ID)) -or $public -cne (Join-Path $env:RUNNER_TEMP ('timer-public-'+$env:COMPARISON_ID))){throw 'timer-root-binding-failed'}
           $leases=@(Get-ChildItem -LiteralPath $private -Directory -Filter 'runloc-whpx-*')
           if($leases.Count -ne 1 -or $leases[0].Name -cnotmatch '^runloc-whpx-[a-f0-9]{32}$'){throw 'timer-lease-count'}
           $root=Assert-PilotPath -Path $leases[0].FullName
           $owner=[IO.File]::ReadAllText((Join-Path $root 'lease.json'))|ConvertFrom-Json
-          if($owner.root -cne $root -or ('runloc-whpx-'+$owner.leaseId) -cne $leases[0].Name -or $owner.candidateCommit -cne '2268468cb3040b9e1dd6deed60d0f13594f768d6' -or $owner.controllerCommit -cne '3db4aa240eadc2af903bcab935712e7be367393f'){throw 'timer-lease-binding'}
+          if($owner.root -cne $root -or ('runloc-whpx-'+$owner.leaseId) -cne $leases[0].Name -or $owner.candidateCommit -cne '2268468cb3040b9e1dd6deed60d0f13594f768d6' -or $owner.controllerCommit -cne '1e29b4c15971b4b9cc5feb5d8573c67cf9fef1e0'){throw 'timer-lease-binding'}
           $lock=[IO.File]::Open((Join-Path $root 'active.lock'),'Open','ReadWrite','None')
           try{
               $receiptPath=Assert-PilotPath -Path (Join-Path $root 'timer-probe-receipt.json') -File
               if((Get-Item -LiteralPath $receiptPath).Length -gt 4194304){throw 'timer-receipt-size'}
               $receipt=[IO.File]::ReadAllText($receiptPath)|ConvertFrom-Json
-              if(-not $receipt.hostedDiagnostic -or -not $receipt.diagnosticOnly -or $receipt.qualificationPassed -or $receipt.hostContext.repository -cne 'techrote/ezvm' -or $receipt.hostContext.runId -cne $env:GITHUB_RUN_ID -or $receipt.hostContext.workflowCommit -cne $env:GITHUB_SHA -or $receipt.candidate.commit -cne $owner.candidateCommit -or $receipt.controller.commit -cne $owner.controllerCommit){throw 'timer-receipt-binding'}
+              if(-not $receipt.clockSuite -or $receipt.expectedCaseCount -ne 9 -or @($receipt.cases).Count -ne 9 -or -not $receipt.hostedDiagnostic -or -not $receipt.diagnosticOnly -or $receipt.qualificationPassed -or $receipt.hostContext.repository -cne 'techrote/ezvm' -or $receipt.hostContext.runId -cne $env:GITHUB_RUN_ID -or $receipt.hostContext.workflowCommit -cne $env:GITHUB_SHA -or $receipt.candidate.commit -cne $owner.candidateCommit -or $receipt.controller.commit -cne $owner.controllerCommit){throw 'timer-receipt-binding'}
               $caseRecords=@();$serials=@();$seen=@{}
               foreach($case in $receipt.cases){
-                  if($case.name -cnotmatch '^boot-[123]-(default|off)$' -or $case.hpet -cnotin @('default','off') -or $case.requestedCpus -ne 6 -or $case.qualificationPassed -or $case.classification -cnotin @('kernel-panic','early-boot-observed-not-qualified','inconclusive')){throw 'timer-case-binding'}
-                  if($seen.ContainsKey($case.name) -or -not $case.name.EndsWith('-'+$case.hpet,[StringComparison]::Ordinal)){throw 'timer-duplicate-or-mode-mismatch'};$seen[$case.name]=$true
-                  $arguments=@($case.arguments);$machineIndex=[Array]::IndexOf($arguments,'-machine');$cpuIndex=[Array]::IndexOf($arguments,'-smp');$accelIndex=[Array]::IndexOf($arguments,'-accel')
-                  if($machineIndex -lt 0 -or $cpuIndex -lt 0 -or $accelIndex -lt 0 -or $arguments[$machineIndex+1] -cne $(if($case.hpet -ceq 'off'){'q35,hpet=off'}else{'q35'}) -or $arguments[$cpuIndex+1] -cne '6' -or $arguments[$accelIndex+1] -cne 'tcg,thread=multi'){throw 'timer-actual-arguments-mismatch'}
-                  if(@($arguments|Where-Object {$_ -ceq '-netdev'}).Count -ne 1 -or $arguments -cnotcontains 'user,id=net0,ipv6=off,restrict=on' -or $arguments -cnotcontains 'virtio-net-pci,netdev=net0' -or ($arguments -join ' ') -match 'hostfwd|guestfwd|smb=|tftp=|-virtfs|-fsdev'){throw 'timer-network-isolation-mismatch'}
+                  if($case.name -cnotmatch '^boot-[123]-(multi|single|icount)$' -or $case.hpet -cne 'default' -or $case.clockMode -cnotin @('multi','single','icount') -or $case.requestedCpus -ne 6 -or $case.qualificationPassed -or $case.classification -cnotin @('kernel-panic','early-boot-observed-not-qualified','inconclusive')){throw 'timer-case-binding'}
+                  if($seen.ContainsKey($case.name) -or -not $case.name.EndsWith('-'+$case.clockMode,[StringComparison]::Ordinal)){throw 'timer-duplicate-or-mode-mismatch'};$seen[$case.name]=$true
+                  $arguments=@($case.arguments);$machineIndex=[Array]::IndexOf($arguments,'-machine');$cpuIndex=[Array]::IndexOf($arguments,'-smp');$accelIndex=[Array]::IndexOf($arguments,'-accel');$memoryIndex=[Array]::IndexOf($arguments,'-m');$cpuModelIndex=[Array]::IndexOf($arguments,'-cpu')
+                  if($machineIndex -lt 0 -or $cpuIndex -lt 0 -or $accelIndex -lt 0 -or $memoryIndex -lt 0 -or $cpuModelIndex -lt 0 -or $arguments[$memoryIndex+1] -cne '4096' -or $arguments[$cpuModelIndex+1] -cne 'max' -or $arguments[$machineIndex+1] -cne 'q35' -or $arguments[$cpuIndex+1] -cne '6' -or $arguments[$accelIndex+1] -cne $(if($case.clockMode -ceq 'multi'){'tcg,thread=multi'}else{'tcg,thread=single'})){throw 'timer-actual-arguments-mismatch'}
+                  if(@($arguments|Where-Object {$_ -ceq '-netdev'}).Count -ne 1 -or $arguments -cnotcontains 'user,id=net0,ipv6=off,restrict=on' -or $arguments -cnotcontains 'virtio-net-pci,netdev=net0' -or ($arguments -join ' ') -match 'hostfwd|guestfwd|smb=|tftp=|-virtfs|-fsdev|noapic|no_timer_check|-append'){throw 'timer-network-isolation-mismatch'}
+                  if($case.clockMode -ceq 'icount'){if(@($arguments|Where-Object {$_ -ceq '-icount'}).Count -ne 1 -or $arguments[[Array]::IndexOf($arguments,'-icount')+1] -cne 'shift=auto,sleep=on'){throw 'clock-icount-binding'}}elseif($arguments -ccontains '-icount'){throw 'clock-unrequested-icount'}
                   $serial=Assert-PilotPath -Path (Join-Path $root ('private/'+$case.name+'-serial.private.log')) -File
                   if((Get-Item -LiteralPath $serial).Length -gt 2097152 -or (Get-PilotDigest $serial) -cne $case.serialSha256){throw 'timer-serial-binding'}
                   $serials+=@{name=$case.name;sha256=$case.serialSha256;bytesBase64=[Convert]::ToBase64String([IO.File]::ReadAllBytes($serial))}
                   $kernel=[string]$case.signals.kernelVersion;if($kernel -cnotmatch '^[0-9]+\.[0-9]+\.[0-9]+-[A-Za-z0-9.-]+$'){$kernel='unobserved'}
-                  $caseRecords+=@{name=$case.name;hpet=$case.hpet;machine=$arguments[$machineIndex+1];accelerator=$arguments[$accelIndex+1];cpus=6;network='restricted-user-no-forwarding';classification=$case.classification;kernelVersion=$kernel;kernelPanic=[bool]$case.signals.kernelPanic;ioApicTimerPanic=[bool]$case.signals.ioApicTimerPanic;kernelSixCpuObserved=[bool]$case.signals.kernelSixCpuObserved;kernelInitObserved=[bool]$case.signals.kernelInitObserved;actualExitCode=$case.actualExitCode;terminationIssued=$case.terminationIssued;activeProcesses=$case.activeProcesses;elapsedSeconds=$case.elapsedSeconds;serialSha256=$case.serialSha256;firmwareCodeSha256=$case.firmwareCodeSha256;firmwareVariablesInitialSha256=$case.firmwareVariablesInitialSha256}
+                  $caseRecords+=@{name=$case.name;hpet=$case.hpet;clockMode=$case.clockMode;machine=$arguments[$machineIndex+1];accelerator=$arguments[$accelIndex+1];cpus=6;network='restricted-user-no-forwarding';classification=$case.classification;kernelVersion=$kernel;kernelPanic=[bool]$case.signals.kernelPanic;ioApicTimerPanic=[bool]$case.signals.ioApicTimerPanic;kernelSixCpuObserved=[bool]$case.signals.kernelSixCpuObserved;kernelInitObserved=[bool]$case.signals.kernelInitObserved;actualExitCode=$case.actualExitCode;terminationIssued=$case.terminationIssued;activeProcesses=$case.activeProcesses;elapsedSeconds=$case.elapsedSeconds;serialSha256=$case.serialSha256;firmwareCodeSha256=$case.firmwareCodeSha256;firmwareVariablesInitialSha256=$case.firmwareVariablesInitialSha256}
               }
+              if($seen.Count -ne 9){throw 'clock-case-inventory'}
               $bundle=Join-Path $root 'private/timer-bundle.private.json'
               Write-PilotNewJson -Path $bundle -Value @{diagnosticOnly=$true;qualificationPassed=$false;receipt=$receipt;originalReceiptBytesBase64=[Convert]::ToBase64String([IO.File]::ReadAllBytes($receiptPath));serials=$serials}
               if((Get-Item -LiteralPath $bundle).Length -gt 8388608){throw 'timer-private-bundle-size'}
               $rawDigest=Get-PilotDigest $bundle
               $cert=Join-Path $root 'private/timer-recipient.pem'
               if([IO.File]::Exists($cert)){throw 'timer-recipient-replay'}
-              [IO.File]::WriteAllBytes($cert,[Convert]::FromBase64String('LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUVVVENDQXJtZ0F3SUJBZ0lVUUh3c2dvU2NHcGlJcnFtUjdhWVBobkhoTmIwd0RRWUpLb1pJaHZjTkFRRUwKQlFBd09ERTJNRFFHQTFVRUF3d3RjblZ1Ykc5akxYUnBiV1Z5TFRWak5HVTVNV00yT1RSak1qUmpOR0poWVRkaQpZVFF3Tm1Rek5EYzBPV0ppTUI0WERUSTJNVEF5TVRJeE5EZ3hORm9YRFRJMk1URXdOREl4TkRneE5Gb3dPREUyCk1EUUdBMVVFQXd3dGNuVnViRzlqTFhScGJXVnlMVFZqTkdVNU1XTTJPVFJqTWpSak5HSmhZVGRpWVRRd05tUXoKTkRjME9XSmlNSUlCb2pBTkJna3Foa2lHOXcwQkFRRUZBQU9DQVk4QU1JSUJpZ0tDQVlFQXUyWmM0VGloL2RYVgpJNXpXYkRBSGE2NjN4OWJNRm1mcmhOejJVeW83d3R4dzY2eVpycWNFcTJZZ2cyMFBxUGo2TTBsRVphQWZPSEI4CmZaWTRZLy9OOEZwS3h0SGdwUnhaWXpSYk5mT3hMQ09JMU80dy83bnY4MkxOODBjck5rRis5NWZEZGdwYmduVmkKU1lJOUI0ekxsbWVycm9ORDBGaGdZdmJRb2xiTzVwbFg0QUhGRFM2QmNyOHBtTE1nQVdPTmRFRWxQL1JDaHJvYwpxS05uOG5JbStSMzA3VHJYVnlVdVFpdmdNSEwvRXRJVjI4TFNuOWxVR2MxdElZV3UyTW9xRDV5R2JpT0g2K1ptCk4rT01idVpCZnQxMjRHT2ExSlpsVlJxakhLZDROT1pVcVptMk9RUDJMVDZuL0gvd29DME8xT2pOYkV5RVBMMCsKbXlIZGhCOTB6eGdwdjZsdFlpeldhYjl2VHBia1JOWWgxcFJybnNZTHZaU3FRVzhwU1FTdVJvQUo1bGZHZ3FqNQpHSDZBUkpabDl3LzZwQkUrb1RlNU93c2VyQ2FUNDRzc0VSUVJvNjAvWG5Zc051OHBGTER3b3VoKy82ZEZ6NlBSCkFSK0dEclN0UUdna2puSVRNR3BCYnlmMHV5MG5ub2pSUmZBYTBKSWxYM1U2ZUs5MFc3ZS9BZ01CQUFHalV6QlIKTUIwR0ExVWREZ1FXQkJTRFhLRzBOUVFCTFhkU3o4UVh0YWs1QjY4NFR6QWZCZ05WSFNNRUdEQVdnQlNEWEtHMApOUVFCTFhkU3o4UVh0YWs1QjY4NFR6QVBCZ05WSFJNQkFmOEVCVEFEQVFIL01BMEdDU3FHU0liM0RRRUJDd1VBCkE0SUJnUUJmUmwrUXh4WC81WVRlOS9RdW9wY0xwd2N2Vk05ZEVsQzBuZ0ROL2xLMFhXTEdWRndhd1ZEWlZKYmIKdTNLeWVGeWozQWgwUnp6ankwTlRtRm5wRkg3bURkdVhlNFRKN1F1WWZraFhPaHlaSTkvT1d6OGh1N0RmSzByRwozSkpNL2lRRUVMWjdvMmtTVkRwNzVNSmN2clBZdWd5bW9LLzdNMG8xYzBMeEdOR3JNdWN4Z2J5WUw4RERyOHFUCjZScnRWZnh3YkluMlFjNWNZbTVUQTRWTWFyeDh4UFJxeStjWW5EN1pPNUNvSWVMNHlEZzB3MmJkVVZScTdlalIKRllnb2ZWZkVNMzkzcU5ZL2xhbC9hQnBtUzhxRHYzQThUTnlxMUNJenp2RzFtRXJGTENlVGxuN0szZXN1cnVRZQpOLzBTZ1ltY2ZmNzF0VVF2b09Jc3lZcVZKM3Zkd0dMVVlXOVd6eDRhOE5iNVU4b3dmb1ZTQkhnY0V4bHMyN0FGCmdtNzZVa1I0L3pRekpRQnJoZlZwWXZJTzdQcE9IY29NSW9aY0RJNHpJMm1qNEZmdjZYcWwzT2JzbkU2RlVYS0QKdThqR1BWdkJIODVOaGRzTU9DaUZQV2drN1M0bHd2bUhORS9lNjRqM3pGNGNYek1OSTh2VkhMMTczUHRySGNvNQpIMDFxdGNFPQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg=='))
-              if((Get-PilotDigest $cert) -cne '1ac649b83b43756006a57ca7c97674df377af4808fe65c0e968d06044e909c5f'){throw 'timer-recipient-binding'}
+              [IO.File]::WriteAllBytes($cert,[Convert]::FromBase64String('LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUVVVENDQXJtZ0F3SUJBZ0lVSDV0SGRvOGdCNnVvM24zdk9jYzRoRXJ4RXpBd0RRWUpLb1pJaHZjTkFRRUwKQlFBd09ERTJNRFFHQTFVRUF3d3RjblZ1Ykc5akxXTnNiMk5yTFdWaU5UUTVOek16TlRBd1lqUTRZbU5oWldFMApOVFUzTkRnNU1qaGpZakl6TUI0WERUSTJNVEF5TVRJeU1UY3hObG9YRFRJMk1URXdOREl5TVRjeE5sb3dPREUyCk1EUUdBMVVFQXd3dGNuVnViRzlqTFdOc2IyTnJMV1ZpTlRRNU56TXpOVEF3WWpRNFltTmhaV0UwTlRVM05EZzUKTWpoallqSXpNSUlCb2pBTkJna3Foa2lHOXcwQkFRRUZBQU9DQVk4QU1JSUJpZ0tDQVlFQXY4RmdHNnNmZW9rNwppYjlkRll1djliQW5UMjZMZE01N1VTZXRXbXJub1dBcS80ckhBaUFwak1HcVpWVDU0TENwVDNTRGViR0E1L3VtCjF2aFA3RFdyclI0eGpCc280cGYvL2o1bVJMd3FvbnhDTDhTNnBCMHdHVmh0YXM0cGZQaEQ4bXhIMUQ1WjI5OXgKMU5kYkcyZUhKMGVMQm5jdmNmVk9TMWwxVGw5WnZQNzBMYnNYdDlzN0dEV3A2MEV6ME8vZ2JJa0p4U09DK3g1TApGbHZwM1JVUlFxOGo1T21rdmhESDdaMTJ3cnhCaVRPUDN1VGNST0NzeWR2ck5yZkVqdGlRTVRaNjQ3ZElrREVVCmFCNFJaaVlnRmZPWTh2YmVMcmRJVTdpbEZuTG1JdGpGRFZqVGVlaXR6ZGM1bFNZQmgyVllhTjd6ZjF5Nlp0b0sKL3FvSWMvSE8rZTI5QWxDS0JCRjhYQUYzdVZHM3RORGtudzc1THlkSldBMCtGei9Zd2FwM25WTmRpczROdTUrbwpTamlKaENpSHpwamZReWZUZ2RhSHkrS01mcnZkVjA2WlhXZXBzN0dJMittYUFjNWdDYmxBRUhWcXZlUXJPUkJECkVxMUVCMk9BU3pVczk1UUZJNjZHYVM4Tmg1MHFxWXZFVUExR3c5dG5Eak05djBlUXhLYzVBZ01CQUFHalV6QlIKTUIwR0ExVWREZ1FXQkJRWGlZd1ZKMk1LU210VWRta3RaN3kzRXlEWU16QWZCZ05WSFNNRUdEQVdnQlFYaVl3VgpKMk1LU210VWRta3RaN3kzRXlEWU16QVBCZ05WSFJNQkFmOEVCVEFEQVFIL01BMEdDU3FHU0liM0RRRUJDd1VBCkE0SUJnUUEzN09zdXJXTnlTTjhjcWYvd1lJTlFUdWpGMUNmTGVkc1lwb2wzazg2d0ZMOUNuS2NkVlRNT3NQOWgKeXloL0RmZzVQQmw5Y2xWdU8zT2YxbCtSbFhyalBnaXU0YXdqNTlScklnM3diaXNsc3FqaXBoOXRUbjQ1eU83ZwowZm52b2dhWi9vVVptb2xscjNLVGZOdXQ3SU1KUXF2d2c5NU9RNzFwUG9jVnpDTDV5QWtSQ1BPK0pGN0lPY0JVCjBsUWpKRk5vNTAyYzNacVJxNVhFRjZaT1lLbXk5NWJqcVRUakkwUnhrbmpaMGIzKzM1a1FSd0VHRFF1V01HUjIKa0VOT1ltVU95cmdTN2o0SzYvajMvSVROQnE0dUN1M1RnT3RBeHlXOHpibkN3OWR5bVZHWTNPbi9WMTJqVGVYZwozMldwUHZwZmdUdjY4TVQyZDhSRE9VQXVTYmhIZDV2WC8vVU1zOGE0N000TzQyWFo3ZXU5MEJITU42Vm1JUVJVCkMySEtWY29qamkxQ0dRb0Y2OW9NMUxhYWppYWk0N0hKREZVSGFYWUpOTjh6QnYzWTVxVkxRdXNDZkRMWmc3ZUwKQk5LQU0vL0Y0OWFpSkJ5ZzdreWFjWk8xMzU1cjk1eHpReXpiT3hMTmx4R0RzZEhJZW9OSXl6S0RYZG5PdDV1awozNnpueXBBPQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg=='))
+              if((Get-PilotDigest $cert) -cne 'c9b1542ea66727a2a6f1c5d0bf4bbd33c912b12d13377e9d6e3c6c8cf7c35ded'){throw 'timer-recipient-binding'}
               $cipher=Join-Path $public 'timer-private.cms'
               if([IO.File]::Exists($cipher)){throw 'timer-cipher-replay'}
               $openssl=Assert-PilotPath -Path (Join-Path $env:ProgramFiles 'Git/usr/bin/openssl.exe') -File
@@ -122,7 +124,7 @@ jobs:
               $os=Get-CimInstance Win32_OperatingSystem
               $processors=@(Get-CimInstance Win32_Processor|ForEach-Object {$_.Name.Trim()}|Select-Object -Unique)
               $hostFacts=@{osCaption=$os.Caption;osVersion=$os.Version;osBuild=$os.BuildNumber;cpuModels=$processors;logicalProcessors=[Environment]::ProcessorCount;totalMemoryBytes=[long]$os.TotalVisibleMemorySize*1024;imageOS=$env:ImageOS;imageVersion=$env:ImageVersion}
-              $summary=@{schemaVersion=1;diagnosticOnly=$true;qualificationPassed=$false;comparisonId=$env:COMPARISON_ID;runId=[long]$env:GITHUB_RUN_ID;runAttempt=1;workflowCommit=$env:GITHUB_SHA;candidate=$receipt.candidate;controller=$receipt.controller;hostContext=$receipt.hostContext;host=$hostFacts;hostLogicalProcessors=[Environment]::ProcessorCount;requestedGuestCpus=6;elapsedSeconds=$receipt.elapsedSeconds;sourceUnchanged=$receipt.sourceUnchanged;processesResolved=$receipt.processesResolved;fixtureRemoved=$receipt.fixtureRemoved;fixtureQuarantined=$receipt.fixtureQuarantined;failure=$receipt.failure;cases=$caseRecords;identities=$receipt.identities;originalPrivateReceiptSha256=(Get-PilotDigest $receiptPath);plaintextSha256=$rawDigest;plaintextBytes=(Get-Item -LiteralPath $bundle).Length;ciphertextSha256=(Get-PilotDigest $cipher);ciphertextBytes=(Get-Item -LiteralPath $cipher).Length;recipientSha256=(Get-PilotDigest $cert);encryption='CMS-AES-256-GCM-RSA-OAEP-SHA256-MGF1-SHA256';encryptionExitCode=$encrypted.exitCode;activeEncryptionProcesses=$encrypted.activeProcesses;opensslSha256=(Get-PilotDigest $openssl)}
+              $summary=@{schemaVersion=1;clockSuite=$true;expectedCaseCount=9;diagnosticOnly=$true;qualificationPassed=$false;comparisonId=$env:COMPARISON_ID;runId=[long]$env:GITHUB_RUN_ID;runAttempt=1;workflowCommit=$env:GITHUB_SHA;candidate=$receipt.candidate;controller=$receipt.controller;hostContext=$receipt.hostContext;host=$hostFacts;hostLogicalProcessors=[Environment]::ProcessorCount;requestedGuestCpus=6;elapsedSeconds=$receipt.elapsedSeconds;sourceUnchanged=$receipt.sourceUnchanged;processesResolved=$receipt.processesResolved;fixtureRemoved=$receipt.fixtureRemoved;fixtureQuarantined=$receipt.fixtureQuarantined;failure=$receipt.failure;cases=$caseRecords;identities=$receipt.identities;originalPrivateReceiptSha256=(Get-PilotDigest $receiptPath);plaintextSha256=$rawDigest;plaintextBytes=(Get-Item -LiteralPath $bundle).Length;ciphertextSha256=(Get-PilotDigest $cipher);ciphertextBytes=(Get-Item -LiteralPath $cipher).Length;recipientSha256=(Get-PilotDigest $cert);encryption='CMS-AES-256-GCM-RSA-OAEP-SHA256-MGF1-SHA256';encryptionExitCode=$encrypted.exitCode;activeEncryptionProcesses=$encrypted.activeProcesses;opensslSha256=(Get-PilotDigest $openssl)}
               Write-PilotNewJson -Path (Join-Path $public 'timer-summary.json') -Value $summary
               Write-PilotNewJson -Path (Join-Path $public 'timer-summary-digest.json') -Value @{schemaVersion=1;file='timer-summary.json';sha256=(Get-PilotDigest (Join-Path $public 'timer-summary.json'))}
               foreach($case in $caseRecords){Write-Host ('TIMER_DIAGNOSTIC_RESULT='+($case|ConvertTo-Json -Compress))}
@@ -131,7 +133,7 @@ jobs:
         if: always() && env.TIMER_PUBLIC != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: ci-poc-003-timer-${{ inputs.comparison_id }}
+          name: ci-poc-003-clock-${{ inputs.comparison_id }}
           path: |
             ${{ env.TIMER_PUBLIC }}/timer-summary.json
             ${{ env.TIMER_PUBLIC }}/timer-summary-digest.json
