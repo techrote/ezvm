@@ -588,3 +588,20 @@ errors, assertions and deadlines. No cache, skipped validation or performance
 acceptance is introduced. Nested durations overlap; nested failures can be the
 original expected-refusal controls. Only complete original scenario evidence,
 actual exit status and independent owned cleanup determine qualification.
+
+
+### Hosted TCG timer mitigation under qualification
+
+Explicit TCG uses `tcg,thread=single` for both prepared-base provisioning and
+managed instances. This serializes TCG host execution; it does not reduce the
+requested guest vCPU count. WHPX arguments and guest CPU/resource checks are unchanged.
+No instruction-count clock, HPET/APIC removal or Linux timer-check bypass is added.
+
+The CI-POC-003 fresh hosted VM diagnostic run39828718868 observed one early
+IO-APIC timer panic among six multi-thread boots and none among six single-thread
+boots across two fresh jobs per mode. Every first guest boot reached init. Earlier
+interleaved controls also had ordering/host-state limitations. These observations
+support testing this narrow empirical mitigation; they do not establish a root
+cause, statistical reliability guarantee, or complete release qualification.
+Fresh complete six-vCPU TCG and WHPX scenarios on the changed exact source remain
+required. A short boot/init observation is not authenticated READY or release PASS.

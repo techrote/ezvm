@@ -193,7 +193,7 @@ function New-EzVmBaseQemuArguments {
     foreach ($pair in @(
         @('-name', ('ezvm-base-build-' + $BuildId)),
         @('-machine', [string]$Recipe.machine),
-        @('-accel', $(if ($Accelerator -ceq 'tcg') { 'tcg,thread=multi' } else { 'whpx' })),
+        @('-accel', $(if ($Accelerator -ceq 'tcg') { 'tcg,thread=single' } else { 'whpx' })),
         @('-m', [string]$Recipe.memoryMiB),
         @('-smp', [string]$Recipe.cpus),
         @('-display', 'none'),
