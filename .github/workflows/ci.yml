@@ -53,6 +53,11 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $executable = .\scripts\Install-TestPowerShell.ps1 -DestinationRoot $env:RUNNER_TEMP
           ('EZVM_TEST_POWERSHELL=' + $executable) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Exercise offline venv stage diagnostic controls
+        shell: powershell
+        run: |
+          python -B .\tests\Test-VenvStages.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run versioned first-party test harness
         shell: powershell
         run: |

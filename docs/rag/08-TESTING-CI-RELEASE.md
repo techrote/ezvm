@@ -674,3 +674,39 @@ isolated offline install and missing-wheel refusal. The actual shell control
 also rejects bootstrap failure before prefix or pip validation. CI supplies
 test-only CPython3.12.10 through a pinned setup action; the first-party harness
 uses no external testing framework or pip-installed test package.
+
+### Fixed fresh-host venv stage diagnostic
+
+Full hosted run39927990349 on b205230 still failed the original shared90second
+venv budget, this time after entering the pip-version stage. That stage label
+alone does not measure pip duration or identify the root cause. The original
+failure and authenticated raw evidence remain retained by Runloc CI-PoC003.
+
+The owner-only manual `ezvm-ci-poc-003-hosted.yml` on the immutable diagnostic branch workflow measures a fresh
+six-vCPU single-thread-TCG guest on a fresh hosted Windows machine. It is an
+isolated diagnostic, never full release qualification or a stable gate publisher.
+It executes the exact current profile bootstrap in a fresh disposable venv and
+retains per-stage wall/child-CPU metrics for layout, ensurepip, isolated prefix
+and the actual installed `python -m pip --version` command. Each variant shares
+the original90second GNU timeout; timeout is a recorded failure, not a speedup.
+Matched twice-repeated variants compare the current optional-cache behavior,
+ordinary eager compilation, combining the prefix assertion with the existing
+bootstrap interpreter, and omitting optional caches only during pip-version.
+These are measured interventions, not product fixes. Full assertions and fresh
+complete changed-source qualification remain required for any adopted correction.
+
+The diagnostic uses a verified original source image, fresh local overlay,
+existing reviewed process ownership and bounded seed server. Its public artifact
+is only the closed JSON result, tool/image/source hashes and fixed stage metrics.
+Raw serial/process logs, disks and source workspaces are excluded. It changes no
+production profile or qualification assertion. It has a45minute owned-process
+wall and55minute outer Actions bound; fresh run/artifact API and source binding
+plus independent result review remain required. It does not reproduce the whole
+coding profile or establish a release result.
+The fixed order can warm later runs; results must distinguish cold-first from
+repeat measurements. Child CPU times are guest accounting, not measured host
+CPU utilization. Suppressing optional version-command caches does not suppress
+Python source parsing/compilation; no speedup is assumed before measurement.
+The measurement worker itself also consumes part of each90second diagnostic
+budget. These are matched comparative profiles, not exact production latency
+measurements or substitutes for a fresh full qualification.
