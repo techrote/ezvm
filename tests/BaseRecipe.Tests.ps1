@@ -72,6 +72,7 @@ Add-EzVmTest -Name 'Base recipe: TCG is explicit qualification mode and never su
     $root = New-EzVmTestDirectory -Prefix 'base accelerator args'
     try {
         $recipe = Get-EzVmBaseRecipe -Root $script:EzVmRepositoryRoot
+        $recipe.cpus = 6
         $disk = Join-Path $root 'disk.qcow2'
         $code = Join-Path $root 'code.fd'
         $vars = Join-Path $root 'vars.fd'
@@ -82,8 +83,12 @@ Add-EzVmTest -Name 'Base recipe: TCG is explicit qualification mode and never su
         $tcg = New-EzVmBaseQemuArguments -BuildId 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' -Recipe $recipe -StagingDisk $disk -FirmwareCode $code -FirmwareVariables $vars -SerialLog $serial -SeedHostPort 32002 -Accelerator tcg
         Assert-EzVmTrue -Condition (($whpx.Arguments -join ' ') -match ' -accel whpx ')
         Assert-EzVmTrue -Condition (($whpx.Arguments -join ' ') -notmatch 'tcg')
-        Assert-EzVmTrue -Condition (($tcg.Arguments -join ' ') -match 'tcg,thread=multi')
+        Assert-EzVmTrue -Condition (($tcg.Arguments -join ' ') -match 'tcg,thread=single')
         Assert-EzVmTrue -Condition (($tcg.Arguments -join ' ') -match ' -cpu max ')
+        $actual=@($tcg.Arguments)
+        Assert-EzVmEqual -Actual @($actual | Where-Object {$_ -ceq '-accel'}).Count -Expected 1
+        Assert-EzVmTrue -Condition (($actual -join ' ') -notmatch 'thread=multi|-icount|noapic|no_timer_check|-append')
+        Assert-EzVmEqual -Actual $actual[[Array]::IndexOf($actual,'-smp')+1] -Expected ([string]$recipe.cpus)
     }
     finally { Remove-EzVmTestDirectory -Path $root }
 }

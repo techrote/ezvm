@@ -564,3 +564,28 @@ automation connection cannot create that Git ref, the repository must be left
 release-ready and the exact accepted main SHA plus the single required tag-push
 action must be recorded; no release may be claimed published until the GitHub
 release exists.
+
+## CI-PoC003 narrow main-source TCG and venv repair
+
+Explicit TCG now uses `thread=single` in both base and runtime constructors.
+A six-vCPU hosted diagnostic observed five of six multi-thread boots reach init
+(one IO-APIC timer panic), versus six of six single-thread boots. This is an
+empirical mitigation, not proof of the underlying timer cause or a reliability
+guarantee. WHPX selection, CPU counts, memory, APIC and Linux timer guards are
+unchanged.
+
+The disposable coding-profile readiness venv uses real offline `ensurepip`
+without optional eager pip bytecode generation. It remains a fresh isolated venv,
+with the actual prefix and pip checks inside the original shared90-second bound.
+A process-local delegate adds only pip's `--no-compile`; the CPython3.12 private
+`ensurepip._run_pip` signature and exactly-one bootstrap call fail closed.
+Normal user-created environments are unchanged. Original command status and
+bounded stage/elapsed diagnostics remain private except their closed values.
+
+Matched native six-vCPU TCG controls measured43.58/42.93 seconds for the original
+bootstrap versus35.83/35.77 seconds without optional eager bytecode (17–18%).
+Disk/RAM/disk creation controls measured46/44/47 seconds. These controls support
+a CPU-work reduction; they do not guarantee that the hosted90-second failure is
+resolved. This clean main-based repair requires its own full exact-head hosted
+qualification and software checks. Frozen lab candidate or WHPX results do not
+qualify this different source. The original release assertions are unchanged.
