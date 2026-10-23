@@ -55,7 +55,7 @@ jobs:
       - name: Exercise stage failure and source controls
         shell: powershell
         run: |
-          python .\Candidate\tests\Test-VenvStages.py
+          python -B .\Candidate\tests\Test-VenvStages.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Fixed fresh six-CPU TCG venv stage comparison
         shell: powershell
