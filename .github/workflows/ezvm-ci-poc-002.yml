@@ -57,7 +57,7 @@ jobs:
           GIT_CONFIG_VALUE_1: lf
         with:
           repository: techrote/runloc
-          ref: d3be2aa7677c338fab86508da6f390fcae1bc541
+          ref: a71e9e1adae1fb749b2325277c4a52dff69d7b6d
           path: Controller
           fetch-depth: 0
           persist-credentials: false
@@ -71,7 +71,7 @@ jobs:
         run: |
           $env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
           $exe = [IO.Path]::Combine($env:SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe')
-          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-RunnerJob.ps1 -ExpectedControllerCommit 'd3be2aa7677c338fab86508da6f390fcae1bc541' -ComparisonId $env:COMPARISON_ID -Mode $env:QUALIFICATION_MODE
+          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-RunnerJob.ps1 -ExpectedControllerCommit 'a71e9e1adae1fb749b2325277c4a52dff69d7b6d' -ComparisonId $env:COMPARISON_ID -Mode $env:QUALIFICATION_MODE
           exit $LASTEXITCODE
 
       - name: Retain only allowlisted receipt digest telemetry and Actions association
