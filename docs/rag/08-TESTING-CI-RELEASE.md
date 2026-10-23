@@ -564,3 +564,16 @@ automation connection cannot create that Git ref, the repository must be left
 release-ready and the exact accepted main SHA plus the single required tag-push
 action must be recorded; no release may be claimed published until the GitHub
 release exists.
+
+### CI-PoC003 full-context venv diagnostic definition
+
+The separate one-attempt forensic definition pins measurement candidate
+7dfb4ddfdc36b3544cb91c8493a52134abcd9e46 and unchanged controllera71e9e1.
+It executes the original full six-CPU TCG release scenario and encrypts its
+bounded raw log to the fresh owner-held comparison key. Candidate changes add
+fixed private venv timing snapshots and their controls/documentation; no
+deadline, pip assertion or release marker is relaxed. This definition cannot
+publish stable gate acceptance or clear quarantine, and is not a replacement
+for the normal hosted workflow or final policy migration. The fresh direct-guest
+comparison did not reproduce the full coding-finalizer timeout; this run measures
+that actual full context rather than claiming a repair.
