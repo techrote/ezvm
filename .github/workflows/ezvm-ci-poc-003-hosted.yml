@@ -1,5 +1,5 @@
-name: CI-PoC003 independent hosted TCG
-run-name: CI-PoC003 hosted ${{ inputs.comparison_id }}
+name: CI-PoC003 full six-vCPU venv budget qualification
+run-name: CI-PoC003 venv-budget ${{ inputs.comparison_id }}
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   hosted-tcg:
-    name: Independent full six-CPU TCG (WHPX SKIP)
+    name: Diagnostic full six-CPU TCG (not gate acceptance)
     if: github.repository == 'techrote/ezvm' && github.actor == 'techrote' && github.event_name == 'workflow_dispatch'
     runs-on: windows-2022
     # External Actions containment only. Original base-build/READY/stop bounds remain.
@@ -26,7 +26,7 @@ jobs:
           COMPARISON_ID: ${{ inputs.comparison_id }}
         run: |
           $env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
-          if ($env:COMPARISON_ID -cnotmatch '^[a-f0-9]{32}$' -or $env:GITHUB_RUN_ATTEMPT -cne '1') {
+          if ($env:COMPARISON_ID -cne 'e90cb5d6a01d4fdd962c6ce8a6dda1af' -or $env:GITHUB_RUN_ATTEMPT -cne '1') {
               throw 'Fresh exact comparison and first attempt required.'
           }
 
@@ -40,7 +40,7 @@ jobs:
           GIT_CONFIG_VALUE_1: lf
         with:
           repository: techrote/runloc
-          ref: f167950a865df3baad247ba37ff53f0fcb683a72
+          ref: a71e9e1adae1fb749b2325277c4a52dff69d7b6d
           path: Controller
           fetch-depth: 0
           persist-credentials: false
@@ -54,7 +54,7 @@ jobs:
           GIT_CONFIG_KEY_1: core.eol
           GIT_CONFIG_VALUE_1: lf
         with:
-          ref: 2268468cb3040b9e1dd6deed60d0f13594f768d6
+          ref: b205230d3f1ade15550bbbb8d8b405d17858c514
           path: Candidate
           fetch-depth: 0
           persist-credentials: false
@@ -69,14 +69,66 @@ jobs:
           [void][IO.Directory]::CreateDirectory($evidence)
           ('GATE_PUBLIC=' + $evidence) | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
           $exe = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
-          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-HostedQualification.ps1 -CandidateRoot (Join-Path $env:GITHUB_WORKSPACE 'Candidate') -CandidateCommit 2268468cb3040b9e1dd6deed60d0f13594f768d6 -ControllerCommit f167950a865df3baad247ba37ff53f0fcb683a72 -ComparisonId $env:COMPARISON_ID -EvidenceParent $evidence
+          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-HostedQualification.ps1 -CandidateRoot (Join-Path $env:GITHUB_WORKSPACE 'Candidate') -CandidateCommit b205230d3f1ade15550bbbb8d8b405d17858c514 -ControllerCommit a71e9e1adae1fb749b2325277c4a52dff69d7b6d -ComparisonId $env:COMPARISON_ID -EvidenceParent $evidence
           exit $LASTEXITCODE
+
+      - name: Encrypt bounded diagnostic log to owner-held attempt key
+        if: always() && env.GATE_PUBLIC != ''
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}"
+        env:
+          COMPARISON_ID: ${{ inputs.comparison_id }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
+          . .\Controller\poc\windows-whpx\Pilot.Common.ps1
+          $evidence = Assert-PilotPath -Path $env:GATE_PUBLIC
+          $expected = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP ('gate-public-' + $env:COMPARISON_ID)))
+          if ($env:COMPARISON_ID -cne 'e90cb5d6a01d4fdd962c6ce8a6dda1af' -or $evidence -cne $expected) { throw 'forensic-evidence-root-mismatch' }
+          $roots = @(Get-ChildItem -LiteralPath $evidence -Directory -Filter 'runloc-whpx-*')
+          if ($roots.Count -ne 1 -or $roots[0].Name -cnotmatch '^runloc-whpx-[a-f0-9]{32}$') { throw 'forensic-lease-count' }
+          $root = Assert-PilotPath -Path $roots[0].FullName
+          $owner = [IO.File]::ReadAllText((Assert-PilotPath -Path (Join-Path $root 'lease.json') -File)) | ConvertFrom-Json
+          if ($owner.root -cne $root -or ('runloc-whpx-' + $owner.leaseId) -cne $roots[0].Name -or
+              $owner.candidateCommit -cne 'b205230d3f1ade15550bbbb8d8b405d17858c514' -or
+              $owner.controllerCommit -cne 'a71e9e1adae1fb749b2325277c4a52dff69d7b6d') { throw 'forensic-lease-binding' }
+          $lock = [IO.File]::Open((Join-Path $root 'active.lock'), 'Open', 'ReadWrite', 'None')
+          try {
+              $private = Assert-PilotPath -Path (Join-Path $root 'private')
+              $raw = Assert-PilotPath -Path (Join-Path $private 'harness.log') -File
+              if ((Get-Item -LiteralPath $raw).Length -gt 8388608) { throw 'forensic-log-size-bound' }
+              $receipt = [IO.File]::ReadAllText((Join-Path $evidence 'hosted-receipt.json')) | ConvertFrom-Json
+              if ($receipt.comparisonId -cne $env:COMPARISON_ID -or $receipt.runId -ne [long]$env:GITHUB_RUN_ID -or
+                  $receipt.workflowCommit -cne $env:GITHUB_SHA -or $receipt.diagnostics.rawLogBytes -ne (Get-Item -LiteralPath $raw).Length -or $receipt.diagnostics.rawLogSha256 -cne (Get-PilotDigest $raw)) { throw 'forensic-log-receipt-binding' }
+              $cert = Join-Path $private 'forensic-recipient-public.pem'
+              if ([IO.File]::Exists($cert)) { throw 'forensic-recipient-already-exists' }
+              [IO.File]::WriteAllBytes($cert, [Convert]::FromBase64String('LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUVYVENDQXNXZ0F3SUJBZ0lVTGk0WmxGNVptSk9QTmJuQTczTzNsbUJicmRRd0RRWUpLb1pJaHZjTkFRRUwKQlFBd1BqRThNRG9HQTFVRUF3d3pjblZ1Ykc5akxYWmxibll0WW5Wa1oyVjBMV1U1TUdOaU5XUTJZVEF4WkRSbQpaR1E1TmpKak5tTmxPR0UyWkdSaE1XRm1NQjRYRFRJMk1UQXlNekE0TXpNMU1sb1hEVEkyTVRFd05qQTRNek0xCk1sb3dQakU4TURvR0ExVUVBd3d6Y25WdWJHOWpMWFpsYm5ZdFluVmtaMlYwTFdVNU1HTmlOV1EyWVRBeFpEUm0KWkdRNU5qSmpObU5sT0dFMlpHUmhNV0ZtTUlJQm9qQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FZOEFNSUlCaWdLQwpBWUVBcTk4aWdCT0RrOGhPSEtzblUrZjQxU1MwbEF1TE55YjNoRW56aGJDeFNoUkVuSUpkK1c1K0ExWjB0VEVrCmo3WkFYSFFCa1dIYUZJUzIwMnBJelRWWk8xelJQcWx1ZEZJMnVxTDhKRElsdWpZd3poOUtZUHhXVThSaDR2V3MKREQrL1NwQ0MrNTNOajdvL2NBejdtL0MxeWxxV3Q1QllPK0IvKy9oM3RZUm1HcytvMHg4eUFnQi9ibW9kVzNqUQpYSFc0bElqZCsveFR3Z0IyQklvajVaek5IYmw5OVlXNWVkaGtHV214UW9JUTQwWVRoSEkvaVZqaTRZMWJpa3paCnE3VUpNZ3JDamhkWkZZdC9LaVRKVzdBYXd6aFBqTGZ5dm5MQlo4ZXpJVVdxVlNvcW1qUW5UR0pheE56bWZiOVMKa3g3MVh0eWhPNno5RjZmaHZKdHlNTjR4NEd6M3NNVis0NDdYczYvQ1FFMy9XeTZYbVBHSitaSDB2S0swVVorZQpseFM3VzZPZUpTL1F3ZmdTRHZLR0NhYy9CUEx0Q3Voc3B1S2pwUm1uTzlNa3ozZWNpcGFpazk4V1VSVzdiemQ0Ck5GYk55QkJzaFRQYk1Fb1NLc1RmbG1Gd2hvUmF4Q1BBMGl2VVRQLytxckQvNVRGQTdoZmttQWdPU01wYmtoMFkKYXJ3OUFnTUJBQUdqVXpCUk1CMEdBMVVkRGdRV0JCUlllbEgxTFRUS3BLY2lJSDI5c3ByZWxOdTNBekFmQmdOVgpIU01FR0RBV2dCUlllbEgxTFRUS3BLY2lJSDI5c3ByZWxOdTNBekFQQmdOVkhSTUJBZjhFQlRBREFRSC9NQTBHCkNTcUdTSWIzRFFFQkN3VUFBNElCZ1FCT3lMNGpBRWg3VkpOeFUwT0dEMHVZL3NiLzhYRXVJQTBIdWxsOXp6aXoKdWltbVNrRmUzbkhQd3VLU3JDbk5KcVRGZ1RKNkhJakd3NXoyT3d5Q0E5b200WnB4dlhETkZ5eVdnRWM0aFBlUwpIeksrYklkdWdXUFNuSWhmVy92NS9SRDNNL2dFVEl3UktjbUVPa2ZUWjIySTB5TTRObGUwMWozdmVyazREZ29pClBRdWtWNzRRTmhMQkJidnowSVpKdExTdzNOd2xQT1Z2UGc4dVp6ODZlZWRBTSsyT2pOUzM1WDhqaGtPVjVWOHIKUnNkMmNRanFOY3hoeExHNTRXZ3N0S0l3ODA3cXc3emgyV1VhOFNVWHBjdlhqbzlYbkR4aGtpdGNPYW5IMDEzNQpWbHg2UXJ4a0pBYmZxZWFzMjFhdHR0QjJtME5MNDYzK1J5SWhPU1ZBcjJramtCL2NQVkh3WGsyeUlhbGxFdGF0CkFPK0RETisvWGNrdW5TdXNjcTBLQnV0ZXkwSUF5RUhvckEwallsUHpLcHZ5L0Y4bzQ2c29GZmxqSC96QjNnSjMKamhXS0FqV0NJQk50ZnZmRVBZZys2ZTduQURIeUhSaHhuYWV2eXNUU2hkY3pHd1RkWEdXY0F0R3EwaHk1Wkk1QgpCYjdTRjl0OENqSExsY3Z6MjJ5clVyYz0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo='))
+              if ((Get-PilotDigest $cert) -cne 'cca0046e0c445b2986121ee32c62d7330f7ee1a2ee3348a014bcb1739f3701a5') { throw 'forensic-recipient-mismatch' }
+              $cipher = Join-Path $evidence 'forensic-harness.cms'
+              if ([IO.File]::Exists($cipher)) { throw 'forensic-ciphertext-already-exists' }
+              $openssl = Assert-PilotPath -Path (Join-Path $env:ProgramFiles 'Git/usr/bin/openssl.exe') -File
+              $clock = [Diagnostics.Stopwatch]::StartNew()
+              $result = Invoke-PilotChild -Executable $openssl -Arguments @('cms','-encrypt','-binary','-aes-256-gcm','-in',$raw,'-out',$cipher,'-outform','DER','-recip',$cert,'-keyopt','rsa_padding_mode:oaep','-keyopt','rsa_oaep_md:sha256','-keyopt','rsa_mgf1_md:sha256') -WorkingDirectory $private -TemporaryDirectory $private -RawLogPath (Join-Path $private 'forensic-encryption.log') -Clock $clock -ExecutionDeadlineSeconds 60 -CleanupDeadlineSeconds 70
+              if ($result.exitCode -ne 0 -or -not $result.childExited -or $result.activeProcesses -ne 0 -or $result.forced -or $result.timedOut -or $result.cancelled -or $result.outputFailed -or $result.outputOverflow -or
+                  -not [IO.File]::Exists($cipher) -or (Get-Item -LiteralPath $cipher).Length -gt 8454144 -or (Get-PilotDigest $raw) -cne $receipt.diagnostics.rawLogSha256) { throw 'forensic-encryption-failed' }
+              Write-PilotNewJson -Path (Join-Path $evidence 'forensic-envelope.json') -Value @{schemaVersion=1;diagnosticOnly=$true;qualificationPassed=$false;comparisonId=$env:COMPARISON_ID;runId=[long]$env:GITHUB_RUN_ID;workflowCommit=$env:GITHUB_SHA;candidateCommit=$owner.candidateCommit;controllerCommit=$owner.controllerCommit;leaseId=$owner.leaseId;encryption='CMS-AES-256-GCM-RSA-OAEP-SHA256-MGF1-SHA256';recipientSha256=(Get-PilotDigest $cert);ciphertextSha256=(Get-PilotDigest $cipher);ciphertextBytes=(Get-Item -LiteralPath $cipher).Length;plaintextSha256=$receipt.diagnostics.rawLogSha256;plaintextBytes=$receipt.diagnostics.rawLogBytes;opensslSha256=(Get-PilotDigest $openssl);encryptionExitCode=$result.exitCode;activeEncryptionProcesses=$result.activeProcesses}
+          } finally { $lock.Dispose() }
+
+      - name: Retain encrypted diagnostic only (never plaintext or keys)
+        if: always() && env.GATE_PUBLIC != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-poc-003-forensic-encrypted-${{ inputs.comparison_id }}
+          path: |
+            ${{ env.GATE_PUBLIC }}/forensic-harness.cms
+            ${{ env.GATE_PUBLIC }}/forensic-envelope.json
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Retain named public evidence only
         if: always() && env.GATE_PUBLIC != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: ci-poc-003-hosted-${{ inputs.comparison_id }}
+          name: ci-poc-003-forensic-public-${{ inputs.comparison_id }}
           # The parent also contains private leases/logs. Never upload its directory.
           path: |
             ${{ env.GATE_PUBLIC }}/hosted-receipt.json
