@@ -40,7 +40,7 @@ jobs:
           GIT_CONFIG_VALUE_1: lf
         with:
           repository: techrote/runloc
-          ref: 1e20cb9b5e2fb743325540533f8dbfce7cb24fe1
+          ref: a71e9e1adae1fb749b2325277c4a52dff69d7b6d
           path: Controller
           fetch-depth: 0
           persist-credentials: false
@@ -54,7 +54,7 @@ jobs:
           GIT_CONFIG_KEY_1: core.eol
           GIT_CONFIG_VALUE_1: lf
         with:
-          ref: 2268468cb3040b9e1dd6deed60d0f13594f768d6
+          ref: b205230d3f1ade15550bbbb8d8b405d17858c514
           path: Candidate
           fetch-depth: 0
           persist-credentials: false
@@ -69,7 +69,7 @@ jobs:
           [void][IO.Directory]::CreateDirectory($evidence)
           ('GATE_PUBLIC=' + $evidence) | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
           $exe = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
-          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-AssertionControl.ps1 -CandidateRoot (Join-Path $env:GITHUB_WORKSPACE 'Candidate') -CandidateCommit 2268468cb3040b9e1dd6deed60d0f13594f768d6 -ControllerCommit 1e20cb9b5e2fb743325540533f8dbfce7cb24fe1 -ComparisonId $env:COMPARISON_ID -EvidenceParent $evidence
+          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-AssertionControl.ps1 -CandidateRoot (Join-Path $env:GITHUB_WORKSPACE 'Candidate') -CandidateCommit b205230d3f1ade15550bbbb8d8b405d17858c514 -ControllerCommit a71e9e1adae1fb749b2325277c4a52dff69d7b6d -ComparisonId $env:COMPARISON_ID -EvidenceParent $evidence
           exit $LASTEXITCODE
 
       - name: Retain named public evidence only
