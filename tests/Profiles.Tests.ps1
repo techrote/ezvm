@@ -206,7 +206,7 @@ Add-EzVmTest -Name 'Coding profile: real shell venv diagnostics preserve stage s
         $profileScript = Join-Path $script:EzVmRepositoryRoot 'guest/profiles/coding-default/v1/provision.sh'
         $result = Invoke-EzVmProcess -FilePath $shell -ArgumentList @($testScript.Replace('\','/'), $profileScript.Replace('\','/'), $root.Replace('\','/')) -TimeoutSeconds 60
         Assert-EzVmEqual -Actual $result.ExitCode -Expected 0 -Message $result.StdErr
-        foreach ($case in @('success','create','bootstrap','prefix','pip','timeout','setup','bad-stage','large-stage','fifo-stage','bad-clock','regressing-clock')) {
+        foreach ($case in @('success','provision','metrics-failed-pip','broken-metrics-pip','create','bootstrap','prefix','pip','timeout','setup','bad-stage','large-stage','fifo-stage','bad-clock','regressing-clock')) {
             Assert-EzVmTrue -Condition ($result.StdOut.Contains('PASS venv diagnostic ' + $case)) -Message ('Missing actual shell control: ' + $case)
         }
         Assert-EzVmTrue -Condition (-not $result.StdOut.Contains('PRIVATE_TOOL_OUTPUT_MUST_NOT_ESCAPE') -and -not $result.StdErr.Contains('PRIVATE_TOOL_OUTPUT_MUST_NOT_ESCAPE'))
