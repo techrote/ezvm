@@ -1,5 +1,5 @@
-name: CI-PoC003 independent hosted TCG
-run-name: CI-PoC003 hosted ${{ inputs.comparison_id }}
+name: CI-PoC003 negative assertion control
+run-name: CI-PoC003 assertion ${{ inputs.comparison_id }}
 
 on:
   workflow_dispatch:
@@ -14,11 +14,11 @@ permissions:
 
 jobs:
   hosted-tcg:
-    name: Independent full six-CPU TCG (WHPX SKIP)
+    name: Focused six-CPU TCG assertion control (expected failure)
     if: github.repository == 'techrote/ezvm' && github.actor == 'techrote' && github.event_name == 'workflow_dispatch'
     runs-on: windows-2022
-    # External Actions containment only. Original base-build/READY/stop bounds remain.
-    timeout-minutes: 360
+    # Negative-only focused control; original base/READY/stop bounds remain.
+    timeout-minutes: 90
     steps:
       - name: Validate fresh owner dispatch
         shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}"
@@ -59,28 +59,27 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Exact preflight and original complete release portability scenario
+      - name: Authenticated fixed false guest assertion (expected failure)
         shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}"
         env:
           COMPARISON_ID: ${{ inputs.comparison_id }}
         run: |
           $env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
-          $evidence = Join-Path $env:RUNNER_TEMP ('gate-public-' + $env:COMPARISON_ID)
+          $evidence = Join-Path $env:RUNNER_TEMP ('assertion-public-' + $env:COMPARISON_ID)
           [void][IO.Directory]::CreateDirectory($evidence)
           ('GATE_PUBLIC=' + $evidence) | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
           $exe = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
-          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-HostedQualification.ps1 -CandidateRoot (Join-Path $env:GITHUB_WORKSPACE 'Candidate') -CandidateCommit b205230d3f1ade15550bbbb8d8b405d17858c514 -ControllerCommit a71e9e1adae1fb749b2325277c4a52dff69d7b6d -ComparisonId $env:COMPARISON_ID -EvidenceParent $evidence
+          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-AssertionControl.ps1 -CandidateRoot (Join-Path $env:GITHUB_WORKSPACE 'Candidate') -CandidateCommit b205230d3f1ade15550bbbb8d8b405d17858c514 -ControllerCommit a71e9e1adae1fb749b2325277c4a52dff69d7b6d -ComparisonId $env:COMPARISON_ID -EvidenceParent $evidence
           exit $LASTEXITCODE
 
       - name: Retain named public evidence only
         if: always() && env.GATE_PUBLIC != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: ci-poc-003-hosted-${{ inputs.comparison_id }}
+          name: ci-poc-003-assertion-${{ inputs.comparison_id }}
           # The parent also contains private leases/logs. Never upload its directory.
           path: |
-            ${{ env.GATE_PUBLIC }}/hosted-receipt.json
-            ${{ env.GATE_PUBLIC }}/hosted-receipt-digest.json
-            ${{ env.GATE_PUBLIC }}/telemetry-events.json
+            ${{ env.GATE_PUBLIC }}/assertion-control-receipt.json
+            ${{ env.GATE_PUBLIC }}/assertion-control-receipt-digest.json
           if-no-files-found: error
           retention-days: 14
