@@ -42,6 +42,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Prepare Python for exact guest bootstrap controls
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12.10'
       - name: Prepare pinned current PowerShell test runtime
         if: matrix.major == 7
         shell: powershell

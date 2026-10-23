@@ -588,3 +588,89 @@ errors, assertions and deadlines. No cache, skipped validation or performance
 acceptance is introduced. Nested durations overlap; nested failures can be the
 original expected-refusal controls. Only complete original scenario evidence,
 actual exit status and independent owned cleanup determine qualification.
+
+
+### Hosted TCG timer mitigation under qualification
+
+Explicit TCG uses `tcg,thread=single` for both prepared-base provisioning and
+managed instances. This serializes TCG host execution; it does not reduce the
+requested guest vCPU count. WHPX arguments and guest CPU/resource checks are unchanged.
+No instruction-count clock, HPET/APIC removal or Linux timer-check bypass is added.
+
+The CI-POC-003 fresh hosted VM diagnostic run39828718868 observed one early
+IO-APIC timer panic among six multi-thread boots and none among six single-thread
+boots across two fresh jobs per mode. Every first guest boot reached init. Earlier
+interleaved controls also had ordering/host-state limitations. These observations
+support testing this narrow empirical mitigation; they do not establish a root
+cause, statistical reliability guarantee, or complete release qualification.
+Fresh complete six-vCPU TCG and WHPX scenarios on the changed exact source remain
+required. A short boot/init observation is not authenticated READY or release PASS.
+
+
+### Bounded venv failure diagnostics
+
+The complete hosted single-thread TCG attempt39840798569 failed at coding-profile
+venv validation on ezvm012-secondary. Its authenticated log did not retain the
+inner command status/stage, so timeout versus Python/ensurepip failure remains
+unresolved. The profile now records only create/prefix/pip/setup, the original
+numeric failure status, and guest monotonic elapsed whole seconds when available.
+The original clean environment, three validation commands, 90-second limit and
+failure/readiness-invalidating behavior are preserved. Reading a coder-owned
+stage file is independently bounded to 16 bytes and two diagnostic seconds;
+malformed/missing/FIFO data cannot export tool output or hang failure reporting.
+This is observability, not a correction of the underlying venv failure.
+
+The focused actual POSIX-shell regression uses the Bash already supplied with
+Git for Windows on CI (Bash on Linux). It stubs only external command boundaries
+and covers success, each command stage, status124, setup, malformed/large data
+and FIFO refusal; no live guest or privileges are needed. Bash is a test-only
+requirement, not an EzVM runtime dependency. New executed source requires fresh
+qualification; no previous physical or hosted result transfers automatically.
+
+### Disposable venv bytecode work under qualification
+
+The next complete hosted attempt39890465778 recorded a real create-stage
+timeout124 at90seconds, before prefix/pip checks. Local six-vCPU single-thread
+TCG controls took46/44/47seconds on disk/RAM/disk, versus about2seconds on WHPX;
+environment layout without pip took1second. A separately measured44.2second
+normal creation consumed about39.9user+4.2kernel CPU seconds. These observations
+support CPU emulation cost rather than a destination disk bottleneck; they do
+not establish the precise CPU speed or package state of the failed hosted VM.
+
+Matched unprofiled pass-through bootstrap controls took43.58/42.93seconds,
+versus35.83/35.77seconds with only eager compilation disabled (about17–18% less
+wall time). All performed real ensurepip, isolated-prefix and pip execution
+within the same90seconds. A separate actual pip-child profile recorded495
+`compileall.compile_file` calls taking14.69inclusive seconds; nested profile
+times overlap and profiling changes timing. This supports removing optional
+work, not a claim that the hosted timeout has already been cured.
+
+The disposable readiness probe now creates an isolated venv without pip, then
+runs the real ensurepip bootstrap with upgrade/default-pip behavior. A scoped
+child-interpreter `_run_pip` adapter delegates to the original implementation,
+adding only pip's `--no-compile` option for optional eager bytecode caches that
+would immediately be deleted. All original offline flags and bundled wheel
+paths are preserved; no global/system pip, preinstalled probe or network
+installer substitutes for actual bootstrap. A changed private interface or
+zero/multiple bootstrap calls fails closed. The function is restored even on
+failure; installed Python source and ordinary user-created venv behavior are
+unchanged.
+
+The adapter deliberately depends on CPython's private ensurepip interface;
+the supported Ubuntu24.04 guest uses CPython3.12. An interface change must fail
+validation until reviewed, rather than silently skipping bootstrap. Focused
+software controls also exercise CPython3.12's actual offline bootstrap.
+
+Creation, real ensurepip, isolated-prefix proof and actual pip version execution
+share the original90second limit. Provisioning failure, stale-ready invalidation
+and owned temporary-directory cleanup retain their original behavior. This is
+a bounded performance correction under evaluation, not a guarantee that every
+host can finish ordinary user venv creation within90seconds. Fresh complete
+TCG and WHPX qualification on the final changed source remain required.
+
+Focused controls execute the exact embedded Python helper: unchanged delegation,
+underlying/bootstrap failure, incompatible interface, zero/double calls, a real
+isolated offline install and missing-wheel refusal. The actual shell control
+also rejects bootstrap failure before prefix or pip validation. CI supplies
+test-only CPython3.12.10 through a pinned setup action; the first-party harness
+uses no external testing framework or pip-installed test package.

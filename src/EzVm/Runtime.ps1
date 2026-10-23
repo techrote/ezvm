@@ -695,7 +695,7 @@ function New-EzVmRuntimeQemuArguments {
     foreach ($pair in @(
         @('-name', ('guest=' + (Get-EzVmInstanceQemuName -InstanceName $InstanceName))),
         @('-machine', 'q35'),
-        @('-accel', $(if ($Accelerator -ceq 'tcg') { 'tcg,thread=multi' } else { 'whpx' })),
+        @('-accel', $(if ($Accelerator -ceq 'tcg') { 'tcg,thread=single' } else { 'whpx' })),
         @('-m', [string]$Intent.memoryMiB),
         @('-smp', [string]$Intent.cpus),
         @('-display', 'none'),
