@@ -206,16 +206,78 @@ for policy_line in 'passwordauthentication no' 'kbdinteractiveauthentication no'
 done
 
 # A real, disposable venv checks ensurepip and the installed wheel payload too.
+# Eagerly compiling every pip module is wasted work for this deleted probe.
+# Only its optional bytecode caches are omitted; user-created venvs are unchanged.
 # No network or package installation is involved. The directory is private to
 # this invocation and cannot overwrite a workspace or retain login material.
 venv_directory=$(mktemp -d /var/lib/ezvm/.venv-check.XXXXXX) || fail 'could not allocate the temporary Python validation directory'
 chown "$coder_uid:$coder_gid" "$venv_directory"
-runuser -u coder -- env -i PATH="$PATH" HOME=/home/coder USER=coder LOGNAME=coder LC_ALL=C \
+validation_started=$(cut -d. -f1 /proc/uptime 2>/dev/null || true)
+if runuser -u coder -- env -i PATH="$PATH" HOME=/home/coder USER=coder LOGNAME=coder LC_ALL=C \
     timeout 90 sh -eu -c '
-        python3 -m venv "$1/env"
-        "$1/env/bin/python" -c "import sys; assert sys.prefix != sys.base_prefix"
-        "$1/env/bin/python" -m pip --version >/dev/null
-    ' sh "$venv_directory" >/dev/null 2>&1 || fail 'Python venv with pip is unavailable or exceeded its 90 second validation deadline'
+        # Private diagnostic frames only; no extra worker or timer process.
+        # Child times are cumulative snapshots, not independent stage totals.
+        venv_metric() {
+            venv_uptime=unknown
+            IFS=" " read -r venv_uptime venv_idle </proc/uptime || venv_uptime=unknown
+            trap "" PIPE
+            {
+                printf "\nEZVM_VENV_METRIC invocation=%s mode=%s stage=%s edge=%s uptime=%s\n" "${1##*/}" "$2" "$3" "$4" "$venv_uptime"
+                printf "EZVM_VENV_TIMES\n"
+                times
+            } >&3 || :
+            trap - PIPE
+            return 0
+        }
+        printf "create\n" > "$1/stage"
+        venv_metric "$1" "$2" layout start
+        python3 -m venv --without-pip "$1/env" 3>&-
+        venv_metric "$1" "$2" layout end
+        venv_metric "$1" "$2" bootstrap start
+        "$1/env/bin/python" - 3>&- <<"EZVM_PIP_BOOTSTRAP"
+import ensurepip
+import inspect
+
+original = ensurepip._run_pip
+if str(inspect.signature(original)) != "(args, additional_paths=None)":
+    raise RuntimeError("unsupported ensurepip bootstrap interface")
+calls = 0
+
+def install_without_bytecode(args, additional_paths=None):
+    global calls
+    calls += 1
+    return original([*args, "--no-compile"], additional_paths)
+
+ensurepip._run_pip = install_without_bytecode
+try:
+    ensurepip.bootstrap(upgrade=True, default_pip=True)
+finally:
+    ensurepip._run_pip = original
+if calls != 1:
+    raise RuntimeError("ensurepip bootstrap did not execute exactly once")
+EZVM_PIP_BOOTSTRAP
+        venv_metric "$1" "$2" bootstrap end
+        printf "prefix\n" > "$1/stage"
+        venv_metric "$1" "$2" prefix start
+        "$1/env/bin/python" -c "import sys; assert sys.prefix != sys.base_prefix" 3>&-
+        venv_metric "$1" "$2" prefix end
+        printf "pip\n" > "$1/stage"
+        venv_metric "$1" "$2" pip start
+        "$1/env/bin/python" -m pip --version 3>&- >/dev/null
+        venv_metric "$1" "$2" pip end
+    ' sh "$venv_directory" "$mode" 3>&2 >/dev/null 2>&1; then
+    :
+else
+    validation_exit=$?
+    validation_ended=$(cut -d. -f1 /proc/uptime 2>/dev/null || true)
+    validation_elapsed=unknown
+    case "$validation_started:$validation_ended" in *[!0-9:]*|:*|*:) ;; *) if [ "$validation_ended" -ge "$validation_started" ]; then validation_elapsed=$((validation_ended - validation_started)); fi ;; esac
+    validation_stage=$(timeout 2 head -c 16 -- "$venv_directory/stage" 2>/dev/null || true)
+    case "$validation_stage" in create|prefix|pip) ;; *) validation_stage=setup ;; esac
+    # Preserve the real exit (including timeout124), without exporting tool text.
+    printf 'EZVM_VENV_VALIDATION_FAILURE stage=%s exit=%s elapsedSeconds=%s\n' "$validation_stage" "$validation_exit" "$validation_elapsed" >&2
+    fail "Python venv with pip is unavailable or exceeded its 90 second validation deadline (stage=$validation_stage exit=$validation_exit)"
+fi
 rm -rf -- "$venv_directory"
 venv_directory=''
 

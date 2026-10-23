@@ -564,3 +564,57 @@ automation connection cannot create that Git ref, the repository must be left
 release-ready and the exact accepted main SHA plus the single required tag-push
 action must be recorded; no release may be claimed published until the GitHub
 release exists.
+
+## CI-PoC003 narrow main-source TCG and venv repair
+
+Explicit TCG now uses `thread=single` in both base and runtime constructors.
+A six-vCPU hosted diagnostic observed five of six multi-thread boots reach init
+(one IO-APIC timer panic), versus six of six single-thread boots. This is an
+empirical mitigation, not proof of the underlying timer cause or a reliability
+guarantee. WHPX selection, CPU counts, memory, APIC and Linux timer guards are
+unchanged.
+
+The disposable coding-profile readiness venv uses real offline `ensurepip`
+without optional eager pip bytecode generation. It remains a fresh isolated venv,
+with the actual prefix and pip checks inside the original shared90-second bound.
+A process-local delegate adds only pip's `--no-compile`; the CPython3.12 private
+`ensurepip._run_pip` signature and exactly-one bootstrap call fail closed.
+Normal user-created environments are unchanged. Original command status and
+bounded stage/elapsed diagnostics remain private except their closed values.
+
+Matched native six-vCPU TCG controls measured43.58/42.93 seconds for the original
+bootstrap versus35.83/35.77 seconds without optional eager bytecode (17–18%).
+Disk/RAM/disk creation controls measured46/44/47 seconds. These controls support
+a CPU-work reduction; they do not guarantee that the hosted90-second failure is
+resolved. This clean main-based repair requires its own full exact-head hosted
+qualification and software checks. Frozen lab candidate or WHPX results do not
+qualify this different source. The original release assertions are unchanged.
+
+### Full-context venv timing diagnostics under evaluation
+
+The fresh six-CPU hosted stage comparison39943992446 completed all eight
+direct-guest trials within90seconds; the current implementation took49.07 and
+49.56seconds. It did not reproduce the full coding-finalizer pip timeout.
+Restoring compilation was slower overall, and neither combining the prefix
+check nor suppressing pip-version cache writes establishes another correction.
+
+The profile now emits fixed private metric frames at layout/bootstrap/prefix/pip
+boundaries in the actual full context, labelled with the temporary invocation
+basename and provision/validate mode. Builtin read obtains monotonic guest uptime;
+builtin times emits shell and waited-child cumulative CPU snapshots. There is no
+new timing worker, subprocess or extended deadline. Only these fixed frames use
+the preserved diagnostic descriptor; all existing tool output stays discarded.
+The descriptor is closed on each validation tool. PIPE is ignored only during
+metric writes and its entry policy is restored before validation resumes.
+Snapshot failures cannot replace the original operation status. Missing,
+malformed or regressing snapshots mean unavailable timing, never zero cost;
+per-stage CPU requires subtracting matching cumulative snapshots. A killed stage
+has no invented end frame. These are diagnostics, not additional PASS markers or
+an accelerator/qualification oracle. Raw output remains private or encrypted.
+
+Actual shell controls cover both invocation modes, partial pip failure19,
+timeout124, closed and broken-pipe metric descriptors preserving pip failure19,
+and suppression of secret-output attempts through stdout/stderr/the introduced
+descriptor. Original offline bootstrap, prefix proof, real installed pip CLI,
+shared90second timeout and all release assertions remain mandatory. New executed
+source invalidates earlier physical/hosted qualification for that source.

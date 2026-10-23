@@ -177,14 +177,19 @@ Add-EzVmTest -Name 'Runtime: explicit TCG is visible and does not alter WHPX def
     $fixture = New-EzVmRuntimeFixture
     try {
         $intent = Get-EzVmInstanceIntent -Root $fixture.Root -InstanceName $fixture.InstanceName
+        $intent.cpus = 6
         $runtimePaths = Get-EzVmInstanceRuntimePaths -Root $fixture.Root -InstanceName $fixture.InstanceName
         [void][IO.Directory]::CreateDirectory($runtimePaths.Logs)
         $firmware = Get-EzVmRuntimeFirmwarePaths -Root $fixture.Root -InstanceName $fixture.InstanceName
         $port = 32124
         $args = New-EzVmRuntimeQemuArguments -InstanceName $fixture.InstanceName -Intent $intent -Disk $fixture.Overlay -FirmwareCode $firmware.Code -FirmwareVariables $firmware.Variables -SerialLog (Join-Path $runtimePaths.Logs 'serial.log') -QemuLog (Join-Path $runtimePaths.Logs 'qemu.log') -QmpPort $port -Accelerator tcg
         $joined = ' ' + ($args -join ' ') + ' '
-        Assert-EzVmTrue -Condition ($joined -match ' -accel tcg,thread=multi ')
+        Assert-EzVmTrue -Condition ($joined -match ' -accel tcg,thread=single ')
         Assert-EzVmTrue -Condition ($joined -match ' -cpu max ')
+        $actual=@($args)
+        Assert-EzVmEqual -Actual @($actual | Where-Object {$_ -ceq '-accel'}).Count -Expected 1
+        Assert-EzVmTrue -Condition (($actual -join ' ') -notmatch 'thread=multi|-icount|noapic|no_timer_check|-append')
+        Assert-EzVmEqual -Actual $actual[[Array]::IndexOf($actual,'-smp')+1] -Expected ([string]$intent.cpus)
         Assert-EzVmTrue -Condition ($joined -notmatch ' -accel whpx ')
     }
     finally { Remove-EzVmRuntimeFixture $fixture }
