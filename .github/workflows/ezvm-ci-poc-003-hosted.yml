@@ -1,5 +1,5 @@
-name: CI-PoC003 full six-vCPU venv forensic
-run-name: CI-PoC003 venv-forensic ${{ inputs.comparison_id }}
+name: CI-PoC003 full six-vCPU venv budget qualification
+run-name: CI-PoC003 venv-budget ${{ inputs.comparison_id }}
 
 on:
   workflow_dispatch:
@@ -26,7 +26,7 @@ jobs:
           COMPARISON_ID: ${{ inputs.comparison_id }}
         run: |
           $env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
-          if ($env:COMPARISON_ID -cne 'e658746f264049f793af2432cb539890' -or $env:GITHUB_RUN_ATTEMPT -cne '1') {
+          if ($env:COMPARISON_ID -cne 'e90cb5d6a01d4fdd962c6ce8a6dda1af' -or $env:GITHUB_RUN_ATTEMPT -cne '1') {
               throw 'Fresh exact comparison and first attempt required.'
           }
 
@@ -40,7 +40,7 @@ jobs:
           GIT_CONFIG_VALUE_1: lf
         with:
           repository: techrote/runloc
-          ref: 81324943ac2327eff9e1e6b769c67add63041709
+          ref: a71e9e1adae1fb749b2325277c4a52dff69d7b6d
           path: Controller
           fetch-depth: 0
           persist-credentials: false
@@ -54,7 +54,7 @@ jobs:
           GIT_CONFIG_KEY_1: core.eol
           GIT_CONFIG_VALUE_1: lf
         with:
-          ref: 2a624a1d0d90e076cac5b81aebe115d66fa66e65
+          ref: b205230d3f1ade15550bbbb8d8b405d17858c514
           path: Candidate
           fetch-depth: 0
           persist-credentials: false
@@ -69,7 +69,7 @@ jobs:
           [void][IO.Directory]::CreateDirectory($evidence)
           ('GATE_PUBLIC=' + $evidence) | Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
           $exe = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
-          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-HostedQualification.ps1 -CandidateRoot (Join-Path $env:GITHUB_WORKSPACE 'Candidate') -CandidateCommit 2a624a1d0d90e076cac5b81aebe115d66fa66e65 -ControllerCommit 81324943ac2327eff9e1e6b769c67add63041709 -ComparisonId $env:COMPARISON_ID -EvidenceParent $evidence
+          & $exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\Controller\poc\windows-whpx\Invoke-HostedQualification.ps1 -CandidateRoot (Join-Path $env:GITHUB_WORKSPACE 'Candidate') -CandidateCommit b205230d3f1ade15550bbbb8d8b405d17858c514 -ControllerCommit a71e9e1adae1fb749b2325277c4a52dff69d7b6d -ComparisonId $env:COMPARISON_ID -EvidenceParent $evidence
           exit $LASTEXITCODE
 
       - name: Encrypt bounded diagnostic log to owner-held attempt key
@@ -83,14 +83,14 @@ jobs:
           . .\Controller\poc\windows-whpx\Pilot.Common.ps1
           $evidence = Assert-PilotPath -Path $env:GATE_PUBLIC
           $expected = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP ('gate-public-' + $env:COMPARISON_ID)))
-          if ($env:COMPARISON_ID -cne 'e658746f264049f793af2432cb539890' -or $evidence -cne $expected) { throw 'forensic-evidence-root-mismatch' }
+          if ($env:COMPARISON_ID -cne 'e90cb5d6a01d4fdd962c6ce8a6dda1af' -or $evidence -cne $expected) { throw 'forensic-evidence-root-mismatch' }
           $roots = @(Get-ChildItem -LiteralPath $evidence -Directory -Filter 'runloc-whpx-*')
           if ($roots.Count -ne 1 -or $roots[0].Name -cnotmatch '^runloc-whpx-[a-f0-9]{32}$') { throw 'forensic-lease-count' }
           $root = Assert-PilotPath -Path $roots[0].FullName
           $owner = [IO.File]::ReadAllText((Assert-PilotPath -Path (Join-Path $root 'lease.json') -File)) | ConvertFrom-Json
           if ($owner.root -cne $root -or ('runloc-whpx-' + $owner.leaseId) -cne $roots[0].Name -or
-              $owner.candidateCommit -cne '2a624a1d0d90e076cac5b81aebe115d66fa66e65' -or
-              $owner.controllerCommit -cne '81324943ac2327eff9e1e6b769c67add63041709') { throw 'forensic-lease-binding' }
+              $owner.candidateCommit -cne 'b205230d3f1ade15550bbbb8d8b405d17858c514' -or
+              $owner.controllerCommit -cne 'a71e9e1adae1fb749b2325277c4a52dff69d7b6d') { throw 'forensic-lease-binding' }
           $lock = [IO.File]::Open((Join-Path $root 'active.lock'), 'Open', 'ReadWrite', 'None')
           try {
               $private = Assert-PilotPath -Path (Join-Path $root 'private')
@@ -101,8 +101,8 @@ jobs:
                   $receipt.workflowCommit -cne $env:GITHUB_SHA -or $receipt.diagnostics.rawLogBytes -ne (Get-Item -LiteralPath $raw).Length -or $receipt.diagnostics.rawLogSha256 -cne (Get-PilotDigest $raw)) { throw 'forensic-log-receipt-binding' }
               $cert = Join-Path $private 'forensic-recipient-public.pem'
               if ([IO.File]::Exists($cert)) { throw 'forensic-recipient-already-exists' }
-              [IO.File]::WriteAllBytes($cert, [Convert]::FromBase64String('LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUVUekNDQXJlZ0F3SUJBZ0lVVHQrMTk1WStzYkNybDNsdU44VmN1TlowdUdnd0RRWUpLb1pJaHZjTkFRRUwKQlFBd056RTFNRE1HQTFVRUF3d3NjblZ1Ykc5akxYWmxibll0WlRZMU9EYzBObVl5TmpRd05EbG1Oemt6WVdZeQpORE15WTJJMU16azRPVEF3SGhjTk1qWXhNREl6TURJeU56TTFXaGNOTWpZeE1UQTJNREl5TnpNMVdqQTNNVFV3Ck13WURWUVFEREN4eWRXNXNiMk10ZG1WdWRpMWxOalU0TnpRMlpqSTJOREEwT1dZM09UTmhaakkwTXpKallqVXoKT1RnNU1EQ0NBYUl3RFFZSktvWklodmNOQVFFQkJRQURnZ0dQQURDQ0FZb0NnZ0dCQUsvY2Z2Z2hjTDhyNHBFUApFNzRRTWFBaU5kUTM1K2tDZDBtaUpjNG54QlBJWVY3NkNJbXJDd2Y1d1M4UGpqNzBpMVgvN2U3a0x0YVJlMVZSCmxoYURiK0dqbTFVcXhtL1M4UHEzUDYxVmZ0TkRhUU1zdXV1VjkvanBoaGZkUXdTRTRJSmdPZHBBcmtaZStNTjEKVTJqT1RoTjZnK2d4WDQzbVVpQ1Q5dUg3VUlUY2RpVXY5TEJPaGFUV3JvaW45QmdrMTcxZlBRbGIvcjZobExUQQpSR2MxeE5aMzIwSlNHY0VCdlZqNkVmY0lDcDIyTXJ2T3E5U2J4cVQxMDJuM3FNaU4wOFlVMDNjb1lLcWN5Y0syCm5Dekg4WUw2M0xnRThOc2tPNWFrc25HWEhxZWlwRnp1ZHBnMmd6OHdoWHJFczJDZ2ordjcybzh3S2UvQ3AvQW4KUEF6Vk1KRTRzRzRjb2VwQjNtWjhmaGVUNjNGdCtJYlVFZVdXeUxONkd2bk00S0d0T0hnNXFnS0hxRjh4c0Z4SQpCQ3I2T0hSRUN4MFFwSjRqbjZJUlZlcjd2cUN4Y3RRN3FOL2l3bmZKUGFDTkVIWFpZWG9OY0ZyS3lMMk1yeTVuCkltdUF2UFYrNmdjNXRFdHBGN1BMaFZRL21oenN2ekFlbFowZkMrbXpjZFNsT1V2SFdRSURBUUFCbzFNd1VUQWQKQmdOVkhRNEVGZ1FVWjdMVHFmZlVXN1ZiOFF1QkhDUnA2RWhGUXdJd0h3WURWUjBqQkJnd0ZvQVVaN0xUcWZmVQpXN1ZiOFF1QkhDUnA2RWhGUXdJd0R3WURWUjBUQVFIL0JBVXdBd0VCL3pBTkJna3Foa2lHOXcwQkFRc0ZBQU9DCkFZRUFSQ3ZUbVpDdFJpWjc5RDZUd0RNeWo3b3ZZRERBTWU2NlE0V1E3c1dYYUdMOHJNSUlFd0JFNHh6bHVZdzkKQ0hJZk1QazMzRzUzRlhyQ0UxQTZUY2h5d1Q2N1RhNWp5bFBUNmw1UTRYdmp6N1l4Mm5kZnM0RHJsTXZwcStGNApxV0VGRmlCa0I5bGUzYUlLL3d1V1Y3ditjcUljcytvY1dqclZCcGtiMHYyYWRuYmhldmNuMmUrYWF1elFoMUZrCkRIT1lMK3IzU2xJeWRWd05keXJ5VzBkc215ZFRSTkJnTFVaTzdCeklOSGd4dW1yMU5QY1ZNUyt5bjVxQXZmL1EKdlFSNlRPRmEwNnhST005NEZMU1V0SnZpTjBSTFZKTk8wYWhHWGdCQXZ5cENQVGJTRTBTUDJhazUwSFZrN0pNTQo1SXE5WjdhdDl3UVZQWjV4RytaclZ5c3dKdmVzVm5nbFZlMUUvMVlXRkgvUTlaVGl2ZmIzWjlxb0ZiTkFZMTZ1ClhhUmM0cjBLUU9rWHFYTVppbGFSZFJyVUpuMjJDRERycm8yK0dON0c5RVdKSGFyWUtEUHgwMjNrTElLekVhMTIKR1lTT0h4cmhYUEZDdWxTUEtkazc4ak9RY1ZCRTdRck0zQ0d0aE8wbGdyZnJUREsza05jOHdIZW1HOURHQjkwTwovclloCi0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K'))
-              if ((Get-PilotDigest $cert) -cne 'ac3b12a6db941f7f7575e705a084d179d597cdc3d2705106d982bc776330ab15') { throw 'forensic-recipient-mismatch' }
+              [IO.File]::WriteAllBytes($cert, [Convert]::FromBase64String('LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUVYVENDQXNXZ0F3SUJBZ0lVTGk0WmxGNVptSk9QTmJuQTczTzNsbUJicmRRd0RRWUpLb1pJaHZjTkFRRUwKQlFBd1BqRThNRG9HQTFVRUF3d3pjblZ1Ykc5akxYWmxibll0WW5Wa1oyVjBMV1U1TUdOaU5XUTJZVEF4WkRSbQpaR1E1TmpKak5tTmxPR0UyWkdSaE1XRm1NQjRYRFRJMk1UQXlNekE0TXpNMU1sb1hEVEkyTVRFd05qQTRNek0xCk1sb3dQakU4TURvR0ExVUVBd3d6Y25WdWJHOWpMWFpsYm5ZdFluVmtaMlYwTFdVNU1HTmlOV1EyWVRBeFpEUm0KWkdRNU5qSmpObU5sT0dFMlpHUmhNV0ZtTUlJQm9qQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FZOEFNSUlCaWdLQwpBWUVBcTk4aWdCT0RrOGhPSEtzblUrZjQxU1MwbEF1TE55YjNoRW56aGJDeFNoUkVuSUpkK1c1K0ExWjB0VEVrCmo3WkFYSFFCa1dIYUZJUzIwMnBJelRWWk8xelJQcWx1ZEZJMnVxTDhKRElsdWpZd3poOUtZUHhXVThSaDR2V3MKREQrL1NwQ0MrNTNOajdvL2NBejdtL0MxeWxxV3Q1QllPK0IvKy9oM3RZUm1HcytvMHg4eUFnQi9ibW9kVzNqUQpYSFc0bElqZCsveFR3Z0IyQklvajVaek5IYmw5OVlXNWVkaGtHV214UW9JUTQwWVRoSEkvaVZqaTRZMWJpa3paCnE3VUpNZ3JDamhkWkZZdC9LaVRKVzdBYXd6aFBqTGZ5dm5MQlo4ZXpJVVdxVlNvcW1qUW5UR0pheE56bWZiOVMKa3g3MVh0eWhPNno5RjZmaHZKdHlNTjR4NEd6M3NNVis0NDdYczYvQ1FFMy9XeTZYbVBHSitaSDB2S0swVVorZQpseFM3VzZPZUpTL1F3ZmdTRHZLR0NhYy9CUEx0Q3Voc3B1S2pwUm1uTzlNa3ozZWNpcGFpazk4V1VSVzdiemQ0Ck5GYk55QkJzaFRQYk1Fb1NLc1RmbG1Gd2hvUmF4Q1BBMGl2VVRQLytxckQvNVRGQTdoZmttQWdPU01wYmtoMFkKYXJ3OUFnTUJBQUdqVXpCUk1CMEdBMVVkRGdRV0JCUlllbEgxTFRUS3BLY2lJSDI5c3ByZWxOdTNBekFmQmdOVgpIU01FR0RBV2dCUlllbEgxTFRUS3BLY2lJSDI5c3ByZWxOdTNBekFQQmdOVkhSTUJBZjhFQlRBREFRSC9NQTBHCkNTcUdTSWIzRFFFQkN3VUFBNElCZ1FCT3lMNGpBRWg3VkpOeFUwT0dEMHVZL3NiLzhYRXVJQTBIdWxsOXp6aXoKdWltbVNrRmUzbkhQd3VLU3JDbk5KcVRGZ1RKNkhJakd3NXoyT3d5Q0E5b200WnB4dlhETkZ5eVdnRWM0aFBlUwpIeksrYklkdWdXUFNuSWhmVy92NS9SRDNNL2dFVEl3UktjbUVPa2ZUWjIySTB5TTRObGUwMWozdmVyazREZ29pClBRdWtWNzRRTmhMQkJidnowSVpKdExTdzNOd2xQT1Z2UGc4dVp6ODZlZWRBTSsyT2pOUzM1WDhqaGtPVjVWOHIKUnNkMmNRanFOY3hoeExHNTRXZ3N0S0l3ODA3cXc3emgyV1VhOFNVWHBjdlhqbzlYbkR4aGtpdGNPYW5IMDEzNQpWbHg2UXJ4a0pBYmZxZWFzMjFhdHR0QjJtME5MNDYzK1J5SWhPU1ZBcjJramtCL2NQVkh3WGsyeUlhbGxFdGF0CkFPK0RETisvWGNrdW5TdXNjcTBLQnV0ZXkwSUF5RUhvckEwallsUHpLcHZ5L0Y4bzQ2c29GZmxqSC96QjNnSjMKamhXS0FqV0NJQk50ZnZmRVBZZys2ZTduQURIeUhSaHhuYWV2eXNUU2hkY3pHd1RkWEdXY0F0R3EwaHk1Wkk1QgpCYjdTRjl0OENqSExsY3Z6MjJ5clVyYz0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo='))
+              if ((Get-PilotDigest $cert) -cne 'cca0046e0c445b2986121ee32c62d7330f7ee1a2ee3348a014bcb1739f3701a5') { throw 'forensic-recipient-mismatch' }
               $cipher = Join-Path $evidence 'forensic-harness.cms'
               if ([IO.File]::Exists($cipher)) { throw 'forensic-ciphertext-already-exists' }
               $openssl = Assert-PilotPath -Path (Join-Path $env:ProgramFiles 'Git/usr/bin/openssl.exe') -File
