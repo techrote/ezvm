@@ -674,3 +674,32 @@ isolated offline install and missing-wheel refusal. The actual shell control
 also rejects bootstrap failure before prefix or pip validation. CI supplies
 test-only CPython3.12.10 through a pinned setup action; the first-party harness
 uses no external testing framework or pip-installed test package.
+
+### Full-context venv timing diagnostics under evaluation
+
+The fresh six-CPU hosted stage comparison39943992446 completed all eight
+direct-guest trials within90seconds; the current implementation took49.07 and
+49.56seconds. It did not reproduce the full coding-finalizer pip timeout.
+Restoring compilation was slower overall, and neither combining the prefix
+check nor suppressing pip-version cache writes establishes another correction.
+
+The profile now emits fixed private metric frames at layout/bootstrap/prefix/pip
+boundaries in the actual full context, labelled with the temporary invocation
+basename and provision/validate mode. Builtin read obtains monotonic guest uptime;
+builtin times emits shell and waited-child cumulative CPU snapshots. There is no
+new timing worker, subprocess or extended deadline. Only these fixed frames use
+the preserved diagnostic descriptor; all existing tool output stays discarded.
+The descriptor is closed on each validation tool. PIPE is ignored only during
+metric writes and its entry policy is restored before validation resumes.
+Snapshot failures cannot replace the original operation status. Missing,
+malformed or regressing snapshots mean unavailable timing, never zero cost;
+per-stage CPU requires subtracting matching cumulative snapshots. A killed stage
+has no invented end frame. These are diagnostics, not additional PASS markers or
+an accelerator/qualification oracle. Raw output remains private or encrypted.
+
+Actual shell controls cover both invocation modes, partial pip failure19,
+timeout124, closed and broken-pipe metric descriptors preserving pip failure19,
+and suppression of secret-output attempts through stdout/stderr/the introduced
+descriptor. Original offline bootstrap, prefix proof, real installed pip CLI,
+shared90second timeout and all release assertions remain mandatory. New executed
+source invalidates earlier physical/hosted qualification for that source.

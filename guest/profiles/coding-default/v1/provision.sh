@@ -215,9 +215,26 @@ chown "$coder_uid:$coder_gid" "$venv_directory"
 validation_started=$(cut -d. -f1 /proc/uptime 2>/dev/null || true)
 if runuser -u coder -- env -i PATH="$PATH" HOME=/home/coder USER=coder LOGNAME=coder LC_ALL=C \
     timeout 90 sh -eu -c '
+        # Private diagnostic frames only; no extra worker or timer process.
+        # Child times are cumulative snapshots, not independent stage totals.
+        venv_metric() {
+            venv_uptime=unknown
+            IFS=" " read -r venv_uptime venv_idle </proc/uptime || venv_uptime=unknown
+            trap "" PIPE
+            {
+                printf "\nEZVM_VENV_METRIC invocation=%s mode=%s stage=%s edge=%s uptime=%s\n" "${1##*/}" "$2" "$3" "$4" "$venv_uptime"
+                printf "EZVM_VENV_TIMES\n"
+                times
+            } >&3 || :
+            trap - PIPE
+            return 0
+        }
         printf "create\n" > "$1/stage"
-        python3 -m venv --without-pip "$1/env"
-        "$1/env/bin/python" - <<"EZVM_PIP_BOOTSTRAP"
+        venv_metric "$1" "$2" layout start
+        python3 -m venv --without-pip "$1/env" 3>&-
+        venv_metric "$1" "$2" layout end
+        venv_metric "$1" "$2" bootstrap start
+        "$1/env/bin/python" - 3>&- <<"EZVM_PIP_BOOTSTRAP"
 import ensurepip
 import inspect
 
@@ -239,11 +256,16 @@ finally:
 if calls != 1:
     raise RuntimeError("ensurepip bootstrap did not execute exactly once")
 EZVM_PIP_BOOTSTRAP
+        venv_metric "$1" "$2" bootstrap end
         printf "prefix\n" > "$1/stage"
-        "$1/env/bin/python" -c "import sys; assert sys.prefix != sys.base_prefix"
+        venv_metric "$1" "$2" prefix start
+        "$1/env/bin/python" -c "import sys; assert sys.prefix != sys.base_prefix" 3>&-
+        venv_metric "$1" "$2" prefix end
         printf "pip\n" > "$1/stage"
-        "$1/env/bin/python" -m pip --version >/dev/null
-    ' sh "$venv_directory" >/dev/null 2>&1; then
+        venv_metric "$1" "$2" pip start
+        "$1/env/bin/python" -m pip --version 3>&- >/dev/null
+        venv_metric "$1" "$2" pip end
+    ' sh "$venv_directory" "$mode" 3>&2 >/dev/null 2>&1; then
     :
 else
     validation_exit=$?
