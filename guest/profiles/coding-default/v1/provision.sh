@@ -206,6 +206,8 @@ for policy_line in 'passwordauthentication no' 'kbdinteractiveauthentication no'
 done
 
 # A real, disposable venv checks ensurepip and the installed wheel payload too.
+# Eagerly compiling every pip module is wasted work for this deleted probe.
+# Only its optional bytecode caches are omitted; user-created venvs are unchanged.
 # No network or package installation is involved. The directory is private to
 # this invocation and cannot overwrite a workspace or retain login material.
 venv_directory=$(mktemp -d /var/lib/ezvm/.venv-check.XXXXXX) || fail 'could not allocate the temporary Python validation directory'
@@ -214,7 +216,29 @@ validation_started=$(cut -d. -f1 /proc/uptime 2>/dev/null || true)
 if runuser -u coder -- env -i PATH="$PATH" HOME=/home/coder USER=coder LOGNAME=coder LC_ALL=C \
     timeout 90 sh -eu -c '
         printf "create\n" > "$1/stage"
-        python3 -m venv "$1/env"
+        python3 -m venv --without-pip "$1/env"
+        "$1/env/bin/python" - <<"EZVM_PIP_BOOTSTRAP"
+import ensurepip
+import inspect
+
+original = ensurepip._run_pip
+if str(inspect.signature(original)) != "(args, additional_paths=None)":
+    raise RuntimeError("unsupported ensurepip bootstrap interface")
+calls = 0
+
+def install_without_bytecode(args, additional_paths=None):
+    global calls
+    calls += 1
+    return original([*args, "--no-compile"], additional_paths)
+
+ensurepip._run_pip = install_without_bytecode
+try:
+    ensurepip.bootstrap(upgrade=True, default_pip=True)
+finally:
+    ensurepip._run_pip = original
+if calls != 1:
+    raise RuntimeError("ensurepip bootstrap did not execute exactly once")
+EZVM_PIP_BOOTSTRAP
         printf "prefix\n" > "$1/stage"
         "$1/env/bin/python" -c "import sys; assert sys.prefix != sys.base_prefix"
         printf "pip\n" > "$1/stage"

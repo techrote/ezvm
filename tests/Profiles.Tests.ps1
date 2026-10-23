@@ -206,10 +206,26 @@ Add-EzVmTest -Name 'Coding profile: real shell venv diagnostics preserve stage s
         $profileScript = Join-Path $script:EzVmRepositoryRoot 'guest/profiles/coding-default/v1/provision.sh'
         $result = Invoke-EzVmProcess -FilePath $shell -ArgumentList @($testScript.Replace('\','/'), $profileScript.Replace('\','/'), $root.Replace('\','/')) -TimeoutSeconds 60
         Assert-EzVmEqual -Actual $result.ExitCode -Expected 0 -Message $result.StdErr
-        foreach ($case in @('success','create','prefix','pip','timeout','setup','bad-stage','large-stage','fifo-stage','bad-clock','regressing-clock')) {
+        foreach ($case in @('success','create','bootstrap','prefix','pip','timeout','setup','bad-stage','large-stage','fifo-stage','bad-clock','regressing-clock')) {
             Assert-EzVmTrue -Condition ($result.StdOut.Contains('PASS venv diagnostic ' + $case)) -Message ('Missing actual shell control: ' + $case)
         }
         Assert-EzVmTrue -Condition (-not $result.StdOut.Contains('PRIVATE_TOOL_OUTPUT_MUST_NOT_ESCAPE') -and -not $result.StdErr.Contains('PRIVATE_TOOL_OUTPUT_MUST_NOT_ESCAPE'))
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}
+
+Add-EzVmTest -Name 'Coding profile: exact ensurepip helper preserves offline wheels failures and real isolation' -ScriptBlock {
+    $root = New-EzVmTestDirectory -Prefix 'venv bootstrap Python'
+    try {
+        $command = if ($script:EzVmIsWindowsHost) { 'python.exe' } else { 'python3' }
+        $python = (Get-Command $command -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+        $testScript = Join-Path $script:EzVmRepositoryRoot 'tests/Test-VenvBootstrap.py'
+        $profile = Join-Path $script:EzVmRepositoryRoot 'guest/profiles/coding-default/v1/provision.sh'
+        $result = Invoke-EzVmProcess -FilePath $python -ArgumentList @('-I', '-B', $testScript, $profile, $root) -TimeoutSeconds 120
+        Assert-EzVmEqual -Actual $result.ExitCode -Expected 0 -Message $result.StdErr
+        foreach ($case in @('delegate','delegate-failure','bootstrap-failure','signature','zero-calls','double-calls','real-offline','missing-wheel')) {
+            Assert-EzVmTrue -Condition ($result.StdOut.Contains('PASS venv bootstrap ' + $case)) -Message ('Missing exact Python bootstrap control: ' + $case)
+        }
     }
     finally { Remove-EzVmTestDirectory -Path $root }
 }

@@ -70,6 +70,13 @@ repository commit as the implementation. `tooling.json` records that version and
 declares no external harness package dependency. No Pester module or unbounded
 package feed is needed.
 
+The coding-profile controls additionally use Git's Bash and CPython 3.12 with
+its standard library. CI prepares Python 3.12.10 through an immutable
+`actions/setup-python` commit. These are test tools, not EzVM host runtime
+dependencies. The Python control executes the exact embedded guest bootstrap,
+including an actual isolated offline pip installation and missing-wheel refusal;
+the shell control exercises failure propagation and bounded hostile stage files.
+
 GitHub Actions executes three independent checks on `windows-2022`:
 
 | Check | Actual test engine |

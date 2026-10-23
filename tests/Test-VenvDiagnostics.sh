@@ -13,16 +13,17 @@ test -s "$root/block.sh"
 cat > "$root/bin/python3" <<'PYTHON'
 #!/bin/sh
 printf 'PRIVATE_TOOL_OUTPUT_MUST_NOT_ESCAPE\n' >&2
-test "$1" = -m && test "$2" = venv || exit 99
+test "$1" = -m && test "$2" = venv && test "$3" = --without-pip || exit 99
 if [ "$TEST_CASE" = create ]; then exit 17; fi
-mkdir -p "$3/bin"
-cp "$TEST_ROOT/runtime-python" "$3/bin/python"
-chmod +x "$3/bin/python"
+mkdir -p "$4/bin"
+cp "$TEST_ROOT/runtime-python" "$4/bin/python"
+chmod +x "$4/bin/python"
 PYTHON
 cat > "$root/runtime-python" <<'PYTHON'
 #!/bin/sh
 printf 'PRIVATE_TOOL_OUTPUT_MUST_NOT_ESCAPE\n' >&2
 case "$1" in
+    -) cat >/dev/null; test "$TEST_CASE" != bootstrap || exit 21 ;;
     -c) test "$TEST_CASE" != prefix || exit 18 ;;
     -m) test "$2" = pip && test "$3" = --version || exit 99
         test "$TEST_CASE" != pip || exit 19 ;;
@@ -34,7 +35,7 @@ PATH="$root/bin:$PATH"
 export PATH
 TEST_ROOT=$root
 export TEST_ROOT
-for TEST_CASE in success create prefix pip timeout setup bad-stage large-stage fifo-stage bad-clock regressing-clock; do
+for TEST_CASE in success create bootstrap prefix pip timeout setup bad-stage large-stage fifo-stage bad-clock regressing-clock; do
     export TEST_CASE
     venv_directory="$root/$TEST_CASE"
     mkdir "$venv_directory"
@@ -79,6 +80,7 @@ for TEST_CASE in success create prefix pip timeout setup bad-stage large-stage f
         test "$status" = 1
         case "$TEST_CASE" in
             create) expected='create exit=17' ;;
+            bootstrap) expected='create exit=21' ;;
             prefix) expected='prefix exit=18' ;;
             pip) expected='pip exit=19' ;;
             timeout) expected='create exit=124' ;;
