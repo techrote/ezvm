@@ -187,3 +187,29 @@ Add-EzVmTest -Name 'Coding profile: guest validation retains bounded functional 
     Assert-EzVmTrue -Condition ($guest -notmatch '(?i)curl\s+[^\r\n]*\|\s*(sh|bash)|wget\s+[^\r\n]*\|\s*(sh|bash)|apt(-get)?\s+install') -Message 'Instance provisioning validates the stable base and must not run an unreviewed installer.'
     Assert-EzVmTrue -Condition (($profile.ManifestJson + $guest) -notmatch '(?i)PRIVATE KEY|github_pat_|ghp_[A-Za-z0-9]|__[A-Z0-9_]+__')
 }
+
+Add-EzVmTest -Name 'Coding profile: real shell venv diagnostics preserve stage status and bounded hostile-file handling' -ScriptBlock {
+    $root = New-EzVmTestDirectory -Prefix 'venv diagnostic shell'
+    try {
+        if ($script:EzVmIsWindowsHost) {
+            $git = (Get-Command git.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+            $gitRoot = Split-Path (Split-Path $git -Parent) -Parent
+            $shell = Join-Path $gitRoot 'bin/bash.exe'
+            if (-not [IO.File]::Exists($shell)) {
+                $execPath = (& $git --exec-path).Trim()
+                $shell = [IO.Path]::GetFullPath((Join-Path $execPath '../../../bin/bash.exe'))
+            }
+            if (-not [IO.File]::Exists($shell)) { throw 'The shell regression test requires Bash supplied by Git for Windows, as installed on Windows CI.' }
+        }
+        else { $shell = (Get-Command bash -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source }
+        $testScript = Join-Path $script:EzVmRepositoryRoot 'tests/Test-VenvDiagnostics.sh'
+        $profileScript = Join-Path $script:EzVmRepositoryRoot 'guest/profiles/coding-default/v1/provision.sh'
+        $result = Invoke-EzVmProcess -FilePath $shell -ArgumentList @($testScript.Replace('\','/'), $profileScript.Replace('\','/'), $root.Replace('\','/')) -TimeoutSeconds 60
+        Assert-EzVmEqual -Actual $result.ExitCode -Expected 0 -Message $result.StdErr
+        foreach ($case in @('success','create','prefix','pip','timeout','setup','bad-stage','large-stage','fifo-stage','bad-clock','regressing-clock')) {
+            Assert-EzVmTrue -Condition ($result.StdOut.Contains('PASS venv diagnostic ' + $case)) -Message ('Missing actual shell control: ' + $case)
+        }
+        Assert-EzVmTrue -Condition (-not $result.StdOut.Contains('PRIVATE_TOOL_OUTPUT_MUST_NOT_ESCAPE') -and -not $result.StdErr.Contains('PRIVATE_TOOL_OUTPUT_MUST_NOT_ESCAPE'))
+    }
+    finally { Remove-EzVmTestDirectory -Path $root }
+}

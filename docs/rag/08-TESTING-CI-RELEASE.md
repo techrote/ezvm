@@ -605,3 +605,24 @@ support testing this narrow empirical mitigation; they do not establish a root
 cause, statistical reliability guarantee, or complete release qualification.
 Fresh complete six-vCPU TCG and WHPX scenarios on the changed exact source remain
 required. A short boot/init observation is not authenticated READY or release PASS.
+
+
+### Bounded venv failure diagnostics
+
+The complete hosted single-thread TCG attempt39840798569 failed at coding-profile
+venv validation on ezvm012-secondary. Its authenticated log did not retain the
+inner command status/stage, so timeout versus Python/ensurepip failure remains
+unresolved. The profile now records only create/prefix/pip/setup, the original
+numeric failure status, and guest monotonic elapsed whole seconds when available.
+The original clean environment, three validation commands, 90-second limit and
+failure/readiness-invalidating behavior are preserved. Reading a coder-owned
+stage file is independently bounded to 16 bytes and two diagnostic seconds;
+malformed/missing/FIFO data cannot export tool output or hang failure reporting.
+This is observability, not a correction of the underlying venv failure.
+
+The focused actual POSIX-shell regression uses the Bash already supplied with
+Git for Windows on CI (Bash on Linux). It stubs only external command boundaries
+and covers success, each command stage, status124, setup, malformed/large data
+and FIFO refusal; no live guest or privileges are needed. Bash is a test-only
+requirement, not an EzVM runtime dependency. New executed source requires fresh
+qualification; no previous physical or hosted result transfers automatically.
